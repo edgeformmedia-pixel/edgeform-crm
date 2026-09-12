@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Edgeform Media — CRM</title>
+<title>Edgeform One — Commercial Operations</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap" rel="stylesheet">
 <style>
@@ -415,13 +415,14 @@
   .bill-msg.success { color: var(--green); border-color: rgba(61,255,160,0.3); background: rgba(61,255,160,0.06); }
   .bill-msg.error   { color: var(--red);   border-color: rgba(255,92,92,0.3);   background: rgba(255,92,92,0.07); }
 </style>
+<link rel="stylesheet" href="admin-theme.css">
 </head>
 <body>
 
 <div id="auth-guard">
   <div class="guard-logo">
     <div class="mark"><svg viewBox="0 0 18 18" fill="none"><path d="M3 5h12M3 9h8M3 13h10" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg></div>
-    <span>Edgeform <em>Media</em></span>
+    <span>Edgeform <em>One</em></span>
   </div>
   <div class="guard-spinner"></div>
   <div class="guard-text">VERIFYING SESSION</div>
@@ -433,7 +434,7 @@
   </button>
   <a class="nav-brand" href="#" onclick="showPage('dashboard');return false;">
     <div class="nav-mark"><svg viewBox="0 0 18 18" fill="none"><path d="M3 5h12M3 9h8M3 13h10" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg></div>
-    <span class="nav-name">Edgeform <em>Media</em></span>
+    <span class="nav-name">Edgeform <em>One</em></span>
   </a>
   <div class="nav-right">
     <span class="nav-email-disp" id="nav-email"></span>
@@ -449,7 +450,7 @@
 <div class="drawer" id="drawer">
   <div class="drawer-header">
     <div class="drawer-logo"><svg viewBox="0 0 18 18" fill="none"><path d="M3 5h12M3 9h8M3 13h10" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg></div>
-    <span class="drawer-brand-name">Edgeform <em>Media</em></span>
+    <span class="drawer-brand-name">Edgeform <em>One</em></span>
     <button class="drawer-close" onclick="closeDrawer()">✕</button>
   </div>
 
@@ -467,7 +468,7 @@
       <span class="drawer-item-icon">⬡</span> Dashboard
     </a>
     <a class="drawer-item" id="drawer-nav-submits" href="#" onclick="drawerNav('submits')">
-      <span class="drawer-item-icon">◈</span> Web Submits
+      <span class="drawer-item-icon">◈</span> Inquiries
       <span class="drawer-item-badge" id="drawer-badge-submits">—</span>
     </a>
     <a class="drawer-item" id="drawer-nav-email-page" href="#" onclick="drawerNav('email')">
@@ -507,7 +508,7 @@
         <span class="side-icon">⬡</span> Dashboard
       </a>
       <a class="side-item" id="nav-submits" href="#" onclick="showPage('submits');return false;">
-        <span class="side-icon">◈</span> Web Submits
+        <span class="side-icon">◈</span> Inquiries
         <span class="side-badge live" id="badge-submits">—</span>
       </a>
       <a class="side-item" id="nav-email-page" href="#" onclick="showPage('email');return false;">
@@ -545,18 +546,23 @@
     <div class="page-view active" id="page-dashboard">
       <div class="page-head">
         <div class="page-title" id="greeting">—</div>
-        <div class="page-sub"><span class="hi" id="today-str"></span> &nbsp;·&nbsp; Session active</div>
+        <div class="page-sub"><span class="hi" id="today-str"></span> &nbsp;·&nbsp; Commercial command center</div>
       </div>
+      <section class="command-hero">
+        <div><span class="command-kicker">Edgeform One / live operating view</span><h1>One place to move<br>work <em>forward.</em></h1></div>
+        <p>See incoming demand, active relationships, pipeline movement, and the work that needs a decision next.</p>
+        <div class="command-status"><i></i><span>Cloud data connected</span></div>
+      </section>
       <div class="kpi-row">
-        <div class="kpi"><div class="kpi-bg-icon">◈</div><div class="kpi-label">Web Submits</div><div class="kpi-val" id="kpi-total">—</div><div class="kpi-delta neutral" id="kpi-sub">Loading…</div></div>
-        <div class="kpi"><div class="kpi-bg-icon">🎨</div><div class="kpi-label">With Sketch</div><div class="kpi-val" id="kpi-sketches">—</div><div class="kpi-delta neutral">Sent sketches</div></div>
-        <div class="kpi"><div class="kpi-bg-icon">◻</div><div class="kpi-label">Has Website</div><div class="kpi-val" id="kpi-has-web">—</div><div class="kpi-delta neutral">Already online</div></div>
-        <div class="kpi"><div class="kpi-bg-icon">🎯</div><div class="kpi-label">No Website</div><div class="kpi-val" id="kpi-no-web">—</div><div class="kpi-delta up">Hot leads</div></div>
+        <div class="kpi"><div class="kpi-bg-icon">◈</div><div class="kpi-label">Total inquiries</div><div class="kpi-val" id="kpi-total">—</div><div class="kpi-delta neutral" id="kpi-sub">Loading…</div></div>
+        <div class="kpi"><div class="kpi-bg-icon">◎</div><div class="kpi-label">Rich briefs</div><div class="kpi-val" id="kpi-sketches">—</div><div class="kpi-delta neutral">Visual direction included</div></div>
+        <div class="kpi"><div class="kpi-bg-icon">□</div><div class="kpi-label">Established</div><div class="kpi-val" id="kpi-has-web">—</div><div class="kpi-delta neutral">Existing digital presence</div></div>
+        <div class="kpi"><div class="kpi-bg-icon">↗</div><div class="kpi-label">New ventures</div><div class="kpi-val" id="kpi-no-web">—</div><div class="kpi-delta up">Ready for qualification</div></div>
       </div>
       <div class="two-col">
         <div class="panel">
           <div class="panel-head">
-            <span class="panel-title">Recent Submissions</span>
+            <span class="panel-title">Recent inquiries</span>
             <button class="panel-link" onclick="showPage('submits')">View All →</button>
           </div>
           <table style="width:100%;border-collapse:collapse;">
@@ -578,11 +584,11 @@
       </div>
     </div>
 
-    <!-- ══ WEB SUBMITS ══ -->
+    <!-- ══ INQUIRIES ══ -->
     <div class="page-view" id="page-submits">
       <div class="page-head">
-        <div class="page-title">Web Submits</div>
-        <div class="page-sub">All form submissions from your website</div>
+        <div class="page-title">Inquiries</div>
+        <div class="page-sub">New conversations and commercial briefs across every source</div>
       </div>
       <div class="submits-toolbar">
         <input class="search-box" id="submit-search" type="text" placeholder="Search name, phone, business…" oninput="filterSubmits()">
@@ -906,7 +912,7 @@
 
 <script>
 const GAS_AUTH     = 'https://script.google.com/macros/s/AKfycby7Mx_dPxxYqjc9LUuAvUP1_X0nVO2ip24XnC9A9bC80FaSZMDq5QB10AK22rK4GcEh/exec';
-const GAS_SUBMITS  = 'https://script.google.com/macros/s/AKfycbwNQfLtAOGamQ4hE2Prpxj9ELdOi2l1Pot111HiCxd8zdxSsZMU808Xk21uh0soimJ1gw/exec';
+const CRM_API      = 'https://edgeform-crm-api.edgeformmedia.workers.dev';
 const EMAIL_WORKER = 'https://email.edgeformmedia.workers.dev';
 const SESSION_KEY  = 'edgeform_crm_session';
 const LOGIN_URL    = '/login/index.html';
@@ -1003,16 +1009,19 @@ function showPage(name) {
   if (navEl) navEl.classList.add('active');
 }
 
-// ─── Load submissions via GAS getAll ─────────────────────────
+// ─── Load inquiries from Cloudflare D1 ───────────────────────
 async function loadSubmits() {
   document.getElementById('submit-list').innerHTML =
     '<div class="state-box"><div class="state-icon">◈</div>Loading…</div>';
 
   try {
-    const r    = await fetch(GAS_SUBMITS + '?action=getAll');
+    const session = getSession();
+    const r    = await fetch(CRM_API + '/api/submissions', {
+      headers: { Authorization: `Bearer ${session?.token || ''}` }
+    });
     const data = await r.json();
 
-    if (!data.ok) throw new Error(data.error || 'GAS error');
+    if (!data.ok) throw new Error(data.error || 'Cloud data error');
 
     allSubmits = data.rows || [];
     renderSubmits(allSubmits);
@@ -1147,7 +1156,7 @@ function prefillEmail(name) {
 // ─── Dashboard ────────────────────────────────────────────────
 function updateDashboard(rows) {
   const total    = rows.length;
-  const sketches = rows.filter(r => r['Sketch URL'] && String(r['Sketch URL']).trim()).length;
+  const sketches = rows.filter(r => r['Has Sketch'] === true || (r['Sketch URL'] && String(r['Sketch URL']).trim())).length;
   const hasWeb   = rows.filter(r => String(r['Has Website']).toLowerCase().includes('yes')).length;
   const noWeb    = total - hasWeb;
 
@@ -2282,5 +2291,6 @@ function setBillBtnLoading(id, loading) {
   btn.disabled = loading;
 }
 </script>
+<script src="admin-motion.js"></script>
 </body>
 </html>
