@@ -115,7 +115,9 @@ function brand(env) {
     phoneDigits: digits,
     phoneDisplay: digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : digits,
     website: env.MAIL_WEBSITE || `https://${env.MAIL_DOMAIN}`,
-    logo: env.MAIL_LOGO_URL || `${env.APP_URL}/assets/efmg-logo.png`
+    logo: env.MAIL_LOGO_URL || `${env.APP_URL}/assets/efmg-logo.png`,
+    instagram: env.MAIL_INSTAGRAM_URL || '',
+    instagramIcon: `${env.APP_URL}/assets/instagram-black.png`
   };
 }
 
@@ -141,6 +143,9 @@ Call or text: <a href="tel:+1${b.phoneDigits}" style="${link}">${escapeHtml(b.ph
 <a href="${maps}" style="color:#43504b;text-decoration:none;">${escapeHtml(b.address)}</a>
 </td>
 </tr>
+${b.instagram ? `<tr>
+<td style="padding-top:10px;"><a href="${escapeHtml(b.instagram)}" style="text-decoration:none;display:inline-block;"><img src="${escapeHtml(b.instagramIcon)}" width="22" height="22" alt="Instagram" style="display:block;width:22px;height:22px;border:0;"></a></td>
+</tr>` : ''}
 </table>`;
 }
 
