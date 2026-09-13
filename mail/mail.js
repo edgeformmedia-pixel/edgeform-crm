@@ -222,7 +222,9 @@ async function boot() {
   }
 
   syncNow(true);
-  setInterval(poll, 30000);
+  // Quick checks while someone is looking at the inbox; background tabs check less often.
+  let pollTicks = 0;
+  setInterval(() => { pollTicks++; if (!document.hidden || pollTicks % 3 === 0) poll(); }, 10000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 }
 
