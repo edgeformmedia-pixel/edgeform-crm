@@ -173,6 +173,10 @@
   .detail-summary { white-space: pre-wrap; font-size: 13px; line-height: 1.6; color: var(--text); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
   .stage-select { font-family: var(--mono); font-size: 11px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); }
   .match-list { margin-top: 12px; display: grid; gap: 8px; }
+  .detail-section-title { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-bright); margin: 18px 0 10px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .detail-section-title:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+  .detail-field .val.muted { color: var(--text-muted); }
+  .detail-field .val .chip { margin: 0 4px 4px 0; }
   .match-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface2); }
   .match-score { font-family: var(--mono); font-size: 11px; color: var(--accent-bright); float: right; }
   .creator-links a { color: var(--accent-bright); text-decoration: none; margin-right: 10px; font-size: 12px; }
@@ -1096,6 +1100,48 @@ function detailField(label, value, full) {
   return value ? `<div class="detail-field"${full ? ' style="grid-column:1/-1;"' : ''}><label>${esc(label)}</label><div class="val">${value}</div></div>` : '';
 }
 
+// Always shown, with a dash when empty, so every lead has the same layout.
+function coreField(label, value, full) {
+  return `<div class="detail-field"${full ? ' style="grid-column:1/-1;"' : ''}><label>${esc(label)}</label><div class="val${value ? '' : ' muted'}">${value || '—'}</div></div>`;
+}
+
+const DETAIL_LABELS = {
+  currentTool: 'Current Tool', currentToolNotes: 'Current Tool Notes', teamSize: 'Team Size', leadVolume: 'Monthly Lead Volume',
+  needs: 'Needs', notes: 'Notes', revenue: 'Annual Revenue', goals: 'Goals', challenge: 'Biggest Challenge', timeline: 'Timeline',
+  socials: 'Socials', audienceSize: 'Audience Size', niches: 'Niches', location: 'Location', contentTypes: 'Content Types',
+  mediaKit: 'Media Kit', consent: '18+ & OK to Share Profile', targetAudience: 'Target Audience', market: 'Market',
+  platforms: 'Platforms', budget: 'Budget', company: 'Company', message: 'Message', rate: 'Rate'
+};
+const LONG_DETAILS = new Set(['currentToolNotes', 'notes', 'challenge', 'message', 'targetAudience', 'socials']);
+const UTM_KEYS = ['source', 'medium', 'campaign', 'term', 'content'];
+
+const humanize = (key) => DETAIL_LABELS[key] || String(key).replace(/[_-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
+
+function formatValue(value, key) {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (Array.isArray(value)) return value.map(v => `<span class="chip chip-purple">${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</span>`).join('');
+  if (typeof value === 'object') {
+    if (key === 'socials') return socialLinks(value);
+    return Object.entries(value).map(([k, v]) => `<div><span style="color:var(--text-muted)">${esc(humanize(k))}:</span> ${formatValue(v, k)}</div>`).join('');
+  }
+  const text = String(value);
+  if (/^https?:\/\/\S+$/i.test(text)) return `<a href="${esc(text)}" target="_blank" rel="noopener">${esc(text)}</a>`;
+  return esc(text).replace(/\n/g, '<br>');
+}
+
+function objectFields(obj, longKeys = new Set()) {
+  return Object.entries(obj || {})
+    .map(([k, v]) => detailField(humanize(k), formatValue(v, k), longKeys.has(k) || (typeof v === 'string' && v.length > 60)))
+    .join('');
+}
+
+function fmtDateTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return isNaN(d) ? esc(ts) : d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
 function renderFiltered(rows) {
   const list = document.getElementById('submit-list');
   if (!rows.length) {
@@ -1109,20 +1155,24 @@ function renderFiltered(rows) {
     const name     = r['Name'] || '—';
     const phone    = r['Phone'] || '';
     const email    = r['Email'] || '';
-    const date     = r['Timestamp'] ? fmtDate(r['Timestamp']) : '—';
+    const when     = fmtDateTime(r['Timestamp']) || '—';
     const initials = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+    const details  = r['Details'] || {};
     const utm      = r['UTM'] || {};
+    const extra    = r['Extra'] || {};
+    const website  = type === 'website';
+    const typeChip = `<span class="chip ${INQUIRY_CHIP[type] || 'chip-muted'}">${esc(typeLabel(r))}</span>`;
     const statusChip = r['Status'] === 'complete'
       ? '<span class="chip chip-green">Complete</span>'
       : '<span class="chip chip-muted">Unfinished</span>';
     const sketchUrl = safeUrl(r['Sketch URL']);
-    const sketchEl = type === 'website' && sketchUrl
+    const sketchEl = sketchUrl
       ? `<div style="margin-bottom:12px;">
            <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px;">Sketch</div>
            <a href="${sketchUrl}" target="_blank" rel="noopener"><img src="${safeUrl(r['Sketch Thumb URL']) || sketchUrl}" alt="Sketch" style="max-width:100%;max-height:280px;border-radius:8px;border:1px solid var(--border);object-fit:contain;background:var(--surface2);display:block;"></a>
          </div>` : '';
     const stageSelect = `<select class="stage-select" data-id="${id}" onchange="updateStage(this)">${STAGES.map(s => `<option value="${s}"${s === r['Stage'] ? ' selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}</select>`;
-    const website = type === 'website';
+    const extraUtm = Object.fromEntries(Object.entries(utm).filter(([k]) => !UTM_KEYS.includes(k)).map(([k, v]) => ['UTM ' + k, v]));
 
     return `<div class="submit-card" id="sc-${id}">
       <div class="submit-card-head" data-id="${id}" onclick="toggleCard(this.dataset.id)">
@@ -1132,31 +1182,63 @@ function renderFiltered(rows) {
           <div class="submit-phone">${esc(phone || email || '—')}</div>
         </div>
         <div class="submit-meta">
-          <span class="chip ${INQUIRY_CHIP[type] || 'chip-muted'}">${esc(typeLabel(r))}</span>
+          ${typeChip}
           ${r['Status'] !== 'complete' ? '<span class="chip chip-muted">Unfinished</span>' : ''}
           <span class="chip chip-muted">${esc(r['Stage'] || 'new')}</span>
-          <span class="submit-time">${date}</span>
+          <span class="submit-time">${when}</span>
           <span class="submit-chevron">▾</span>
         </div>
       </div>
       <div class="submit-detail">
+        <div class="detail-section-title">Inquiry</div>
         <div class="detail-grid">
-          ${detailField('Email', email && `<a href="mailto:${esc(email)}">${esc(email)}</a>`)}
-          ${detailField('Phone', phone && `<a href="tel:${esc(telHref(r))}">${esc(phone)}</a> · <a href="sms:${esc(telHref(r))}">Text</a>`)}
-          ${detailField('Business Type', esc(r['Business Type']))}
-          ${detailField('Company', esc(r['Company']))}
-          ${website ? detailField('Has Website', esc(r['Has Website'])) : ''}
-          ${website ? detailField('Input Mode', esc(r['Mode'])) : ''}
-          ${detailField('Stage', stageSelect)}
-          ${detailField('Form', statusChip)}
-          ${detailField('Submitted', date)}
-          ${detailField('Source', esc([utm.source, utm.medium, utm.campaign].filter(Boolean).join(' / ')))}
-          ${r['Other Inquiries'] ? detailField('Same Contact', `${r['Other Inquiries']} other inquir${r['Other Inquiries'] === 1 ? 'y' : 'ies'}`) : ''}
-          ${website ? detailField('Description', esc(r['Description']), true) : ''}
+          ${coreField('Inquiry Type', `${typeChip} <span style="color:var(--text-muted);font-family:var(--mono);font-size:11px;">${esc(type)}</span>`)}
+          ${coreField('Inquiry Time', when)}
+          ${coreField('Completed', fmtDateTime(r['Completed']))}
+          ${coreField('Last Updated', fmtDateTime(r['Updated']))}
+          ${coreField('Form', statusChip)}
+          ${coreField('Stage', stageSelect)}
+          ${r['Other Inquiries'] ? coreField('Same Contact', `${r['Other Inquiries']} other inquir${r['Other Inquiries'] === 1 ? 'y' : 'ies'}`) : ''}
         </div>
-        ${r['Summary'] ? `<div class="detail-summary">${esc(r['Summary'])}</div>` : ''}
+
+        <div class="detail-section-title">Contact</div>
+        <div class="detail-grid">
+          ${coreField('Name', esc(r['Name']))}
+          ${coreField('Email', email && `<a href="mailto:${esc(email)}">${esc(email)}</a>`)}
+          ${coreField('Phone', phone && `<a href="tel:${esc(telHref(r))}">${esc(phone)}</a> · <a href="sms:${esc(telHref(r))}">Text</a>`)}
+          ${coreField('Phone (E.164)', esc(r['Phone E164']))}
+          ${coreField('Phone Country', esc(r['Phone Country']))}
+          ${coreField('Business Type', esc(r['Business Type']))}
+          ${coreField('Company', esc(r['Company']))}
+        </div>
+
+        ${Object.keys(details).length || website ? `<div class="detail-section-title">Answers</div>
+        <div class="detail-grid">
+          ${website ? coreField('Has Website', esc(r['Has Website'])) : ''}
+          ${website ? coreField('Input Mode', esc(r['Mode'])) : ''}
+          ${website ? coreField('Sketch', r['Has Sketch'] ? 'Yes' : 'No') : ''}
+          ${objectFields(details, LONG_DETAILS)}
+          ${website ? coreField('Description', esc(r['Description']).replace(/\n/g, '<br>'), true) : ''}
+        </div>` : ''}
         ${sketchEl}
-        <div class="detail-actions">
+
+        ${r['Summary'] ? `<div class="detail-section-title">Summary</div><div class="detail-summary">${esc(r['Summary'])}</div>` : ''}
+
+        <div class="detail-section-title">Tracking</div>
+        <div class="detail-grid">
+          ${coreField('Source', esc(r['Source']))}
+          ${UTM_KEYS.map(k => coreField('UTM ' + humanize(k), esc(utm[k]))).join('')}
+          ${objectFields(extraUtm)}
+          ${coreField('Form Version', esc(r['Form Version']))}
+          ${coreField('Page URL', formatValue(r['Page URL']), true)}
+          ${coreField('Referrer', formatValue(r['Referrer']), true)}
+          ${coreField('Lead ID', r['Lead ID'] ? `<span style="font-family:var(--mono);font-size:11px;">${esc(r['Lead ID'])}</span>` : '')}
+          ${coreField('CRM ID', `<span style="font-family:var(--mono);font-size:11px;">${id}</span>`)}
+        </div>
+
+        ${Object.keys(extra).length ? `<div class="detail-section-title">Other Fields</div><div class="detail-grid">${objectFields(extra)}</div>` : ''}
+
+        <div class="detail-actions" style="margin-top:14px;">
           ${email ? `<button class="action-btn primary" data-id="${id}" onclick="prefillEmail(this.dataset.id)">✉ Email This Lead</button>` : ''}
           ${phone ? `<button class="action-btn" data-phone="${esc(phone)}" onclick="copyText(this.dataset.phone,'Phone')">📋 Copy Phone</button>` : ''}
           ${type === 'sponsor' ? `<button class="action-btn" data-id="${id}" onclick="findCreators(this.dataset.id)">★ Find Creators</button>` : ''}
@@ -1345,7 +1427,7 @@ function updateDashboard(rows) {
 
   document.getElementById('dash-tbody').innerHTML = recent.map(r => {
     const type = r['Inquiry Type'] || 'website';
-    const date = r['Timestamp'] ? fmtDate(r['Timestamp']) : '—';
+    const date = fmtDateTime(r['Timestamp']) || '—';
     return `<tr>
       <td style="padding:11px 18px;font-size:12px;font-weight:500;border-bottom:1px solid var(--border);">${esc(r['Name'] || '—')}</td>
       <td style="padding:11px 18px;font-size:12px;color:var(--text-dim);border-bottom:1px solid var(--border);">${esc(r['Business Type'] || r['Company'] || '—')}</td>
@@ -1356,7 +1438,7 @@ function updateDashboard(rows) {
 
   document.getElementById('dash-feed').innerHTML = recent.map(r => {
     const creator = r['Inquiry Type'] === 'creator';
-    const date   = r['Timestamp'] ? fmtDate(r['Timestamp']) : '—';
+    const date   = fmtDateTime(r['Timestamp']) || '—';
     return `<div class="feed-item">
       <div class="feed-dot" style="background:${creator ? 'var(--orange)' : 'var(--green)'}"></div>
       <div class="feed-body">
