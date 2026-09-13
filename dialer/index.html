@@ -363,7 +363,6 @@ summary:hover{color:var(--tx)}
 
   <details open><summary>⚙ SETUP</summary>
     <div class="row" style="margin-top:8px">
-      <label>Worker</label><input id="worker" style="flex:1;min-width:200px" placeholder="https://your-worker.workers.dev">
       <button id="mic">Connect Mic</button>
       <span class="pill" id="devpill"><span class="dot"></span>OFFLINE</span>
     </div>
@@ -377,10 +376,7 @@ summary:hover{color:var(--tx)}
       <button id="import-list">⬆ Import</button>
       <button id="load-tabs">↻ Refresh Lists</button>
     </div>
-    <div class="row" title="Optional webhook URL for mirroring dial attempts to another CRM or workflow.">
-      <label>External Sync</label><input id="external-sync-url" style="flex:1;min-width:240px" placeholder="https://… (optional webhook)" autocomplete="off">
-      <span id="external-sync-pending" style="font-size:10px;color:var(--t3);font-family:'SF Mono',monospace"></span>
-    </div>
+    <div style="font-size:10px;color:var(--t3);font-family:'SF Mono',monospace;margin:-2px 0 8px">CSV must have a column named <b>NAME</b>. The phone number column is detected automatically, and every other column shows on the lead card.</div>
     <div class="tabs-row">
       <label>List</label>
       <select id="tab-sel"><option value="">— pick a list —</option></select>
@@ -442,7 +438,7 @@ summary:hover{color:var(--tx)}
   <div class="callstatus" id="callstatus"></div>
   <div style="font-family:'SF Mono',monospace;font-size:10px;color:var(--t3)" id="att"></div>
 
-  <div class="info" id="info"><div style="color:var(--t3);text-align:center;padding:18px">Load a tab to begin</div></div>
+  <div class="info" id="info"><div style="color:var(--t3);text-align:center;padding:18px">Load a list to begin</div></div>
 
   <div class="outcome-panel show" id="outcome-panel">
     <h3>▸ LOG OUTCOME <span style="font-weight:400;color:var(--t2);font-size:10px;margin-left:8px">(click to tag current lead — does NOT pause dialer)</span></h3>
@@ -603,6 +599,7 @@ function closestNum(p){const ac=p.replace(/\D/g,'').slice(-10).slice(0,3);const 
 
 // ══ STATE ══
 const $=id=>document.getElementById(id);
+const VOICE_WORKER='https://raspy-math-9a25.thomaslancheros06.workers.dev';
 const LS=(k,d='')=>{try{return localStorage.getItem(k)??d}catch{return d}};
 const SS=(k,v)=>{try{localStorage.setItem(k,v)}catch{}};
 let device=null,conn=null,leads=[],idx=0,attempt=0,running=false,dialing=false,manualMode=false,callTimer=null,callStart=0,gapTimer=null,headers=[],stats={book:0,conn:0,vm:0,fail:0},awaitingOutcome=false,tabName='',pendingSync=[];
@@ -670,9 +667,7 @@ function renderCellValue(header,raw){
 function renderPendingSyncs(){$('pending-syncs').innerHTML=pendingSync.length?`<span class="pending-syncs">${pendingSync.length} pending sync</span>`:''}
 
 // ══ PERSISTED CONFIG ══
-$('worker').value=LS('dialer_worker','');
 $('agent-name').value=LS('dialer_agent','');
-$('worker').addEventListener('change',e=>SS('dialer_worker',e.target.value));
 $('agent-name').addEventListener('change',e=>SS('dialer_agent',e.target.value.trim()));
 // Theme toggle
 (function(){
@@ -725,8 +720,7 @@ function startSpamScreenWatch(lead){
   stopSpamScreenWatch();
   const callSid=conn?.parameters?.CallSid;
   if(!callSid){return}
-  const w=$('worker').value.replace(/\/$/,'');
-  if(!w)return;
+  const w=VOICE_WORKER;
   const startedAt=Date.now();
   const MAX_MS=6000, INTERVAL=600;
   let bypassed=false;
@@ -763,7 +757,7 @@ function tokenUrl(base){
 
 // ══ MIC ══
 $('mic').onclick=async()=>{
-  const url=$('worker').value.trim();if(!url){alert('Enter Worker URL');return}
+  const url=VOICE_WORKER;
   $('mic').disabled=true;
   try{
     const r=await fetch(tokenUrl(url));const d=await r.json();
@@ -823,6 +817,7 @@ $('import-list').onclick=async()=>{
   try{
     const [headers,...rows]=parseCsv(await f.text());
     if(!headers||!rows.length)throw new Error('That CSV has no rows');
+    if(name.toUpperCase()!=='NUMBERS')detectColumns(headers,rows); // NUMBERS lists only hold caller IDs
     let replace=false;
     for(;;){
       try{await gasCall('importList',{name,headers,rows,replace});break}
@@ -881,19 +876,17 @@ $('load-leads').onclick=async()=>{
     const d=await gasCall('loadTab',{tab});
     headers=d.headers;
     tabName=tab;
-    const ni=headers.findIndex(h=>/name/i.test(h));
-    const pi=headers.findIndex(h=>/phone|cell|mobile|number/i.test(h));
-    if(pi<0)throw new Error('No phone column found. Headers: '+headers.join(', '));
+    const {ni,pi}=detectColumns(headers,d.rows);
     leads=d.rows.map((row,i)=>{
       const cells={};headers.forEach((h,j)=>{cells[h]=(row[j]??'').toString().trim()});
       const phone=normalizePhone(cells[headers[pi]]||'');
       if(!phone)return null;
-      const name=ni>=0?(cells[headers[ni]]||'').trim()||'Row '+(i+2):'Row '+(i+2);
+      const name=(cells[headers[ni]]||'').trim()||'Row '+(i+2);
       const existingOutcomes=row.slice(headers.length).map(c=>String(c||'').trim()).filter(Boolean);
       // Skip leads marked DELETED in the CRM
       if(existingOutcomes.some(o=>/^DELETED/i.test(o)))return null;
       const isDNC=existingOutcomes.some(o=>/DNC/i.test(o));
-      return{rowIdx:i+2,name,phone,cells,status:isDNC?'dnc':'pending',attempts:0,history:existingOutcomes};
+      return{rowIdx:i+2,name,phone,cells,nameKey:headers[ni],phoneKey:headers[pi],status:isDNC?'dnc':'pending',attempts:0,history:existingOutcomes};
     }).filter(Boolean);
     idx=0;attempt=0;stats={book:0,conn:0,vm:0,fail:0};updateStats();
     log('Loaded '+leads.length+' leads from '+tab,'ok');
@@ -913,6 +906,24 @@ $('load-leads').onclick=async()=>{
   }catch(e){log('Load failed: '+e.message,'err');alert('Load failed: '+e.message)}
   finally{$('load-leads').disabled=false}
 };
+
+// NAME column is required. The phone column is the header that looks like a phone
+// field, or failing that the column whose values are mostly 10+ digit numbers.
+function findNameColumn(hdrs){return hdrs.findIndex(h=>String(h).trim().toUpperCase()==='NAME')}
+function detectColumns(hdrs,rows){
+  const ni=findNameColumn(hdrs);
+  if(ni<0)throw new Error('This list has no NAME column. Headers: '+hdrs.join(', '));
+  const looksPhone=v=>{const d=String(v||'').replace(/\D/g,'');return d.length>=10&&d.length<=15};
+  const score=j=>{const vals=rows.map(r=>r[j]).filter(v=>String(v||'').trim());return vals.length?vals.filter(looksPhone).length/vals.length:0};
+  let pi=hdrs.findIndex((h,j)=>j!==ni&&/phone|cell|mobile|tel/i.test(h)&&score(j)>0);
+  if(pi<0){
+    let best=0;
+    hdrs.forEach((h,j)=>{if(j===ni)return;const sc=score(j);if(sc>best){best=sc;pi=j}});
+    if(best<0.5)pi=-1;
+  }
+  if(pi<0)throw new Error('Could not find a phone number column. Headers: '+hdrs.join(', '));
+  return{ni,pi};
+}
 
 function findLastNonEmpty(arr){for(let i=arr.length-1;i>=0;i--)if(String(arr[i]||'').trim())return i;return-1}
 function normalizePhone(p){let d=p.replace(/[^\d+]/g,'');if(!d)return'';if(d.startsWith('+'))return d;if(d.length===10)return'+1'+d;if(d.length===11&&d[0]==='1')return'+'+d;return'+'+d}
@@ -938,75 +949,6 @@ async function flushSync(){
   }catch(e){log('Sync failed (will retry): '+e.message,'warn')}
 }
 setInterval(flushSync,15000);
-
-// ══ OPTIONAL EXTERNAL CRM SYNC ══
-// When configured, each dial attempt is posted to a Google Apps Script queue
-// so another CRM or workflow can mirror the activity. The integration accepts
-// a LeadId URL, a bare ID, or a named ID field, with column H as a legacy fallback.
-//
-// Offline-safe: queued in localStorage, flushed on an interval and on each
-// new dial. One enqueue per dial attempt (not per retry outcome).
-let externalSyncQueue=[];
-try{externalSyncQueue=JSON.parse(LS('dialer_externalSync','[]'))}catch{externalSyncQueue=[]}
-$('external-sync-url').value=LS('dialer_external_sync_url','');
-$('external-sync-url').addEventListener('change',e=>SS('dialer_external_sync_url',e.target.value.trim()));
-function renderExternalSyncPending(){
-  const el=$('external-sync-pending');if(!el)return;
-  el.textContent=externalSyncQueue.length?externalSyncQueue.length+' queued':'';
-  el.style.color=externalSyncQueue.length?'var(--amber)':'var(--t3)';
-}
-renderExternalSyncPending();
-// Find an external ID in a named field, then fall back to legacy column H.
-function externalLeadIdFromLead(lead){
-  if(!lead||!lead.cells)return null;
-  const idHeader=Object.keys(lead.cells).find(h=>/^(lead\s*id|external\s*id|crm\s*id|record\s*id)$/i.test(h.trim()));
-  const raw=String((idHeader&&lead.cells[idHeader])||(headers&&headers[7]&&lead.cells[headers[7]])||'').trim();
-  if(!raw)return null;
-  const m=raw.match(/LeadId=(\d+)/i);
-  if(m)return{leadId:m[1],url:raw};
-  if(/^\d+$/.test(raw))return{leadId:raw,url:''};
-  return null;
-}
-function enqueueExternalSync(lead){
-  const url=$('external-sync-url').value.trim();
-  if(!url)return; // feature disabled
-  const info=externalLeadIdFromLead(lead);
-  if(!info){log('External sync: no lead ID found for '+lead.name,'warn');return}
-  externalSyncQueue.push({
-    leadId:info.leadId,
-    phone:lead.phone||'',
-    source:'autodialer:'+(tabName||'unknown'),
-    ts:new Date().toISOString()
-  });
-  SS('dialer_externalSync',JSON.stringify(externalSyncQueue));
-  renderExternalSyncPending();
-  flushExternalSync();
-}
-async function flushExternalSync(){
-  if(!externalSyncQueue.length)return;
-  const url=$('external-sync-url').value.trim();
-  if(!url){renderExternalSyncPending();return}
-  // Flush sequentially — the Apps Script uses a script lock anyway, and we
-  // want ordering preserved so older dials don't override newer ones.
-  const item=externalSyncQueue[0];
-  try{
-    const r=await fetch(url,{
-      method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'}, // avoids CORS preflight
-      body:JSON.stringify({action:'enqueue',leadId:item.leadId,phone:item.phone,source:item.source})
-    });
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    const d=await r.json();
-    if(!d.ok)throw new Error(d.error||'enqueue failed');
-    externalSyncQueue.shift();
-    SS('dialer_externalSync',JSON.stringify(externalSyncQueue));
-    renderExternalSyncPending();
-    if(externalSyncQueue.length)setTimeout(flushExternalSync,250);
-  }catch(e){
-    log('External sync failed (will retry): '+e.message,'warn');
-  }
-}
-setInterval(flushExternalSync,20000);
 
 // ── HEARTBEAT WATCHDOG ──
 // Every 5 seconds, if the dialer should be dialing but isn't, kick it.
@@ -1075,7 +1017,6 @@ async function manualDial(){
     lead._manualDial=true;
     attempt++;             // <-- this dial counts as an attempt
     trkBump('dials');
-    enqueueExternalSync(lead);  // optional external activity mirror
     bindCall(lead);
     updateDialBtnLabel();
   }catch(e){
@@ -1408,7 +1349,6 @@ async function dialNext(){
 
     lead._lastCallerId=from.n;
     trkBump('dials');  // ← tracker: count this dial
-    enqueueExternalSync(lead);  // optional external activity mirror
     bindCall(lead);
   }catch(e){log('connect() failed: '+e.message,'err');dialing=false;attempt++;setTimeout(dialNext,1500)}
 }
@@ -1457,7 +1397,7 @@ function bindCall(lead){
       try{
         const callSid=conn?.parameters?.CallSid;
         if(callSid){
-          const w=$('worker').value.replace(/\/$/,'');
+          const w=VOICE_WORKER;
           const r=await fetch(w+'/vm-verdict/'+callSid,{method:'GET'});
           if(r.ok){
             const data=await r.json();
@@ -1658,7 +1598,7 @@ function showLead(i){
   const l=leads[i];const from=closestNum(l.phone);
   $('name').textContent=l.name;$('phone').textContent=l.phone;
   $('att').textContent='Lead '+(i+1)+'/'+leads.length+' • Try '+(attempt+1)+'/'+$('maxAtt').value+' • '+from.lbl+(l.history.length?' • '+l.history.length+' prior':'');
-  const entries=Object.entries(l.cells).filter(([k,v])=>v&&!/^(name|phone|cell|mobile)$/i.test(k));
+  const entries=Object.entries(l.cells).filter(([k,v])=>v&&k!==l.nameKey&&k!==l.phoneKey);
   $('info').innerHTML=entries.length?entries.map(([k,v])=>`<div class="info-row"><div class="info-k">${esc(k)}</div><div class="info-v">${renderCellValue(k,v)}</div></div>`).join(''):'<div style="color:var(--t3);text-align:center;padding:18px">No extra info</div>';
   renderScript(l);
   renderNote(l);
@@ -1913,7 +1853,7 @@ $('altDial').addEventListener('change',e=>{
   log('🔀 ALT DIAL '+(e.target.checked?'ENABLED — rotating caller IDs per retry':'DISABLED — using closest caller ID'),e.target.checked?'ok':'warn');
 });
 
-renderPendingSyncs();log('Ready. Setup → Connect Mic → Refresh Tabs → Load Leads → Start.');
+renderPendingSyncs();log('Ready. Setup → Connect Mic → Import CSV or pick a list → Load Leads → Start.');
 
 // ── BOOTSTRAP MIC MONITOR ────────────────────────────────────────
 // Try immediately (works if browser has persisted mic permission),

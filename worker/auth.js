@@ -1,20 +1,15 @@
-import {
-  json, HttpError, clean, now, addMinutes, readJson, randomToken, randomCode,
-  sha256, hashPassword, verifyPassword, timingSafeEqual, isEmail
-} from './lib.js';
-import { sendEmail } from './email.js';
+import { json, HttpError, clean, now, addMinutes, readJson, randomToken, sha256, verifyPassword, isEmail } from './lib.js';
 
 const SESSION_DAYS = 30;
-const CODE_MINUTES = 10;
-const MAX_CODE_ATTEMPTS = 5;
 const MAX_FAILED_LOGINS = 8;
 const LOCK_MINUTES = 15;
 
-const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role });
+// owner = master admin; admins can invite members.
+const ROLE_RANK = { member: 1, admin: 2, owner: 3 };
+export const isAdmin = (user) => ROLE_RANK[user.role] >= ROLE_RANK.admin;
+export const outranks = (user, role) => ROLE_RANK[user.role] > (ROLE_RANK[role] || 0);
 
-export function leadHunterUrl(request, user) {
-  return `${new URL(request.url).origin}/api/leadhunter/${user.lead_key}`;
-}
+export const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role });
 
 export async function requireUser(request, env) {
   const token = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
@@ -27,14 +22,13 @@ export async function requireUser(request, env) {
   return user;
 }
 
-function signupAllowed(env, email) {
-  const list = (env.SIGNUP_ALLOWLIST || '').split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
-  if (!list.length) return true;
-  const lower = email.toLowerCase();
-  return list.some(entry => entry.startsWith('@') ? lower.endsWith(entry) : lower === entry);
+export async function requireAdmin(request, env) {
+  const user = await requireUser(request, env);
+  if (!isAdmin(user)) throw new HttpError(403, 'Only admins can do that.');
+  return user;
 }
 
-async function createSession(env, user) {
+export async function createSession(env, user) {
   const token = randomToken();
   const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
   await env.DB.batch([
@@ -45,93 +39,12 @@ async function createSession(env, user) {
   return token;
 }
 
-async function sendCode(env, user) {
-  const existing = await env.DB.prepare('SELECT sent_at FROM verification_codes WHERE user_id = ?').bind(user.id).first();
-  if (existing && Date.now() - Date.parse(existing.sent_at) < 45000) {
-    throw new HttpError(429, 'Please wait a minute before requesting another code.');
-  }
-  const code = randomCode();
-  await env.DB.prepare(
-    `INSERT INTO verification_codes (user_id, code_hash, expires_at, attempts, sent_at) VALUES (?, ?, ?, 0, ?)
-     ON CONFLICT(user_id) DO UPDATE SET code_hash = excluded.code_hash, expires_at = excluded.expires_at, attempts = 0, sent_at = excluded.sent_at`
-  ).bind(user.id, await sha256(`${user.id}:${code}`), addMinutes(CODE_MINUTES), now()).run();
-
-  await sendEmail(env, {
-    to: user.email,
-    subject: `Your CRM verification code: ${code}`,
-    text: `Your Edgeform CRM verification code is:\n\n${code}\n\nThis code expires in ${CODE_MINUTES} minutes.\n\nIf you did not request this, you can safely ignore this email.\n\n— Edgeform`
-  });
-}
-
-const findUser = (env, email) => env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
+const findUser = (env, email) => env.DB.prepare('SELECT * FROM users WHERE email = ? AND verified = 1').bind(email).first();
 
 async function checkEmail(request, env, headers) {
   const email = clean((await readJson(request)).email, 254);
   if (!isEmail(email)) throw new HttpError(400, 'Enter a valid email address.');
-  const user = await findUser(env, email);
-  return json({ ok: true, exists: !!user?.verified }, 200, headers);
-}
-
-async function signup(request, env, headers) {
-  const body = await readJson(request);
-  const name = clean(body.name, 120);
-  const email = clean(body.email, 254).toLowerCase();
-  const password = String(body.password || '');
-  if (!name) throw new HttpError(400, 'Enter your full name.');
-  if (!isEmail(email)) throw new HttpError(400, 'Enter a valid email.');
-  if (password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters.');
-  if (password.length > 256) throw new HttpError(400, 'Password is too long.');
-  if (!signupAllowed(env, email)) throw new HttpError(403, 'This email is not allowed to create a CRM account.');
-
-  let user = await findUser(env, email);
-  if (user?.verified) throw new HttpError(409, 'An account with this email already exists. Sign in instead.');
-
-  const passwordHash = await hashPassword(password);
-  if (user) {
-    await env.DB.prepare('UPDATE users SET name = ?, password_hash = ?, updated_at = ? WHERE id = ?')
-      .bind(name, passwordHash, now(), user.id).run();
-    user = { ...user, name };
-  } else {
-    // Role is settled at verification so only the first *verified* account becomes admin.
-    user = { id: crypto.randomUUID(), email, name, role: 'member' };
-    await env.DB.prepare(
-      `INSERT INTO users (id, created_at, updated_at, email, name, role, password_hash, verified, lead_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`
-    ).bind(user.id, now(), now(), email, name, user.role, passwordHash, randomToken(18)).run();
-  }
-  await sendCode(env, user);
-  return json({ ok: true }, 200, headers);
-}
-
-async function resend(request, env, headers) {
-  const email = clean((await readJson(request)).email, 254);
-  const user = await findUser(env, email);
-  if (user && !user.verified) await sendCode(env, user);
-  return json({ ok: true }, 200, headers);
-}
-
-async function verify(request, env, headers) {
-  const body = await readJson(request);
-  const user = await findUser(env, clean(body.email, 254));
-  const code = clean(body.code, 6);
-  const row = user && await env.DB.prepare('SELECT * FROM verification_codes WHERE user_id = ?').bind(user.id).first();
-  if (!row || row.expires_at <= now() || row.attempts >= MAX_CODE_ATTEMPTS) {
-    throw new HttpError(400, 'Invalid or expired code. Request a new one.');
-  }
-  if (!timingSafeEqual(await sha256(`${user.id}:${code}`), row.code_hash)) {
-    await env.DB.prepare('UPDATE verification_codes SET attempts = attempts + 1 WHERE user_id = ?').bind(user.id).run();
-    throw new HttpError(400, 'Invalid or expired code.');
-  }
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE users SET verified = 1, failed_logins = 0, locked_until = NULL, updated_at = ?,
-         role = CASE WHEN role = 'admin' OR (SELECT COUNT(*) FROM users WHERE verified = 1 AND role = 'admin') = 0 THEN 'admin' ELSE role END
-       WHERE id = ?`
-    ).bind(now(), user.id),
-    env.DB.prepare('DELETE FROM verification_codes WHERE user_id = ?').bind(user.id)
-  ]);
-  const token = await createSession(env, user);
-  return json({ ok: true, token, name: user.name, email: user.email }, 200, headers);
+  return json({ ok: true, exists: !!await findUser(env, email) }, 200, headers);
 }
 
 async function login(request, env, headers) {
@@ -150,17 +63,13 @@ async function login(request, env, headers) {
     throw new HttpError(401, 'Incorrect email or password.');
   }
   await env.DB.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?').bind(user.id).run();
-  if (!user.verified) {
-    await sendCode(env, user).catch(() => {});
-    return json({ ok: false, needsVerification: true, error: 'Verify your email to finish signing up.' }, 200, headers);
-  }
   const token = await createSession(env, user);
   return json({ ok: true, token, name: user.name, email: user.email }, 200, headers);
 }
 
 async function me(request, env, headers) {
   const user = await requireUser(request, env);
-  return json({ ok: true, user: publicUser(user), leadhunter_url: leadHunterUrl(request, user) }, 200, headers);
+  return json({ ok: true, user: publicUser(user) }, 200, headers);
 }
 
 async function logout(request, env, headers) {
@@ -171,9 +80,6 @@ async function logout(request, env, headers) {
 
 export const authRoutes = {
   'POST /api/auth/check-email': checkEmail,
-  'POST /api/auth/signup': signup,
-  'POST /api/auth/resend': resend,
-  'POST /api/auth/verify': verify,
   'POST /api/auth/login': login,
   'GET /api/auth/me': me,
   'POST /api/auth/logout': logout

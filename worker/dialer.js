@@ -90,6 +90,9 @@ async function importList(env, user, { name, headers, rows, replace }) {
   if (!Array.isArray(headers) || !headers.length || !Array.isArray(rows)) throw new HttpError(400, 'Expected headers and rows.');
   if (rows.length > MAX_IMPORT_ROWS) throw new HttpError(413, `Import at most ${MAX_IMPORT_ROWS} rows at a time.`);
   const cleanHeaders = headers.map(h => clean(h, 120));
+  if (name.toUpperCase() !== NUMBERS_LIST && !cleanHeaders.some(h => h.toUpperCase() === 'NAME')) {
+    throw new HttpError(400, 'The CSV must have a column named NAME.');
+  }
   let list = await env.DB.prepare('SELECT * FROM dialer_lists WHERE owner_id = ? AND name = ?').bind(user.id, name).first();
   if (list && !replace) throw new HttpError(409, `A list named "${name}" already exists.`);
   if (list) {

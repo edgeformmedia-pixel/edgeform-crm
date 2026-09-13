@@ -1,6 +1,6 @@
 import { json, HttpError, clean, readJson, isEmail } from './lib.js';
 import { authRoutes, requireUser } from './auth.js';
-import { pipelineRoutes } from './pipeline.js';
+import { userRoutes } from './users.js';
 import { dialerRoutes } from './dialer.js';
 import { sendEmail } from './email.js';
 
@@ -96,7 +96,7 @@ const routes = {
   'GET /api/dashboard': dashboard,
   'POST /api/email/send': composeEmail,
   ...authRoutes,
-  ...pipelineRoutes,
+  ...userRoutes,
   ...dialerRoutes
 };
 

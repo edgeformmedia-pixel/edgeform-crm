@@ -119,6 +119,8 @@
   .feed { padding: 4px 0; }
   .feed-item { display: flex; gap: 11px; padding: 11px 18px; border-bottom: 1px solid var(--border); }
   .feed-item:last-child { border-bottom: none; }
+  #page-users .feed-item { align-items: center; }
+  [hidden] { display: none !important; }
   .feed-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
   .feed-body { flex: 1; }
   .feed-text { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-bottom: 3px; }
@@ -479,17 +481,11 @@
     </a>
 
     <div class="drawer-section-label" style="margin-top:8px;">Tools</div>
-    <a class="drawer-item" href="/pipeline/index.html">
-      <span class="drawer-item-icon">▷</span> Pipeline
-    </a>
     <a class="drawer-item" href="/dialer/index.html">
       <span class="drawer-item-icon">☎</span> Dialer
     </a>
-    <a class="drawer-item" id="drawer-nav-leads-page" href="#" onclick="drawerNav('leads')">
-      <span class="drawer-item-icon">🎯</span> Make More Leads
-    </a>
-    <a class="drawer-item" href="/template/configurator.html" target="_blank">
-      <span class="drawer-item-icon">⚙</span> Configurator
+    <a class="drawer-item" id="drawer-nav-users-page" href="#" onclick="drawerNav('users')" hidden>
+      <span class="drawer-item-icon">👥</span> Users
     </a>
   </div>
 
@@ -520,17 +516,11 @@
     </div>
     <div class="side-section">
       <div class="side-label">Account</div>
-      <a class="side-item" href="/pipeline/index.html">
-        <span class="side-icon">▷</span> Pipeline
-      </a>
       <a class="side-item" href="/dialer/index.html">
         <span class="side-icon">☎</span> Dialer
       </a>
-      <a class="side-item" id="nav-leads-page" href="#" onclick="showPage('leads');return false;">
-        <span class="side-icon">🎯</span> Make More Leads
-      </a>
-      <a class="side-item" href="/template/configurator.html" target="_blank">
-        <span class="side-icon">⚙</span> Configurator
+      <a class="side-item" id="nav-users-page" href="#" onclick="showPage('users');return false;" hidden>
+        <span class="side-icon">👥</span> Users
       </a>
       <a class="side-item" href="#" onclick="signOut();return false;">
         <span class="side-icon">→</span> Sign Out
@@ -550,7 +540,7 @@
       </div>
       <section class="command-hero">
         <div><span class="command-kicker">Edgeform One / live operating view</span><h1>One place to move<br>work <em>forward.</em></h1></div>
-        <p>See incoming demand, active relationships, pipeline movement, and the work that needs a decision next.</p>
+        <p>See incoming demand, active relationships, and the work that needs a decision next.</p>
         <div class="command-status"><i></i><span>Cloud data connected</span></div>
       </section>
       <div class="kpi-row">
@@ -653,76 +643,50 @@
       </div>
     </div>
 
-  <!-- ══ MAKE MORE LEADS ══ -->
-    <div class="page-view" id="page-leads">
+    <!-- ══ USERS (admins) ══ -->
+    <div class="page-view" id="page-users">
       <div class="page-head">
-        <div class="page-title">Make More Leads</div>
-        <div class="page-sub">Install the LeadHunter Tampermonkey script to scrape Google Maps directly to your pipeline</div>
+        <div class="page-title">Users</div>
+        <div class="page-sub">Invite teammates. Each invite emails a single-use link that expires in 7 days.</div>
       </div>
-
-      <div id="leads-no-gas" style="display:none;">
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;text-align:center;max-width:480px;margin:0 auto;">
-          <div style="font-size:36px;margin-bottom:16px;">⚠️</div>
-          <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:8px;">No Pipeline Script Connected</div>
-          <div style="font-size:13px;color:var(--text-muted);line-height:1.6;">Could not load your LeadHunter link.<br>Refresh the page or sign in again.</div>
-        </div>
-      </div>
-
-      <div id="leads-has-gas">
-        <!-- Step cards -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:28px;">
-          
-          <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
-            <div style="font-family:var(--mono);font-size:10px;color:var(--accent-bright);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Step 1</div>
-            <div style="font-size:15px;font-weight:600;margin-bottom:6px;">Install Tampermonkey</div>
-            <div style="font-size:12px;color:var(--text-dim);line-height:1.6;margin-bottom:14px;">A browser extension that lets you run custom scripts on any website.</div>
-            <a href="https://www.tampermonkey.net/" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#fff;text-decoration:none;font-family:var(--mono);font-size:11px;padding:8px 16px;border-radius:6px;font-weight:500;">
-              Get Tampermonkey ↗
-            </a>
-          </div>
-
-          <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
-            <div style="font-family:var(--mono);font-size:10px;color:var(--accent-bright);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Step 2</div>
-            <div style="font-size:15px;font-weight:600;margin-bottom:6px;">Copy Your Script</div>
-            <div style="font-size:12px;color:var(--text-dim);line-height:1.6;margin-bottom:14px;">Your personal script is pre-configured with your pipeline link. No setup needed.</div>
-            <button onclick="copyLeadScript()" id="copy-script-btn" style="display:inline-flex;align-items:center;gap:6px;background:var(--surface2);color:var(--accent-bright);border:1px solid rgba(123,108,255,0.3);font-family:var(--mono);font-size:11px;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:500;transition:all .15s;" onmouseover="this.style.background='var(--accent-glow)'" onmouseout="this.style.background='var(--surface2)'">
-              📋 Copy Script to Clipboard
-            </button>
-          </div>
-
-          <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
-            <div style="font-family:var(--mono);font-size:10px;color:var(--accent-bright);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Step 3</div>
-            <div style="font-size:15px;font-weight:600;margin-bottom:6px;">Add to Tampermonkey</div>
-            <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">Open Tampermonkey → Dashboard → + New Script → paste → Save (Ctrl+S).</div>
-          </div>
-
-          <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
-            <div style="font-family:var(--mono);font-size:10px;color:var(--green);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Step 4</div>
-            <div style="font-size:15px;font-weight:600;margin-bottom:6px;">Scan Google Maps</div>
-            <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">Go to <strong style="color:var(--text);">google.com/maps</strong>, search a business type + city, then click <strong style="color:var(--green);">🎯 Scan → CRM</strong>.</div>
-          </div>
-        </div>
-
-        <!-- Script preview box -->
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);">
-            <div>
-              <span style="font-family:var(--mono);font-size:11px;font-weight:500;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;">Your LeadHunter Script</span>
-              <span style="font-family:var(--mono);font-size:10px;color:var(--text-muted);margin-left:10px;">Pre-configured · ready to paste</span>
+      <div class="email-layout" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr));">
+        <div class="compose-panel">
+          <div class="compose-head"><span class="compose-title">Add User</span></div>
+          <div class="compose-body">
+            <div class="c-field">
+              <label>First Name</label>
+              <input class="c-input" id="invite-first" type="text" autocomplete="off">
             </div>
-            <button onclick="copyLeadScript()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;font-family:var(--mono);font-size:11px;padding:7px 16px;cursor:pointer;font-weight:500;">
-              📋 Copy
+            <div class="c-field">
+              <label>Last Name</label>
+              <input class="c-input" id="invite-last" type="text" autocomplete="off">
+            </div>
+            <div class="c-field">
+              <label>Email</label>
+              <input class="c-input" id="invite-email" type="email" placeholder="name@example.com" autocomplete="off">
+            </div>
+            <div class="c-field" id="invite-role-field" hidden>
+              <label>Access</label>
+              <select class="c-input" id="invite-role">
+                <option value="member">Member</option>
+                <option value="admin">Admin — can invite and remove members</option>
+              </select>
+            </div>
+            <button class="send-btn" id="invite-btn" onclick="sendInvite()">
+              <span class="btn-text">Send Invite →</span>
             </button>
+            <div class="email-msg" id="invite-msg"></div>
           </div>
-          <pre id="script-preview" style="margin:0;padding:20px;font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim);line-height:1.7;overflow-x:auto;max-height:320px;overflow-y:auto;background:var(--bg);white-space:pre;"></pre>
         </div>
 
-        <!-- Tip box -->
-        <div style="margin-top:16px;background:rgba(61,255,160,0.05);border:1px solid rgba(61,255,160,0.15);border-radius:10px;padding:16px 20px;display:flex;gap:12px;align-items:flex-start;">
-          <span style="font-size:18px;flex-shrink:0;">💡</span>
-          <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">
-            <strong style="color:var(--green);">Pro tip:</strong> Search something like <em>"plumbers Fort Lauderdale"</em> or <em>"HVAC Miami"</em> on Google Maps, then hit Scan. The script auto-scrolls, scrapes all results, filters out chains, Google-verifies each lead has no website, and saves everything directly to your CRM pipeline.
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-title">Team</span>
+            <button class="panel-link" onclick="loadUsers()">↻ Refresh</button>
           </div>
+          <div id="user-list" class="feed"><div class="state-box">Loading…</div></div>
+          <div class="panel-head" style="border-top:1px solid var(--border);"><span class="panel-title">Pending invites</span></div>
+          <div id="invite-list" class="feed"><div class="state-box">—</div></div>
         </div>
       </div>
     </div>
@@ -943,8 +907,7 @@ async function api(path, options = {}) {
     try {
       const r = await api('/api/auth/me');
       if (r.ok) {
-        initApp({ ...session, name: r.user.name, email: r.user.email });
-        initLeadsPage(r.leadhunter_url || '');
+        initApp({ ...session, name: r.user.name, email: r.user.email, role: r.user.role });
         return;
       }
       // API responded ok:false — session genuinely invalid, clear and redirect
@@ -969,7 +932,14 @@ function initApp(session) {
   const first    = name.split(' ')[0];
   const initials = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 
-  currentUser = { email, name, first };
+  currentUser = { email, name, first, role: session.role };
+
+  if (currentUser.role === 'admin' || currentUser.role === 'owner') {
+    document.getElementById('nav-users-page').hidden = false;
+    document.getElementById('drawer-nav-users-page').hidden = false;
+    document.getElementById('invite-role-field').hidden = currentUser.role !== 'owner';
+    loadUsers();
+  }
 
   document.getElementById('nav-email').textContent  = email;
   document.getElementById('nav-avatar').textContent = initials;
@@ -1245,747 +1215,80 @@ async function sendEmail() {
   btn.classList.remove('loading'); btn.disabled = false;
 }
 
-// ─── Sign out ─────────────────────────────────────────────────
-// ─── LeadHunter script generator ─────────────────────────────
-const LEAD_SCRIPT_TEMPLATE = `// ==UserScript==
-// @name         LeadHunter — Maps Scraper
-// @namespace    https://agent.nf-financial.life
-// @version      3.0
-// @description  Scrapes Google Maps, saves directly to Edgeform CRM
-// @author       Thomas @ NF Financial
-// @match        https://www.google.com/maps*
-// @match        https://maps.google.com/*
-// @grant        GM_xmlhttpRequest
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        GM_addStyle
-// @connect      edgeform-crm-api.edgeformmedia.workers.dev
-// @run-at       document-start
-// ==/UserScript==
-
-(function () {
-  'use strict';
-
-  const SHEETS_URL_KEY = 'lh_crm_url';
-  function getSheetsUrl() { return GM_getValue(SHEETS_URL_KEY, ''); }
-  function setSheetsUrl(u) { GM_setValue(SHEETS_URL_KEY, u); }
-
-  // Wait for body to exist, then inject — retries every 300ms
-  function waitForBody(cb, attempts) {
-    attempts = attempts || 0;
-    if (attempts > 40) return; // give up after 12s
-    if (document.body) {
-      cb();
-    } else {
-      setTimeout(() => waitForBody(cb, attempts + 1), 300);
-    }
-  }
-
-  waitForBody(inject);
-
-  function inject() {
-    // Don't double-inject
-    if (document.getElementById('lh-wrap')) return;
-
-    GM_addStyle(\`
-      #lh-wrap {
-        position: fixed !important;
-        bottom: 28px !important;
-        left: 50% !important;
-        transform: translateX(-50%) !important;
-        z-index: 2147483647 !important;
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        gap: 8px !important;
-        pointer-events: none !important;
-      }
-      #lh-wrap > * { pointer-events: auto !important; }
-
-      #lh-status-box {
-        background: rgba(8,8,16,0.96) !important;
-        color: #6b6b8a !important;
-        border: 1px solid #1e1e2e !important;
-        border-radius: 8px !important;
-        padding: 7px 18px !important;
-        font-family: 'Courier New', monospace !important;
-        font-size: 11px !important;
-        letter-spacing: 0.5px !important;
-        pointer-events: none !important;
-        opacity: 0 !important;
-        transition: opacity 0.3s !important;
-        white-space: nowrap !important;
-        text-align: center !important;
-        max-width: 500px !important;
-      }
-      #lh-status-box.lh-show { opacity: 1 !important; }
-      #lh-status-box.lh-ok   { color: #00ff88 !important; border-color: rgba(0,255,136,0.35) !important; }
-      #lh-status-box.lh-warn { color: #f0a500 !important; border-color: rgba(240,165,0,0.35) !important; }
-      #lh-status-box.lh-err  { color: #ff3b5c !important; border-color: rgba(255,59,92,0.35) !important; }
-
-      #lh-btn-row {
-        display: flex !important;
-        gap: 8px !important;
-        align-items: center !important;
-      }
-
-      #lh-scan-btn {
-        background: #0a0a0f !important;
-        color: #00ff88 !important;
-        border: 2px solid #00ff88 !important;
-        border-radius: 999px !important;
-        padding: 12px 30px !important;
-        font-family: 'Courier New', monospace !important;
-        font-size: 13px !important;
-        font-weight: 700 !important;
-        letter-spacing: 1px !important;
-        cursor: pointer !important;
-        box-shadow: 0 4px 24px rgba(0,255,136,0.3), 0 0 0 3px rgba(0,255,136,0.08) !important;
-        transition: all 0.2s !important;
-        user-select: none !important;
-        white-space: nowrap !important;
-        outline: none !important;
-      }
-      #lh-scan-btn:hover { background: #001f0f !important; box-shadow: 0 4px 32px rgba(0,255,136,0.5) !important; }
-      #lh-scan-btn:disabled { opacity: 0.45 !important; cursor: not-allowed !important; }
-      #lh-scan-btn.lh-no-url { color: #ff3b5c !important; border-color: #ff3b5c !important; box-shadow: 0 4px 24px rgba(255,59,92,0.2) !important; }
-
-      #lh-cfg-btn {
-        background: #0a0a0f !important;
-        color: #6b6b8a !important;
-        border: 1px solid #2a2a3f !important;
-        border-radius: 999px !important;
-        padding: 11px 15px !important;
-        font-size: 14px !important;
-        cursor: pointer !important;
-        transition: all 0.2s !important;
-        user-select: none !important;
-        outline: none !important;
-      }
-      #lh-cfg-btn:hover { color: #00ff88 !important; border-color: #00ff88 !important; }
-
-      #lh-config-panel {
-        background: #0e0e1a !important;
-        border: 1px solid #2a2a3f !important;
-        border-radius: 14px !important;
-        padding: 18px !important;
-        width: 400px !important;
-        display: none !important;
-        box-shadow: 0 8px 40px rgba(0,0,0,0.6) !important;
-      }
-      #lh-config-panel.lh-open { display: block !important; }
-
-      #lh-config-panel h3 {
-        color: #00ff88 !important;
-        font-family: 'Courier New', monospace !important;
-        font-size: 11px !important;
-        letter-spacing: 2px !important;
-        text-transform: uppercase !important;
-        margin: 0 0 10px 0 !important;
-      }
-      #lh-config-panel p {
-        color: #5a5a7a !important;
-        font-family: 'Courier New', monospace !important;
-        font-size: 10px !important;
-        line-height: 1.7 !important;
-        margin: 0 0 12px 0 !important;
-      }
-      #lh-sheets-input {
-        width: 100% !important;
-        background: #14142a !important;
-        border: 1px solid #2a2a3f !important;
-        color: #e8e8f5 !important;
-        border-radius: 6px !important;
-        padding: 10px 12px !important;
-        font-family: 'Courier New', monospace !important;
-        font-size: 11px !important;
-        outline: none !important;
-        margin-bottom: 10px !important;
-        display: block !important;
-      }
-      #lh-sheets-input:focus { border-color: #00ff88 !important; }
-      #lh-cfg-save {
-        width: 100% !important;
-        background: #00ff88 !important;
-        color: #060a06 !important;
-        border: none !important;
-        border-radius: 6px !important;
-        padding: 10px !important;
-        font-family: 'Courier New', monospace !important;
-        font-weight: 700 !important;
-        font-size: 12px !important;
-        cursor: pointer !important;
-        letter-spacing: 0.5px !important;
-      }
-      #lh-cfg-save:hover { background: #00e87a !important; }
-    \`);
-
-    // ── build elements directly (no innerHTML id lookups) ─────────
-    const wrap = document.createElement('div');
-    wrap.id = 'lh-wrap';
-
-    // Config panel
-    const cfgPanel = document.createElement('div');
-    cfgPanel.id = 'lh-config-panel';
-
-    const cfgTitle = document.createElement('h3');
-    cfgTitle.textContent = '⚙ LeadHunter — CRM Link';
-
-    const cfgDesc = document.createElement('p');
-    cfgDesc.innerHTML = 'Paste your LeadHunter link from the CRM (Make More Leads page).<br>Leads are saved directly to your pipeline on every scan.<br><br>URL format: <span style="color:#a78bfa">https://edgeform-crm-api.edgeformmedia.workers.dev/api/leadhunter/...</span>';
-
-    const urlInput = document.createElement('input');
-    urlInput.id = 'lh-sheets-input';
-    urlInput.type = 'text';
-    urlInput.placeholder = 'https://edgeform-crm-api.edgeformmedia.workers.dev/api/leadhunter/...';
-
-    const saveBtn = document.createElement('button');
-    saveBtn.id = 'lh-cfg-save';
-    saveBtn.textContent = '✓ Save URL & Close';
-
-    cfgPanel.appendChild(cfgTitle);
-    cfgPanel.appendChild(cfgDesc);
-    cfgPanel.appendChild(urlInput);
-    cfgPanel.appendChild(saveBtn);
-
-    // Status
-    const statusEl = document.createElement('div');
-    statusEl.id = 'lh-status-box';
-
-    // Button row
-    const btnRow = document.createElement('div');
-    btnRow.id = 'lh-btn-row';
-
-    const scanBtn = document.createElement('button');
-    scanBtn.id = 'lh-scan-btn';
-    scanBtn.textContent = '🎯 Scan → CRM';
-
-    const cfgBtn = document.createElement('button');
-    cfgBtn.id = 'lh-cfg-btn';
-    cfgBtn.title = 'Set CRM link';
-    cfgBtn.textContent = '⚙';
-
-    btnRow.appendChild(scanBtn);
-    btnRow.appendChild(cfgBtn);
-
-    wrap.appendChild(cfgPanel);
-    wrap.appendChild(statusEl);
-    wrap.appendChild(btnRow);
-
-    // ── status helper (defined before any calls to it) ────────────
-    let _st = null;
-    function setStatus(msg, cls, hideMs) {
-      statusEl.textContent = msg;
-      statusEl.className = 'lh-show ' + (cls || '');
-      clearTimeout(_st);
-      if (hideMs) _st = setTimeout(() => { statusEl.className = ''; }, hideMs);
-    }
-
-    // ── refreshUI ─────────────────────────────────────────────────
-    function refreshUI() {
-      const url = getSheetsUrl();
-      urlInput.value = url || '';
-      if (!url) {
-        scanBtn.classList.add('lh-no-url');
-        scanBtn.innerHTML = '🎯 Scan Leads &nbsp;<span style="font-size:9px;background:rgba(255,59,92,0.2);color:#ff3b5c;border:1px solid rgba(255,59,92,0.4);border-radius:3px;padding:2px 6px;letter-spacing:0.5px">NO SHEETS URL</span>';
-      } else {
-        scanBtn.classList.remove('lh-no-url');
-        scanBtn.textContent = '🎯 Scan → CRM';
-      }
-    }
-
-    // ── bind all events before appending to DOM ───────────────────
-    cfgBtn.addEventListener('click', () => cfgPanel.classList.toggle('lh-open'));
-
-    saveBtn.addEventListener('click', () => {
-      const val = urlInput.value.trim();
-      if (!val.includes('/api/leadhunter/')) {
-        setStatus('⚠ Must be your LeadHunter link from the CRM', 'lh-warn', 3500);
-        return;
-      }
-      setSheetsUrl(val);
-      cfgPanel.classList.remove('lh-open');
-      refreshUI();
-      setStatus('✅ CRM link saved — ready to scan!', 'lh-ok', 3000);
-    });
-
-    // ── append to DOM + re-inject guard ──────────────────────────
-    document.documentElement.appendChild(wrap);
-
-    const observer = new MutationObserver(() => {
-      if (!document.getElementById('lh-wrap')) {
-        document.documentElement.appendChild(wrap);
-      }
-    });
-    observer.observe(document.documentElement, { childList: true, subtree: false });
-
-    // ── init state ────────────────────────────────────────────────
-    refreshUI();
-    if (!getSheetsUrl()) {
-      cfgPanel.classList.add('lh-open');
-      setStatus('👆 Paste your CRM link to get started', 'lh-warn');
-    }
-
-    // ── auto-scroll the Maps sidebar to load all results ─────────
-    async function scrollToLoadAll() {
-      // Google Maps loads results lazily as you scroll the left sidebar
-      // We find the scrollable results panel and scroll it to the bottom
-      // repeatedly until no new results appear
-
-      const getPanels = () => [
-        document.querySelector('[role="feed"]'),
-        document.querySelector('.m6QErb[aria-label]'),
-        document.querySelector('.m6QErb.DxyBCb'),
-        document.querySelector('.m6QErb'),
-        document.querySelector('div[jsaction*="mouseover"] > div[tabindex]'),
-      ].filter(Boolean);
-
-      let panel = getPanels()[0];
-      if (!panel) {
-        // Try to find it by scrollable container heuristic
-        const divs = document.querySelectorAll('div');
-        for (const d of divs) {
-          if (d.scrollHeight > d.clientHeight + 100 && d.clientHeight > 300 && d.clientHeight < 900) {
-            panel = d;
-            break;
-          }
-        }
-      }
-      if (!panel) return 0; // can't find panel, just scrape what's visible
-
-      let lastCount = 0;
-      let stableRounds = 0;
-      let totalScrolls = 0;
-      const MAX_SCROLLS = 40; // ~120 results max before Maps stops loading
-
-      while (totalScrolls < MAX_SCROLLS) {
-        panel.scrollTop = panel.scrollHeight;
-        await new Promise(r => setTimeout(r, 800)); // wait for Maps to load next batch
-
-        const current = document.querySelectorAll('[role="article"], .Nv2PK, .lI9IFe, .THOPZb').length;
-        const pct = Math.min(100, Math.round((totalScrolls / MAX_SCROLLS) * 100));
-        setStatus(\`⏳ Loading results... \${current} found · \${pct}% scrolled\`, 'lh-ok');
-
-        if (current === lastCount) {
-          stableRounds++;
-          if (stableRounds >= 3) break; // no new results after 3 scroll attempts = done
-        } else {
-          stableRounds = 0;
-        }
-
-        lastCount = current;
-        totalScrolls++;
-
-        // Check if we hit the end-of-results marker
-        const endMarker = document.querySelector('.HlvSq, [class*="noMore"], .PbZDve');
-        if (endMarker) break;
-      }
-
-      return lastCount;
-    }
-
-    // ── verify businesses have no website via Google search ───────
-    // Fetches Google search results for each no-website lead and checks
-    // if a real business website appears in the top results.
-    // Throttled to 1 request/sec to avoid captcha.
-
-    // Domains that are NOT real business websites
-    const DIRECTORY_DOMAINS = [
-      'yelp.com','facebook.com','instagram.com','tripadvisor.com',
-      'yellowpages.com','whitepages.com','bbb.org','angi.com','angieslist.com',
-      'homeadvisor.com','houzz.com','thumbtack.com','bark.com',
-      'manta.com','mapquest.com','foursquare.com','google.com','maps.google.com',
-      'nextdoor.com','alignable.com','bizapedia.com','chamberofcommerce.com',
-      'merchantcircle.com','superpages.com','dexknows.com','411.com',
-      'linkedin.com','twitter.com','tiktok.com','youtube.com','pinterest.com',
-      'zomato.com','doordash.com','ubereats.com','grubhub.com','opentable.com',
-    ];
-
-    function looksLikeBusinessSite(url, businessName) {
-      try {
-        const hostname = new URL(url).hostname.replace('www.','');
-        // If it's a known directory — not a business site
-        if (DIRECTORY_DOMAINS.some(d => hostname.includes(d))) return false;
-        // If hostname contains part of business name — likely their own site
-        const namePart = businessName.toLowerCase()
-          .replace(/[^a-z0-9]/g,'')
-          .slice(0, 8);
-        if (namePart.length > 3 && hostname.replace(/[^a-z0-9]/g,'').includes(namePart)) return true;
-        // Any non-directory .com/.net/.org/.biz is probably a real site
-        if (/\\.(com|net|org|biz|co|io|us)$/.test(hostname)) return true;
-        return false;
-      } catch { return false; }
-    }
-
-    function verifyOnGoogle(business) {
-      return new Promise((resolve) => {
-        const q = encodeURIComponent(\`"\${business.name}" \${business.city || business.address}\`);
-        const url = \`https://www.google.com/search?q=\${q}&num=5\`;
-
-        GM_xmlhttpRequest({
-          method: 'GET',
-          url,
-          headers: {
-            'User-Agent': navigator.userAgent,
-            'Accept': 'text/html',
-          },
-          onload: (res) => {
-            try {
-              // Parse result links from the HTML
-              const parser = new DOMParser();
-              const doc = parser.parseFromString(res.responseText, 'text/html');
-
-              // Google result links are in <a> tags inside result divs
-              const links = [...doc.querySelectorAll('a[href]')]
-                .map(a => a.href)
-                .filter(h => h.startsWith('http') && !h.includes('google.com'));
-
-              const realSite = links.find(h => looksLikeBusinessSite(h, business.name));
-              resolve({ hasRealWebsite: !!realSite, websiteFound: realSite || null });
-            } catch(e) {
-              resolve({ hasRealWebsite: false, websiteFound: null });
-            }
-          },
-          onerror: () => resolve({ hasRealWebsite: false, websiteFound: null }),
-        });
-      });
-    }
-
-    async function verifyAllNoWebsite(candidates) {
-      const verified = [];
-      let checked = 0;
-
-      for (const biz of candidates) {
-        checked++;
-        setStatus(
-          \`🔍 Verifying \${checked}/\${candidates.length}: \${biz.name.slice(0,28)}...\`,
-          'lh-ok'
-        );
-
-        const { hasRealWebsite, websiteFound } = await verifyOnGoogle(biz);
-
-        if (!hasRealWebsite) {
-          verified.push(biz); // confirmed no website — keep it
-        } else {
-          // They have a website, update the record and still save it
-          // but mark hasWebsite = true so dashboard filters correctly
-          verified.push({ ...biz, hasWebsite: true, website: websiteFound });
-        }
-
-        // Throttle: wait 1.2s between requests to avoid captcha
-        if (checked < candidates.length) {
-          await new Promise(r => setTimeout(r, 1200));
-        }
-      }
-
-      return verified;
-    }
-
-    // ── scan ──────────────────────────────────────────────────────
-    scanBtn.addEventListener('click', async () => {
-      const sheetsUrl = getSheetsUrl();
-      if (!sheetsUrl) {
-        cfgPanel.classList.add('lh-open');
-        setStatus('⚠ Set your CRM link first', 'lh-warn');
-        return;
-      }
-
-      scanBtn.disabled = true;
-      scanBtn.textContent = '⏳ Loading all results...';
-      setStatus('Scrolling Maps to load all businesses...', 'lh-ok');
-
-      // Step 1: scroll Maps to load everything
-      const totalLoaded = await scrollToLoadAll();
-
-      setStatus(\`Scraping \${totalLoaded || 'all'} results...\`, 'lh-ok');
-      await new Promise(r => setTimeout(r, 400));
-
-      // Step 2: scrape + chain filter
-      const allResults = scrape();
-
-      if (!allResults.length) {
-        setStatus('⚠ No businesses found — search for something on Maps first', 'lh-warn', 5000);
-        scanBtn.disabled = false;
-        refreshUI();
-        return;
-      }
-
-      // Step 3: Google-verify every Maps "no website" lead
-      const noWebsiteCandidates = allResults.filter(r => !r.hasWebsite);
-      const alreadyHasSite      = allResults.filter(r => r.hasWebsite);
-
-      let verifiedLeads = noWebsiteCandidates;
-
-      if (noWebsiteCandidates.length > 0) {
-        setStatus(\`🔍 Google-verifying \${noWebsiteCandidates.length} no-website leads... (takes ~\${noWebsiteCandidates.length * 1.2 | 0}s)\`, 'lh-ok');
-        scanBtn.textContent = \`🔍 Verifying...\`;
-        verifiedLeads = await verifyAllNoWebsite(noWebsiteCandidates);
-      }
-
-      // Combine: verified leads + businesses that already had websites on Maps
-      const results = [...verifiedLeads, ...alreadyHasSite];
-      const confirmedNoWeb = verifiedLeads.filter(r => !r.hasWebsite).length;
-      const falsePositives = noWebsiteCandidates.length - confirmedNoWeb;
-
-      setStatus(
-        \`✅ \${confirmedNoWeb} confirmed no-website · \${falsePositives} had hidden sites · saving to CRM...\`,
-        'lh-ok'
-      );
-      scanBtn.textContent = \`☁ Saving...\`;
-
-      // Step 4: push to CRM
-      pushToSheets(results, sheetsUrl, (ok, added, updated) => {
-        if (ok) {
-          setStatus(
-            \`☁ Done! \${confirmedNoWeb} confirmed no-website · \${falsePositives} filtered out · \${added} new rows\`,
-            'lh-ok', 10000
-          );
-          scanBtn.textContent = \`✅ \${confirmedNoWeb} clean leads saved\`;
-        } else {
-          cacheLocally(results);
-          setStatus('⚠ CRM unreachable — saved locally. Check ⚙ link.', 'lh-warn', 7000);
-          scanBtn.textContent = '⚠ Check ⚙ URL';
-        }
-        setTimeout(() => { scanBtn.disabled = false; refreshUI(); }, 5000);
-      });
-    });
-
-    // ── push to CRM ────────────────────────────────────────────────
-    function pushToSheets(results, url, cb) {
-      const scanQuery = document.title.replace(' - Google Maps','').trim();
-      const leads = results.map(b => ({
-        name: b.name, category: b.category, address: b.address,
-        city: b.city, state: b.state, phone: b.phone,
-        rating: b.rating, reviewCount: b.reviewCount,
-        hasWebsite: b.hasWebsite, website: b.website || '',
-        mapsUrl: b.mapsUrl,
-        googleSearchUrl: b.googleSearchUrl || \`https://www.google.com/search?q=\${encodeURIComponent(b.name+' '+(b.city||b.address))}\`,
-        stage: 'New Lead', notes: '',
-        scannedAt: b.scannedAt, savedAt: b.scannedAt, scanQuery,
-      }));
-
-      GM_xmlhttpRequest({
-        method:  'POST',
-        url:     url,
-        headers: { 'Content-Type': 'application/json' },
-        data:    JSON.stringify({ action: 'syncLeads', leads }),
-        onload: (res) => {
-          try {
-            const r = JSON.parse(res.responseText);
-            if (r.success) { cacheLocally(results); cb(true, r.added||0, r.updated||0); }
-            else { console.error('[LeadHunter]', r.error); cb(false); }
-          } catch(e) {
-            console.error('[LeadHunter] parse error', e.message, res.responseText?.slice(0,300));
-            cb(false);
-          }
-        },
-        onerror: (e) => { console.error('[LeadHunter] network', e); cb(false); },
-      });
-    }
-
-    // ── local cache fallback ───────────────────────────────────────
-    function cacheLocally(results) {
-      try {
-        const KEY = 'leadhunter_leads';
-        const existing = JSON.parse(localStorage.getItem(KEY)||'[]');
-        const map = {};
-        existing.forEach(l => { map[lkey(l)] = l; });
-        results.forEach(r => { if (!map[lkey(r)]) map[lkey(r)] = r; });
-        localStorage.setItem(KEY, JSON.stringify(Object.values(map)));
-      } catch(e) {}
-    }
-
-    // ── known chains / franchises to filter out ────────────────────
-    const CHAIN_LIST = new Set([
-      'trugreen','mcdonalds','mcdonald\\'s','burger king','wendy\\'s','wendys',
-      'subway','taco bell','chick-fil-a','chick fil a','chickfila','dominos',
-      'domino\\'s','pizza hut','kfc','popeyes','sonic','arby\\'s','arbys',
-      'panda express','chipotle','five guys','shake shack','whataburger',
-      'starbucks','dunkin','dunkin donuts','tim hortons','panera','panera bread',
-      'jersey mike\\'s','jersey mikes','firehouse subs','jimmy john\\'s','jimmy johns',
-      'moe\\'s','moes','qdoba','wingstop','raising cane\\'s','raising canes',
-      'culver\\'s','culvers','cook out','cookout','hardee\\'s','hardees',
-      'jack in the box','carl\\'s jr','carls jr','del taco','in-n-out','in n out',
-      'waffle house','ihop','denny\\'s','dennys','cracker barrel','olive garden',
-      'red lobster','applebee\\'s','applebees','chili\\'s','chilis','outback',
-      'texas roadhouse','longhorn','buffalo wild wings','bdubs','hooters',
-      'cheesecake factory','red robin','bob evans','golden corral','sizzler',
-      'walmart','target','costco','sam\\'s club','bj\\'s wholesale','home depot',
-      'lowe\\'s','lowes','menards','ace hardware','true value',
-      'walgreens','cvs','rite aid','kroger','publix','safeway','albertsons',
-      'whole foods','trader joe\\'s','trader joes','aldi','lidl','winn-dixie',
-      'food lion','giant','stop & shop','h-e-b','heb','meijer','sprouts',
-      'dollar tree','dollar general','family dollar','five below','ross',
-      'tj maxx','marshalls','burlington','kohls','jcpenney','nordstrom rack',
-      'old navy','gap','banana republic','h&m','zara','forever 21','uniqlo',
-      'best buy','staples','office depot','officemax','michaels','hobby lobby',
-      'petco','petsmart','autozone','advance auto','o\\'reilly auto','oreilly',
-      'napa auto','jiffy lube','firestone','midas','meineke','pep boys',
-      'mavis','discount tire','belle tire','les schwab','ntb',
-      'anytime fitness','planet fitness','la fitness','lifetime fitness',
-      '24 hour fitness','gold\\'s gym','golds gym','orangetheory','equinox',
-      'snap fitness','crunch fitness','ymca','planet fitness',
-      'great clips','sport clips','fantastic sams','supercuts','cost cutters',
-      'holiday inn','marriott','hilton','hyatt','sheraton','westin','courtyard',
-      'hampton inn','comfort inn','best western','days inn','motel 6','super 8',
-      'extended stay','la quinta','doubletree','fairfield inn','residence inn',
-      'uhaul','u-haul','budget truck','penske','ryder',
-      'ups store','fedex','usps','mail boxes etc',
-      'h&r block','jackson hewitt','liberty tax',
-      'allstate','state farm','geico','progressive','farmers','nationwide',
-      'edward jones','ameriprise','raymond james',
-      'subway','7-eleven','circle k','speedway','wawa','sheetz',
-      'enterprise','hertz','avis','budget','national car','alamo',
-      'ashley furniture','rooms to go','bob\\'s furniture','bob\\'s discount',
-      'mattress firm','sleep number','purple mattress',
-      'verizon','at&t','t-mobile','sprint','cricket wireless','metro pcs',
-      'apple store','microsoft store','samsung',
-      'urgent care','concentra','medexpress','nextcare','ama','ameritas',
-    ]);
-
-    function isChain(name) {
-      const n = name.toLowerCase()
-        .replace(/[''\`]/g, "'")
-        .replace(/[^a-z0-9\\s'&-]/g, '')
-        .trim();
-      // Exact match
-      if (CHAIN_LIST.has(n)) return true;
-      // Partial match for names like "McDonald's - Fort Lauderdale"
-      for (const chain of CHAIN_LIST) {
-        if (n.startsWith(chain) || n.includes(' ' + chain) || n.includes(chain + ' ')) return true;
-      }
-      // High review count heuristic — real small businesses rarely have 500+ reviews
-      return false;
-    }
-
-    // ── scraper ───────────────────────────────────────────────────
-    function scrape() {
-      const found = [], seen = new Set();
-      const selectors = '[role="article"], .Nv2PK, .lI9IFe, .THOPZb, [jsaction*="placeCard"]';
-      document.querySelectorAll(selectors).forEach(item => {
-        try {
-          const b = extractBusiness(item);
-          if (!b) return;
-          if (isChain(b.name)) return; // skip known chains
-          const k = lkey(b);
-          if (seen.has(k)) return;
-          seen.add(k); found.push(b);
-        } catch(e) {}
-      });
-      return found;
-    }
-
-    function extractBusiness(item) {
-      const nameEl =
-        item.querySelector('.qBF1Pd') ||
-        item.querySelector('.fontHeadlineSmall') ||
-        item.querySelector('[class*="fontHeadline"]') ||
-        item.querySelector('h3');
-      const name = nameEl?.textContent?.trim();
-      if (!name || name.length < 2) return null;
-
-      let category='', address='', phone='';
-      item.querySelectorAll('.W4Efsd span,.UsdlK span,.Io6YTe').forEach(s => {
-        const t = s.textContent.trim();
-        if (!t || '·•'.includes(t) || t.length < 2) return;
-        if (/^\\(?\\d{3}\\)?[\\s.\\-]\\d{3}[\\s.\\-]\\d{4}$/.test(t)) phone = t;
-        else if (/\\d/.test(t) && t.length > 6 && !address) address = t;
-        else if (t.length < 40 && !category) category = t;
-      });
-
-      let rating=null, reviewCount=0;
-      const rEl = item.querySelector('.MW4etd');
-      if (rEl) rating = parseFloat(rEl.textContent)||null;
-      const rvEl = item.querySelector('.UY7F9');
-      if (rvEl) { const m = rvEl.textContent.replace(/[(),\\s]/g,'').match(/\\d+/); if (m) reviewCount=parseInt(m[0]); }
-
-      let hasWebsite=false, websiteUrl=null;
-      item.querySelectorAll('a[href]').forEach(a => {
-        const h = a.href||'';
-        if (h.includes('/url?') || (h.startsWith('http') && !h.includes('google.com') && !h.includes('goo.gl'))) {
-          hasWebsite=true; websiteUrl=h;
-        }
-      });
-      if (!hasWebsite && item.textContent.includes('Visit website')) hasWebsite=true;
-
-      const mapA = item.querySelector('a[href*="/maps/place"]') || item.querySelector('a[data-value]');
-      const mapsUrl = mapA?.href || \`https://www.google.com/maps/search/?api=1&query=\${encodeURIComponent(name)}\`;
-
-      let city='', state='';
-      const csm = address.match(/,\\s*([^,]+),?\\s*([A-Z]{2})\\b/);
-      if (csm) { city=csm[1].trim(); state=csm[2]; }
-
-      return {
-        id: uid(), name, category, address, city, state, phone,
-        rating, reviewCount, hasWebsite, website: websiteUrl, mapsUrl,
-        googleSearchUrl: \`https://www.google.com/search?q=\${encodeURIComponent(name + ' ' + (city||address))}\`,
-        stage:'New Lead', notes:'',
-        scannedAt: new Date().toISOString(), savedAt: null,
-      };
-    }
-
-    function lkey(l) { return ((l.name||'')+(l.address||'')).toLowerCase().replace(/\\s/g,''); }
-    function uid()   { return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
-  }
-
-})();`;
-
-function getPersonalizedScript(gasUrl) {
-  // Inject the user's LeadHunter link so the script works immediately on install
-  // Replace the default empty getSheetsUrl with one that returns their URL
-  return LEAD_SCRIPT_TEMPLATE
-    .replace(
-      "function getSheetsUrl() { return GM_getValue(SHEETS_URL_KEY, ''); }",
-      "function getSheetsUrl() { return GM_getValue(SHEETS_URL_KEY, '" + gasUrl + "'); }"
-    )
-    .replace(
-      "const SHEETS_URL_KEY = 'lh_crm_url';",
-      "const SHEETS_URL_KEY = 'lh_crm_url'; // Pre-configured for your account"
-    );
+// ─── Users (admins) ───────────────────────────────────────────
+function escHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function copyLeadScript() {
-  const gasUrl = window._userGasUrl || '';
-  const script = getPersonalizedScript(gasUrl);
-  navigator.clipboard.writeText(script).then(() => {
-    const btn = document.getElementById('copy-script-btn');
-    if (btn) {
-      const orig = btn.innerHTML;
-      btn.innerHTML = '✅ Copied!';
-      btn.style.background = 'rgba(61,255,160,0.15)';
-      btn.style.color = 'var(--green)';
-      btn.style.borderColor = 'rgba(61,255,160,0.3)';
-      setTimeout(() => { btn.innerHTML = orig; btn.style.background = 'var(--surface2)'; btn.style.color = 'var(--accent-bright)'; btn.style.borderColor = 'rgba(123,108,255,0.3)'; }, 2000);
-    }
-  }).catch(() => {
-    // Fallback: select the text
-    const pre = document.getElementById('script-preview');
-    if (pre) {
-      const range = document.createRange();
-      range.selectNodeContents(pre);
-      window.getSelection().removeAllRanges();
-      window.getSelection().addRange(range);
-      document.execCommand('copy');
-      alert('Script copied! Paste into Tampermonkey.');
-    }
-  });
+const ROLE_RANK = { member: 1, admin: 2, owner: 3 };
+const ROLE_CHIP = { owner: 'chip-purple', admin: 'chip-blue', member: 'chip-muted' };
+
+async function loadUsers() {
+  try {
+    const r = await api('/api/users');
+    if (!r.ok) throw new Error(r.error);
+    document.getElementById('user-list').innerHTML = r.users.map(u => {
+      const canRemove = u.email !== currentUser.email && ROLE_RANK[currentUser.role] > ROLE_RANK[u.role];
+      return `<div class="feed-item">
+        <div class="feed-body">
+          <div class="feed-text"><strong>${escHtml(u.name)}</strong> <span class="chip ${ROLE_CHIP[u.role] || 'chip-muted'}">${escHtml(u.role)}</span></div>
+          <div class="feed-time">${escHtml(u.email)}</div>
+        </div>
+        ${canRemove ? `<button class="action-btn" data-id="${escHtml(u.id)}" data-name="${escHtml(u.name)}" onclick="removeUser(this.dataset.id, this.dataset.name)">Remove</button>` : ''}
+      </div>`;
+    }).join('') || '<div class="state-box">No users yet.</div>';
+    document.getElementById('invite-list').innerHTML = r.invites.map(i => `<div class="feed-item">
+        <div class="feed-body">
+          <div class="feed-text"><strong>${escHtml(i.first_name)} ${escHtml(i.last_name)}</strong> <span class="chip chip-orange">${escHtml(i.role)}</span></div>
+          <div class="feed-time">${escHtml(i.email)} · expires ${fmtDate(i.expires_at)}</div>
+        </div>
+        <button class="action-btn" data-id="${escHtml(i.id)}" onclick="revokeInvite(this.dataset.id)">Revoke</button>
+      </div>`).join('') || '<div class="state-box">No pending invites.</div>';
+  } catch (err) {
+    document.getElementById('user-list').innerHTML = `<div class="state-box">Failed to load users: ${escHtml(err.message)}</div>`;
+  }
 }
 
-function initLeadsPage(gasUrl) {
-  window._userGasUrl = gasUrl;
-  if (!gasUrl) {
-    document.getElementById('leads-no-gas').style.display = 'block';
-    document.getElementById('leads-has-gas').style.display = 'none';
+async function sendInvite() {
+  const msgEl = document.getElementById('invite-msg');
+  const firstName = document.getElementById('invite-first').value.trim();
+  const lastName = document.getElementById('invite-last').value.trim();
+  const email = document.getElementById('invite-email').value.trim();
+  const role = currentUser.role === 'owner' ? document.getElementById('invite-role').value : 'member';
+  msgEl.className = 'email-msg';
+  if (!firstName || !lastName || !email) {
+    msgEl.className = 'email-msg error show';
+    msgEl.textContent = 'Fill in first name, last name, and email.';
     return;
   }
-  document.getElementById('leads-no-gas').style.display = 'none';
-  document.getElementById('leads-has-gas').style.display = 'block';
-  // Show script preview with URL injected
-  const preview = document.getElementById('script-preview');
-  if (preview) {
-    const personalized = getPersonalizedScript(gasUrl);
-    preview.textContent = personalized.slice(0, 2000) + '\n\n... (full script — click Copy to get all ' + personalized.length + ' characters)';
+  const btn = document.getElementById('invite-btn');
+  btn.classList.add('loading'); btn.disabled = true;
+  try {
+    const r = await api('/api/users/invites', { method: 'POST', body: JSON.stringify({ firstName, lastName, email, role }) });
+    if (!r.ok) throw new Error(r.error);
+    msgEl.className = 'email-msg success show';
+    msgEl.textContent = `✓ Invite sent to ${email}`;
+    ['invite-first', 'invite-last', 'invite-email'].forEach(id => document.getElementById(id).value = '');
+    loadUsers();
+  } catch (err) {
+    msgEl.className = 'email-msg error show';
+    msgEl.textContent = 'Invite failed: ' + err.message;
   }
+  btn.classList.remove('loading'); btn.disabled = false;
+}
+
+async function revokeInvite(id) {
+  if (!confirm('Revoke this invite? The link will stop working.')) return;
+  const r = await api('/api/users/invites/' + encodeURIComponent(id), { method: 'DELETE' });
+  if (!r.ok) alert(r.error);
+  loadUsers();
+}
+
+async function removeUser(id, name) {
+  if (!confirm(`Remove ${name}? They will be signed out and lose access immediately.`)) return;
+  const r = await api('/api/users/' + encodeURIComponent(id), { method: 'DELETE' });
+  if (!r.ok) alert(r.error);
+  loadUsers();
 }
 
 async function signOut() {

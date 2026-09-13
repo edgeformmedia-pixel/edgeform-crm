@@ -208,21 +208,6 @@
 
   input::placeholder { color: var(--text-muted); }
 
-  /* ── OTP ── */
-  .otp-wrap {
-    display: flex;
-    gap: 7px;
-  }
-
-  .otp-wrap input {
-    flex: 1;
-    text-align: center;
-    font-size: 22px;
-    font-weight: 500;
-    padding: 13px 0;
-    border-radius: 8px;
-  }
-
   /* ── Buttons ── */
   .btn {
     width: 100%;
@@ -311,34 +296,6 @@
 
   .card-foot a:hover, .link-btn:hover { text-decoration: underline; }
 
-  /* ── Resend ── */
-  .resend-row {
-    margin-top: 14px;
-    text-align: center;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-  }
-
-  .resend-row span {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  .resend-row button {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--accent-bright);
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-  }
-
-  .resend-row button:disabled { color: var(--text-muted); cursor: not-allowed; }
-  .resend-row button:not(:disabled):hover { text-decoration: underline; }
 
   /* ── Footer watermark ── */
   .foot-mark {
@@ -389,9 +346,8 @@
     <!-- STEP: Email -->
     <div class="step active" id="step-email">
       <div class="step-pills">
-        <div class="pill active" id="p1"></div>
-        <div class="pill" id="p2"></div>
-        <div class="pill" id="p3"></div>
+        <div class="pill active"></div>
+        <div class="pill"></div>
       </div>
       <div class="card-title">Sign in</div>
       <div class="card-sub">Enter your email to continue.</div>
@@ -404,8 +360,7 @@
         <span class="btn-text">Continue →</span>
       </button>
       <div class="card-foot">
-        <span>No account?</span>
-        <button class="link-btn" onclick="goStep('step-register')">Create one</button>
+        <span>Accounts are invite-only. Ask your admin for access.</span>
       </div>
     </div>
 
@@ -414,7 +369,6 @@
       <div class="step-pills">
         <div class="pill done"></div>
         <div class="pill active"></div>
-        <div class="pill"></div>
       </div>
       <div class="card-title">Welcome back</div>
       <div class="card-sub" id="pw-sub">Signing in as —</div>
@@ -429,63 +383,29 @@
       <button class="btn ghost" onclick="goStep('step-email')">← Back</button>
     </div>
 
-    <!-- STEP: OTP Verify -->
-    <div class="step" id="step-verify">
-      <div class="step-pills">
-        <div class="pill done"></div>
-        <div class="pill done"></div>
-        <div class="pill active"></div>
-      </div>
-      <div class="card-title">Check your inbox</div>
-      <div class="card-sub" id="otp-sub">A 6-digit code was sent to —</div>
-      <div id="msg-otp" class="msg"></div>
-      <div class="field">
-        <label>Verification Code</label>
-        <div class="otp-wrap" id="otp-wrap">
-          <input type="text" maxlength="1" class="otp-cell" inputmode="numeric">
-          <input type="text" maxlength="1" class="otp-cell" inputmode="numeric">
-          <input type="text" maxlength="1" class="otp-cell" inputmode="numeric">
-          <input type="text" maxlength="1" class="otp-cell" inputmode="numeric">
-          <input type="text" maxlength="1" class="otp-cell" inputmode="numeric">
-          <input type="text" maxlength="1" class="otp-cell" inputmode="numeric">
+    <!-- STEP: Accept invite -->
+    <div class="step" id="step-invite">
+      <div class="card-title">Create your account</div>
+      <div class="card-sub" id="invite-sub">Checking your invite…</div>
+      <div id="msg-invite" class="msg"></div>
+      <div id="invite-form" hidden>
+        <div class="field">
+          <label>Email address</label>
+          <input type="email" id="invite-email" readonly autocomplete="username">
         </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="invite-pw" placeholder="Min. 8 characters" autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label>Confirm password</label>
+          <input type="password" id="invite-pw2" placeholder="Type it again" autocomplete="new-password">
+        </div>
+        <button class="btn" id="btn-invite" onclick="doAcceptInvite()">
+          <span class="btn-text">Create Account →</span>
+        </button>
       </div>
-      <button class="btn" id="btn-otp" onclick="doVerify()">
-        <span class="btn-text">Verify →</span>
-      </button>
-      <div class="resend-row">
-        <span>Didn't get it?</span>
-        <button id="resend-btn" disabled onclick="doResend()">Resend</button>
-        <span id="resend-timer"></span>
-      </div>
-    </div>
-
-    <!-- STEP: Register -->
-    <div class="step" id="step-register">
-      <div class="step-pills">
-        <div class="pill active"></div>
-        <div class="pill"></div>
-        <div class="pill"></div>
-      </div>
-      <div class="card-title">Create account</div>
-      <div class="card-sub">Set up your Edgeform CRM access.</div>
-      <div id="msg-reg" class="msg"></div>
-      <div class="field">
-        <label>Full Name</label>
-        <input type="text" id="reg-name" placeholder="Jane Smith" autocomplete="name">
-      </div>
-      <div class="field">
-        <label>Email address</label>
-        <input type="email" id="reg-email" placeholder="you@company.com" autocomplete="email">
-      </div>
-      <div class="field">
-        <label>Password</label>
-        <input type="password" id="reg-pw" placeholder="Min. 8 characters" autocomplete="new-password">
-      </div>
-      <button class="btn" id="btn-reg" onclick="doRegister()">
-        <span class="btn-text">Create Account →</span>
-      </button>
-      <button class="btn ghost" onclick="goStep('step-email')">← Back to Sign In</button>
+      <button class="btn ghost" onclick="leaveInvite()">← Back to Sign In</button>
     </div>
 
   </div>
@@ -501,16 +421,7 @@ const HOME_URL    = '/home/index.html';
 
 // ─── State ────────────────────────────────────────────────────
 let currentEmail = '';
-let resendInterval = null;
-
-// ─── Redirect if already have a valid session ─────────────────
-(async () => {
-  const token = getToken();
-  if (token) {
-    const ok = await verifySession(token);
-    if (ok) window.location.href = HOME_URL;
-  }
-})();
+const inviteToken = new URLSearchParams(location.search).get('invite');
 
 // ─── Session helpers ──────────────────────────────────────────
 function getToken() {
@@ -528,9 +439,9 @@ async function verifySession(token) {
   } catch { return false; }
 }
 
-// ─── Auth API helper ──────────────────────────────────────────
-async function auth(path, payload) {
-  const r = await fetch(CRM_API + '/api/auth/' + path, {
+// ─── API helper ───────────────────────────────────────────────
+async function post(path, payload) {
+  const r = await fetch(CRM_API + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -551,8 +462,7 @@ function msg(id, type, text) {
 }
 
 function clearMsg(id) {
-  const el = document.getElementById(id);
-  el.className = 'msg';
+  document.getElementById(id).className = 'msg';
 }
 
 function setLoading(id, on) {
@@ -561,39 +471,17 @@ function setLoading(id, on) {
   b.disabled = on;
 }
 
-// ─── OTP widget ───────────────────────────────────────────────
-const otpCells = () => [...document.querySelectorAll('.otp-cell')];
-
-function otpValue() { return otpCells().map(i => i.value).join(''); }
-
-function clearOTP() {
-  otpCells().forEach(i => i.value = '');
-  otpCells()[0]?.focus();
-}
-
-document.querySelectorAll('.otp-cell').forEach((inp, i, all) => {
-  inp.addEventListener('input', e => {
-    const v = e.target.value.replace(/\D/g, '');
-    e.target.value = v;
-    if (v && i < all.length - 1) all[i + 1].focus();
-    if (otpValue().length === 6) doVerify();
-  });
-  inp.addEventListener('keydown', e => {
-    if (e.key === 'Backspace' && !inp.value && i > 0) all[i - 1].focus();
-  });
-  inp.addEventListener('paste', e => {
-    e.preventDefault();
-    const p = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 6);
-    [...p].forEach((c, j) => { if (all[j]) all[j].value = c; });
-    if (all[Math.min(p.length, 5)]) all[Math.min(p.length, 5)].focus();
-    if (p.length === 6) doVerify();
-  });
-});
-
 // ─── Enter keys ───────────────────────────────────────────────
 document.getElementById('inp-email').addEventListener('keydown', e => { if (e.key === 'Enter') doEmail(); });
 document.getElementById('inp-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-document.getElementById('reg-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
+document.getElementById('invite-pw2').addEventListener('keydown', e => { if (e.key === 'Enter') doAcceptInvite(); });
+
+// ─── Boot ─────────────────────────────────────────────────────
+(async () => {
+  if (inviteToken) { openInvite(); return; }
+  const token = getToken();
+  if (token && await verifySession(token)) window.location.href = HOME_URL;
+})();
 
 // ─── STEP 1: Email ────────────────────────────────────────────
 async function doEmail() {
@@ -607,16 +495,16 @@ async function doEmail() {
   setLoading('btn-email', true);
 
   try {
-    const r = await auth('check-email', { email });
+    const r = await post('/api/auth/check-email', { email });
     if (!r.ok) throw new Error(r.error);
     if (r.exists) {
-      // Known user → password
-      document.getElementById('pw-sub').innerHTML = `Signing in as <strong>${email}</strong>`;
+      const sub = document.getElementById('pw-sub');
+      sub.textContent = 'Signing in as ';
+      sub.appendChild(document.createElement('strong')).textContent = email;
       goStep('step-password');
+      document.getElementById('inp-pw').focus();
     } else {
-      // Unknown → register
-      document.getElementById('reg-email').value = email;
-      goStep('step-register');
+      msg('msg-email', 'error', 'No account for this email. Accounts are invite-only — ask your admin to send you an invite.');
     }
   } catch {
     msg('msg-email', 'error', 'Could not reach auth service. Try again.');
@@ -634,12 +522,10 @@ async function doLogin() {
   setLoading('btn-pw', true);
 
   try {
-    const r = await auth('login', { email: currentEmail, password: pw });
+    const r = await post('/api/auth/login', { email: currentEmail, password: pw });
     if (r.ok) {
       saveSession({ token: r.token, email: r.email || currentEmail, name: r.name });
       window.location.href = HOME_URL;
-    } else if (r.needsVerification) {
-      showOTPStep(currentEmail);
     } else {
       msg('msg-pw', 'error', r.error || 'Incorrect password.');
     }
@@ -650,105 +536,44 @@ async function doLogin() {
   setLoading('btn-pw', false);
 }
 
-// ─── Register ─────────────────────────────────────────────────
-async function doRegister() {
-  const name  = document.getElementById('reg-name').value.trim();
-  const email = document.getElementById('reg-email').value.trim();
-  const pw    = document.getElementById('reg-pw').value;
-  clearMsg('msg-reg');
-
-  if (!name) { msg('msg-reg', 'error', 'Enter your full name.'); return; }
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg('msg-reg', 'error', 'Enter a valid email.'); return; }
-  if (pw.length < 8) { msg('msg-reg', 'error', 'Password must be at least 8 characters.'); return; }
-
-  currentEmail = email;
-  setLoading('btn-reg', true);
-
+// ─── Invite link ──────────────────────────────────────────────
+async function openInvite() {
+  goStep('step-invite');
   try {
-    // The API creates the account and emails the code — the code never reaches the browser
-    const r = await auth('signup', { name, email, password: pw });
-    if (!r.ok) {
-      msg('msg-reg', 'error', r.error || 'Signup failed.');
-      setLoading('btn-reg', false);
-      return;
-    }
-    showOTPStep(email);
-
+    const r = await fetch(CRM_API + '/api/invites/' + encodeURIComponent(inviteToken)).then(res => res.json());
+    if (!r.ok) throw new Error(r.error || 'This invite link is not valid.');
+    document.getElementById('invite-sub').textContent = `Welcome, ${r.firstName}. Choose a password to finish setting up your access.`;
+    document.getElementById('invite-email').value = r.email;
+    document.getElementById('invite-form').hidden = false;
+    document.getElementById('invite-pw').focus();
   } catch (err) {
-    msg('msg-reg', 'error', 'Error: ' + err.message);
+    document.getElementById('invite-sub').textContent = '';
+    msg('msg-invite', 'error', err.message === 'Failed to fetch' ? 'Could not reach auth service. Try again.' : err.message);
   }
-
-  setLoading('btn-reg', false);
 }
 
-// ─── Show OTP step ────────────────────────────────────────────
-function showOTPStep(email) {
-  document.getElementById('otp-sub').innerHTML = `Code sent to <strong>${email}</strong>`;
-  clearOTP();
-  goStep('step-verify');
-  startResendTimer();
-}
+async function doAcceptInvite() {
+  const pw = document.getElementById('invite-pw').value;
+  const pw2 = document.getElementById('invite-pw2').value;
+  clearMsg('msg-invite');
+  if (pw.length < 8) { msg('msg-invite', 'error', 'Password must be at least 8 characters.'); return; }
+  if (pw !== pw2) { msg('msg-invite', 'error', "Passwords don't match."); return; }
 
-// ─── Resend timer ─────────────────────────────────────────────
-function startResendTimer() {
-  const btn = document.getElementById('resend-btn');
-  const timerEl = document.getElementById('resend-timer');
-  btn.disabled = true;
-  let secs = 60;
-  timerEl.textContent = `(${secs}s)`;
-  clearInterval(resendInterval);
-  resendInterval = setInterval(() => {
-    secs--;
-    if (secs <= 0) {
-      clearInterval(resendInterval);
-      btn.disabled = false;
-      timerEl.textContent = '';
-    } else {
-      timerEl.textContent = `(${secs}s)`;
-    }
-  }, 1000);
-}
-
-async function doResend() {
-  clearMsg('msg-otp');
-  clearOTP();
-  document.getElementById('resend-btn').disabled = true;
-
+  setLoading('btn-invite', true);
   try {
-    const r = await auth('resend', { email: currentEmail });
-    if (r.ok) {
-      msg('msg-otp', 'success', 'New code sent.');
-      startResendTimer();
-    } else {
-      msg('msg-otp', 'error', r.error || 'Could not resend code.');
-    }
-  } catch {
-    msg('msg-otp', 'error', 'Failed to resend. Try again.');
+    const r = await post('/api/invites/accept', { token: inviteToken, password: pw });
+    if (!r.ok) throw new Error(r.error || 'Could not create your account.');
+    saveSession({ token: r.token, email: r.email, name: r.name });
+    window.location.replace(HOME_URL);
+  } catch (err) {
+    msg('msg-invite', 'error', err.message === 'Failed to fetch' ? 'Could not reach auth service. Try again.' : err.message);
   }
+  setLoading('btn-invite', false);
 }
 
-// ─── Verify OTP ───────────────────────────────────────────────
-async function doVerify() {
-  const code = otpValue();
-  clearMsg('msg-otp');
-  if (code.length !== 6) return;
-
-  setLoading('btn-otp', true);
-
-  try {
-    const r = await auth('verify', { email: currentEmail, code });
-    if (r.ok) {
-      saveSession({ token: r.token, email: r.email || currentEmail, name: r.name });
-      window.location.href = HOME_URL;
-    } else {
-      msg('msg-otp', 'error', r.error || 'Invalid or expired code.');
-      clearOTP();
-    }
-  } catch {
-    msg('msg-otp', 'error', 'Auth service error. Try again.');
-  }
-
-  setLoading('btn-otp', false);
+function leaveInvite() {
+  history.replaceState(null, '', location.pathname);
+  goStep('step-email');
 }
 </script>
 </body>

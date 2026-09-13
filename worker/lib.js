@@ -22,11 +22,6 @@ export function randomToken(bytes = 32) {
   return [...buf].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-export function randomCode() {
-  const n = crypto.getRandomValues(new Uint32Array(1))[0] % 1000000;
-  return String(n).padStart(6, '0');
-}
-
 const hex = (buf) => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 const unhex = (str) => new Uint8Array(str.match(/../g).map(h => parseInt(h, 16)));
 

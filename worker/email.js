@@ -39,24 +39,3 @@ async function deliver(env, { from, to, subject, text, replyTo, attachments }) {
   if (!res.ok || data.success === false) throw new HttpError(502, `Email failed: ${data.error || res.status}`);
   return { id: data.id || null };
 }
-
-const icsDate = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-const icsText = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, m => '\\' + m);
-
-export function buildIcs({ uid, start, durationMin, summary, description, location }) {
-  const end = new Date(start.getTime() + durationMin * 60000);
-  const ics = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Edgeform//CRM//EN', 'METHOD:PUBLISH',
-    'BEGIN:VEVENT',
-    `UID:${uid}@edgeform-crm`,
-    `DTSTAMP:${icsDate(new Date())}`,
-    `DTSTART:${icsDate(start)}`,
-    `DTEND:${icsDate(end)}`,
-    `SUMMARY:${icsText(summary)}`,
-    `DESCRIPTION:${icsText(description)}`,
-    location ? `LOCATION:${icsText(location)}` : null,
-    'BEGIN:VALARM', 'TRIGGER:-PT30M', 'ACTION:DISPLAY', 'DESCRIPTION:Reminder', 'END:VALARM',
-    'END:VEVENT', 'END:VCALENDAR'
-  ].filter(Boolean).join('\r\n');
-  return btoa(unescape(encodeURIComponent(ics)));
-}
