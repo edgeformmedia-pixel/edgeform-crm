@@ -14,6 +14,10 @@
     "APP_URL": "https://crm.edgeformmarketing.com",
     "ALLOWED_ORIGINS": "https://crm.edgeformmarketing.com,https://edgeformmarketing.com,https://www.edgeformmarketing.com,https://edgeform-media.com,https://www.edgeform-media.com,https://crm.edgeform-media.com,http://localhost:8787,http://localhost:8000,http://localhost:5173,http://localhost:4174,http://127.0.0.1:5173,http://127.0.0.1:4174"
   },
+  // Website sketch images uploaded by the intake form.
+  "r2_buckets": [
+    { "binding": "SKETCHES", "bucket_name": "edgeform-crm-sketches" }
+  ],
   "d1_databases": [
     {
       "binding": "DB",

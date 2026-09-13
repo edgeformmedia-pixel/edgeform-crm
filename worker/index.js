@@ -1,6 +1,7 @@
 import { json, HttpError, clean, readJson, isEmail } from './lib.js';
 import { authRoutes, requireUser } from './auth.js';
 import { userRoutes } from './users.js';
+import { intakeRoutes } from './intake.js';
 import { dialerRoutes } from './dialer.js';
 import { sendEmail } from './email.js';
 
@@ -14,52 +15,6 @@ function cors(request, env) {
     'access-control-max-age': '86400',
     'vary': 'Origin'
   };
-}
-
-function mapSubmission(row) {
-  let metadata = {};
-  try { metadata = JSON.parse(row.metadata || '{}'); } catch {}
-  return {
-    ID: row.id,
-    Timestamp: row.created_at,
-    Name: row.name,
-    Email: row.email,
-    Phone: row.phone,
-    Company: row.company,
-    'Business Type': row.business_type,
-    'Has Website': row.has_website,
-    Description: row.description,
-    Mode: row.input_mode,
-    'Sketch URL': row.sketch_url,
-    'Sketch Thumb URL': row.sketch_thumb_url,
-    'Has Sketch': metadata.hasSketch === true,
-    Status: row.status,
-    Source: row.source
-  };
-}
-
-async function createSubmission(request, env, headers) {
-  const body = await readJson(request);
-  if (!clean(body.name, 160)) return json({ ok: false, error: 'Name is required.' }, 400, headers);
-  const id = crypto.randomUUID();
-  const createdAt = clean(body.timestamp, 64) || new Date().toISOString();
-  const status = body.complete ? 'complete' : body.autoSave ? 'partial' : clean(body.status, 32) || 'new';
-  await env.DB.batch([
-    env.DB.prepare(`INSERT INTO submissions
-      (id, created_at, updated_at, name, email, phone, company, business_type, has_website, description, input_mode, sketch_url, sketch_thumb_url, status, source, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(id, createdAt, createdAt, clean(body.name,160), clean(body.email,254), clean(body.phone,80), clean(body.company,200), clean(body.businessType,160), clean(body.hasWebsite,24), clean(body.websiteDescription || body.description,4000), clean(body.inputMode,32) || 'text', clean(body.sketchUrl,1000), clean(body.sketchThumbUrl,1000), status, clean(body.source,80) || 'website', JSON.stringify({ migratedFrom: body.migratedFrom || null, hasSketch: body.hasSketch === true })),
-    env.DB.prepare(`INSERT INTO activities (id, created_at, actor, type, subject_type, subject_id, summary, metadata)
-      VALUES (?, ?, 'system', 'submission.created', 'submission', ?, ?, '{}')`)
-      .bind(crypto.randomUUID(), createdAt, id, `New submission from ${clean(body.name,160)}`)
-  ]);
-  return json({ ok: true, id, status }, 201, headers);
-}
-
-async function listSubmissions(request, env, headers) {
-  await requireUser(request, env);
-  const result = await env.DB.prepare('SELECT * FROM submissions ORDER BY created_at ASC LIMIT 500').all();
-  return json({ ok: true, rows: result.results.map(mapSubmission), total: result.results.length }, 200, headers);
 }
 
 async function dashboard(request, env, headers) {
@@ -91,8 +46,7 @@ async function composeEmail(request, env, headers) {
 
 const routes = {
   'GET /api/health': (request, env, headers) => json({ ok: true, service: 'edgeform-crm-api' }, 200, headers),
-  'POST /api/submissions': createSubmission,
-  'GET /api/submissions': listSubmissions,
+  ...intakeRoutes,
   'GET /api/dashboard': dashboard,
   'POST /api/email/send': composeEmail,
   ...authRoutes,

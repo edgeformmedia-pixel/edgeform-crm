@@ -169,6 +169,13 @@
   .detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; margin-bottom: 16px; }
   .detail-field label { font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; display: block; }
   .detail-field .val { font-size: 13px; color: var(--text); line-height: 1.5; }
+  .detail-field .val a { color: var(--accent-bright); text-decoration: none; }
+  .detail-summary { white-space: pre-wrap; font-size: 13px; line-height: 1.6; color: var(--text); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
+  .stage-select { font-family: var(--mono); font-size: 11px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); }
+  .match-list { margin-top: 12px; display: grid; gap: 8px; }
+  .match-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface2); }
+  .match-score { font-family: var(--mono); font-size: 11px; color: var(--accent-bright); float: right; }
+  .creator-links a { color: var(--accent-bright); text-decoration: none; margin-right: 10px; font-size: 12px; }
 
   .sketch-link { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--accent-bright); text-decoration: none; border: 1px solid rgba(123,108,255,0.3); border-radius: 6px; padding: 5px 10px; transition: all 0.15s; }
   .sketch-link:hover { background: var(--accent-glow); }
@@ -473,6 +480,10 @@
       <span class="drawer-item-icon">◈</span> Inquiries
       <span class="drawer-item-badge" id="drawer-badge-submits">—</span>
     </a>
+    <a class="drawer-item" id="drawer-nav-creators-page" href="#" onclick="drawerNav('creators')">
+      <span class="drawer-item-icon">★</span> Creators
+      <span class="drawer-item-badge" id="drawer-badge-creators">—</span>
+    </a>
     <a class="drawer-item" id="drawer-nav-email-page" href="#" onclick="drawerNav('email')">
       <span class="drawer-item-icon">✉</span> Email
     </a>
@@ -506,6 +517,10 @@
       <a class="side-item" id="nav-submits" href="#" onclick="showPage('submits');return false;">
         <span class="side-icon">◈</span> Inquiries
         <span class="side-badge live" id="badge-submits">—</span>
+      </a>
+      <a class="side-item" id="nav-creators-page" href="#" onclick="showPage('creators');return false;">
+        <span class="side-icon">★</span> Creators
+        <span class="side-badge" id="badge-creators">—</span>
       </a>
       <a class="side-item" id="nav-email-page" href="#" onclick="showPage('email');return false;">
         <span class="side-icon">✉</span> Email
@@ -544,10 +559,10 @@
         <div class="command-status"><i></i><span>Cloud data connected</span></div>
       </section>
       <div class="kpi-row">
-        <div class="kpi"><div class="kpi-bg-icon">◈</div><div class="kpi-label">Total inquiries</div><div class="kpi-val" id="kpi-total">—</div><div class="kpi-delta neutral" id="kpi-sub">Loading…</div></div>
-        <div class="kpi"><div class="kpi-bg-icon">◎</div><div class="kpi-label">Rich briefs</div><div class="kpi-val" id="kpi-sketches">—</div><div class="kpi-delta neutral">Visual direction included</div></div>
-        <div class="kpi"><div class="kpi-bg-icon">□</div><div class="kpi-label">Established</div><div class="kpi-val" id="kpi-has-web">—</div><div class="kpi-delta neutral">Existing digital presence</div></div>
-        <div class="kpi"><div class="kpi-bg-icon">↗</div><div class="kpi-label">New ventures</div><div class="kpi-val" id="kpi-no-web">—</div><div class="kpi-delta up">Ready for qualification</div></div>
+        <div class="kpi"><div class="kpi-bg-icon">◈</div><div class="kpi-label">Sales inquiries</div><div class="kpi-val" id="kpi-total">—</div><div class="kpi-delta neutral" id="kpi-sub">Loading…</div></div>
+        <div class="kpi"><div class="kpi-bg-icon">★</div><div class="kpi-label">Creator applications</div><div class="kpi-val" id="kpi-creators">—</div><div class="kpi-delta neutral">Talent roster, not sales</div></div>
+        <div class="kpi"><div class="kpi-bg-icon">⇄</div><div class="kpi-label">Influencer requests</div><div class="kpi-val" id="kpi-sponsors">—</div><div class="kpi-delta neutral">Ready to match with creators</div></div>
+        <div class="kpi"><div class="kpi-bg-icon">↗</div><div class="kpi-label">New & unworked</div><div class="kpi-val" id="kpi-new">—</div><div class="kpi-delta up">Completed, still in “New” stage</div></div>
       </div>
       <div class="two-col">
         <div class="panel">
@@ -559,7 +574,7 @@
             <thead><tr>
               <th style="font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-muted);text-align:left;padding:9px 18px;border-bottom:1px solid var(--border);background:var(--surface2);">Name</th>
               <th style="font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-muted);text-align:left;padding:9px 18px;border-bottom:1px solid var(--border);background:var(--surface2);">Business</th>
-              <th style="font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-muted);text-align:left;padding:9px 18px;border-bottom:1px solid var(--border);background:var(--surface2);">Has Site</th>
+              <th style="font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-muted);text-align:left;padding:9px 18px;border-bottom:1px solid var(--border);background:var(--surface2);">Type</th>
               <th style="font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-muted);text-align:left;padding:9px 18px;border-bottom:1px solid var(--border);background:var(--surface2);">Date</th>
             </tr></thead>
             <tbody id="dash-tbody"><tr><td colspan="4" style="text-align:center;color:var(--text-muted);font-family:var(--mono);font-size:11px;padding:24px;">Loading…</td></tr></tbody>
@@ -581,19 +596,63 @@
         <div class="page-sub">New conversations and commercial briefs across every source</div>
       </div>
       <div class="submits-toolbar">
-        <input class="search-box" id="submit-search" type="text" placeholder="Search name, phone, business…" oninput="filterSubmits()">
-        <select class="filter-select" id="filter-web" onchange="filterSubmits()">
-          <option value="">All — Has Website</option>
-          <option value="yes">Has Website: Yes</option>
-          <option value="no">Has Website: No</option>
+        <input class="search-box" id="submit-search" type="text" placeholder="Search name, email, phone, summary…" oninput="filterSubmits()">
+        <select class="filter-select" id="filter-inquiry" onchange="filterSubmits()">
+          <option value="">All inquiry types</option>
+          <option value="website">Website</option>
+          <option value="crm">CRM / Sales System</option>
+          <option value="consulting">Sales &amp; Marketing Consulting</option>
+          <option value="sponsor">Influencer Request</option>
+          <option value="other">General Inquiry</option>
         </select>
-        <select class="filter-select" id="filter-type" onchange="filterSubmits()">
-          <option value="">All Business Types</option>
+        <select class="filter-select" id="filter-stage" onchange="filterSubmits()">
+          <option value="">All stages</option>
+          <option value="new">New</option>
+          <option value="contacted">Contacted</option>
+          <option value="qualified">Qualified</option>
+          <option value="proposal">Proposal</option>
+          <option value="won">Won</option>
+          <option value="lost">Lost</option>
+        </select>
+        <select class="filter-select" id="filter-status" onchange="filterSubmits()">
+          <option value="complete">Completed forms</option>
+          <option value="">Completed + unfinished</option>
+          <option value="partial">Unfinished only</option>
         </select>
         <button class="refresh-btn" onclick="loadSubmits()">↻ Refresh</button>
       </div>
       <div id="submit-list" class="submit-list">
         <div class="state-box"><div class="state-icon">◈</div>Loading submissions…</div>
+      </div>
+    </div>
+
+    <!-- ══ CREATORS ══ -->
+    <div class="page-view" id="page-creators">
+      <div class="page-head">
+        <div class="page-title">Creators</div>
+        <div class="page-sub">Influencers who applied to the network. Approve the ones you want to offer to sponsors.</div>
+      </div>
+      <div class="submits-toolbar">
+        <input class="search-box" id="creator-search" type="text" placeholder="Search name, handle, location…" oninput="renderCreators()">
+        <select class="filter-select" id="creator-roster" onchange="renderCreators()">
+          <option value="">All statuses</option>
+          <option value="applied">Applied</option>
+          <option value="approved">Approved</option>
+          <option value="declined">Declined</option>
+        </select>
+        <select class="filter-select" id="creator-niche" onchange="renderCreators()"><option value="">All niches</option></select>
+        <select class="filter-select" id="creator-audience" onchange="renderCreators()">
+          <option value="">Any audience</option>
+          <option value="1">Under 5K</option><option value="2">5K–25K</option><option value="3">25K–100K</option><option value="4">100K–500K</option><option value="5">500K+</option>
+        </select>
+        <select class="filter-select" id="creator-platform" onchange="renderCreators()">
+          <option value="">Any platform</option>
+          <option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="youtube">YouTube</option>
+        </select>
+        <button class="refresh-btn" onclick="loadCreators()">↻ Refresh</button>
+      </div>
+      <div id="creator-list" class="submit-list">
+        <div class="state-box"><div class="state-icon">★</div>Loading creators…</div>
       </div>
     </div>
 
@@ -985,129 +1044,130 @@ function showPage(name) {
 }
 
 // ─── Load inquiries from Cloudflare D1 ───────────────────────
+const INQUIRY_LABELS = { website: 'Website', crm: 'CRM / Sales System', consulting: 'Consulting', creator: 'Creator', sponsor: 'Influencer Request', other: 'General' };
+const INQUIRY_CHIP = { website: 'chip-blue', crm: 'chip-purple', consulting: 'chip-green', creator: 'chip-orange', sponsor: 'chip-orange', other: 'chip-muted' };
+const STAGES = ['new', 'contacted', 'qualified', 'proposal', 'won', 'lost'];
+let allRows = [];
+let allCreators = [];
+
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const safeUrl = (u) => /^https?:\/\//i.test(String(u || '')) ? esc(u) : '';
+const typeLabel = (r) => r['Inquiry Label'] || INQUIRY_LABELS[r['Inquiry Type']] || r['Inquiry Type'] || 'Website';
+const telHref = (r) => (r['Phone E164'] || String(r['Phone'] || '').replace(/[^\d+]/g, ''));
+
 async function loadSubmits() {
   document.getElementById('submit-list').innerHTML =
     '<div class="state-box"><div class="state-icon">◈</div>Loading…</div>';
 
   try {
-    const data = await api('/api/submissions');
-
+    const data = await api('/api/submissions?type=all');
     if (!data.ok) throw new Error(data.error || 'Cloud data error');
 
-    allSubmits = data.rows || [];
-    renderSubmits(allSubmits);
-    updateDashboard(allSubmits);
+    allRows = data.rows || [];
+    allSubmits = allRows.filter(r => r['Inquiry Type'] !== 'creator');
+    filterSubmits();
+    updateDashboard(allRows);
+    loadCreators();
   } catch (err) {
     document.getElementById('submit-list').innerHTML =
-      `<div class="state-box"><div class="state-icon">✕</div>Failed to load submissions.<br><span style="font-size:10px;">${err.message}</span></div>`;
+      `<div class="state-box"><div class="state-icon">✕</div>Failed to load submissions.<br><span style="font-size:10px;">${esc(err.message)}</span></div>`;
   }
 }
 
-// ─── Render ───────────────────────────────────────────────────
-function renderSubmits(rows) {
-  // Populate type filter
-  const types = [...new Set(rows.map(r => r['Business Type']).filter(Boolean))].sort();
-  document.getElementById('filter-type').innerHTML =
-    '<option value="">All Business Types</option>' +
-    types.map(t => `<option value="${t}">${t}</option>`).join('');
-
-  document.getElementById('badge-submits').textContent = rows.length;
-  renderFiltered(rows);
-}
-
 function filterSubmits() {
-  const q     = document.getElementById('submit-search').value.toLowerCase();
-  const webF  = document.getElementById('filter-web').value;
-  const typeF = document.getElementById('filter-type').value;
+  const q       = document.getElementById('submit-search').value.toLowerCase();
+  const typeF   = document.getElementById('filter-inquiry').value;
+  const stageF  = document.getElementById('filter-stage').value;
+  const statusF = document.getElementById('filter-status').value;
 
   const filtered = allSubmits.filter(r => {
-    const matchQ = !q || [r['Name'], r['Phone'], r['Business Type'], r['Description']]
+    const matchQ = !q || [r['Name'], r['Email'], r['Phone'], r['Business Type'], r['Company'], r['Description'], r['Summary']]
       .join(' ').toLowerCase().includes(q);
-    const webStr = String(r['Has Website']).toLowerCase();
-    const matchWeb = !webF || (webF === 'yes' ? webStr.includes('yes') : !webStr.includes('yes'));
-    const matchType = !typeF || r['Business Type'] === typeF;
-    return matchQ && matchWeb && matchType;
+    const matchType = !typeF || r['Inquiry Type'] === typeF;
+    const matchStage = !stageF || r['Stage'] === stageF;
+    const matchStatus = !statusF || (statusF === 'partial' ? r['Status'] !== 'complete' : r['Status'] === 'complete');
+    return matchQ && matchType && matchStage && matchStatus;
   });
 
-  renderFiltered(filtered);
+  renderFiltered([...filtered].reverse());
+}
+
+function detailField(label, value, full) {
+  return value ? `<div class="detail-field"${full ? ' style="grid-column:1/-1;"' : ''}><label>${esc(label)}</label><div class="val">${value}</div></div>` : '';
 }
 
 function renderFiltered(rows) {
   const list = document.getElementById('submit-list');
   if (!rows.length) {
-    list.innerHTML = '<div class="state-box"><div class="state-icon">◈</div>No submissions found.</div>';
+    list.innerHTML = '<div class="state-box"><div class="state-icon">◈</div>No inquiries found.</div>';
     return;
   }
 
-  list.innerHTML = rows.map((r, i) => {
-    const name     = r['Name']          || '—';
-    const phone    = r['Phone']         || '—';
-    const btype    = r['Business Type'] || '';
-    const hasWeb   = r['Has Website']   || '';
-    const ts       = r['Timestamp']     || '';
-    const desc     = r['Description']   || '';
-    const sketch   = r['Sketch URL']    || '';
-    const status   = r['Status']        || '';
-    const mode     = r['Mode']          || '';
+  list.innerHTML = rows.map(r => {
+    const id       = esc(r['ID']);
+    const type     = r['Inquiry Type'] || 'website';
+    const name     = r['Name'] || '—';
+    const phone    = r['Phone'] || '';
+    const email    = r['Email'] || '';
+    const date     = r['Timestamp'] ? fmtDate(r['Timestamp']) : '—';
     const initials = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-    const isNoSite = !String(hasWeb).toLowerCase().includes('yes');
-    const date     = ts ? fmtDate(ts) : '—';
-
-    const webChip    = isNoSite
-      ? '<span class="chip chip-orange">No Site</span>'
-      : '<span class="chip chip-blue">Has Site</span>';
-    const statusChip = status === 'complete'
+    const utm      = r['UTM'] || {};
+    const statusChip = r['Status'] === 'complete'
       ? '<span class="chip chip-green">Complete</span>'
-      : '<span class="chip chip-muted">Partial</span>';
-    const thumb     = r['Sketch Thumb URL'] || '';
-    const sketchUrl = sketch || '';
-    const sketchEl  = sketchUrl
+      : '<span class="chip chip-muted">Unfinished</span>';
+    const sketchUrl = safeUrl(r['Sketch URL']);
+    const sketchEl = type === 'website' && sketchUrl
       ? `<div style="margin-bottom:12px;">
            <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px;">Sketch</div>
-           <a href="${sketchUrl}" target="_blank" style="display:inline-block;">
-             <img src="${thumb}" alt="Sketch"
-               style="max-width:100%;max-height:280px;border-radius:8px;border:1px solid var(--border);object-fit:contain;background:var(--surface2);display:block;"
-               onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex';">
-             <a class="sketch-link" href="${sketchUrl}" target="_blank" style="display:none;">🎨 Open in Drive</a>
-           </a>
-         </div>`
-      : `<span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">No sketch attached</span>`;
+           <a href="${sketchUrl}" target="_blank" rel="noopener"><img src="${safeUrl(r['Sketch Thumb URL']) || sketchUrl}" alt="Sketch" style="max-width:100%;max-height:280px;border-radius:8px;border:1px solid var(--border);object-fit:contain;background:var(--surface2);display:block;"></a>
+         </div>` : '';
+    const stageSelect = `<select class="stage-select" data-id="${id}" onchange="updateStage(this)">${STAGES.map(s => `<option value="${s}"${s === r['Stage'] ? ' selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}</select>`;
+    const website = type === 'website';
 
-    return `<div class="submit-card" id="sc-${i}">
-      <div class="submit-card-head" onclick="toggleCard(${i})">
-        <div class="submit-avi">${initials}</div>
+    return `<div class="submit-card" id="sc-${id}">
+      <div class="submit-card-head" data-id="${id}" onclick="toggleCard(this.dataset.id)">
+        <div class="submit-avi">${esc(initials)}</div>
         <div class="submit-main">
-          <div class="submit-name">${name}</div>
-          <div class="submit-phone">${phone}</div>
+          <div class="submit-name">${esc(name)}</div>
+          <div class="submit-phone">${esc(phone || email || '—')}</div>
         </div>
         <div class="submit-meta">
-          ${btype ? `<span class="chip chip-purple">${btype}</span>` : ''}
-          ${webChip}
+          <span class="chip ${INQUIRY_CHIP[type] || 'chip-muted'}">${esc(typeLabel(r))}</span>
+          ${r['Status'] !== 'complete' ? '<span class="chip chip-muted">Unfinished</span>' : ''}
+          <span class="chip chip-muted">${esc(r['Stage'] || 'new')}</span>
           <span class="submit-time">${date}</span>
           <span class="submit-chevron">▾</span>
         </div>
       </div>
       <div class="submit-detail">
         <div class="detail-grid">
-          <div class="detail-field"><label>Phone</label><div class="val">${phone}</div></div>
-          <div class="detail-field"><label>Business Type</label><div class="val">${btype || '—'}</div></div>
-          <div class="detail-field"><label>Has Website</label><div class="val">${hasWeb || '—'}</div></div>
-          <div class="detail-field"><label>Input Mode</label><div class="val">${mode || '—'}</div></div>
-          <div class="detail-field"><label>Status</label><div class="val">${statusChip}</div></div>
-          <div class="detail-field"><label>Submitted</label><div class="val">${date}</div></div>
-          ${desc ? `<div class="detail-field" style="grid-column:1/-1;"><label>Description</label><div class="val">${desc}</div></div>` : ''}
+          ${detailField('Email', email && `<a href="mailto:${esc(email)}">${esc(email)}</a>`)}
+          ${detailField('Phone', phone && `<a href="tel:${esc(telHref(r))}">${esc(phone)}</a> · <a href="sms:${esc(telHref(r))}">Text</a>`)}
+          ${detailField('Business Type', esc(r['Business Type']))}
+          ${detailField('Company', esc(r['Company']))}
+          ${website ? detailField('Has Website', esc(r['Has Website'])) : ''}
+          ${website ? detailField('Input Mode', esc(r['Mode'])) : ''}
+          ${detailField('Stage', stageSelect)}
+          ${detailField('Form', statusChip)}
+          ${detailField('Submitted', date)}
+          ${detailField('Source', esc([utm.source, utm.medium, utm.campaign].filter(Boolean).join(' / ')))}
+          ${r['Other Inquiries'] ? detailField('Same Contact', `${r['Other Inquiries']} other inquir${r['Other Inquiries'] === 1 ? 'y' : 'ies'}`) : ''}
+          ${website ? detailField('Description', esc(r['Description']), true) : ''}
         </div>
-        <div style="margin-bottom:4px;">${sketchEl}</div>
+        ${r['Summary'] ? `<div class="detail-summary">${esc(r['Summary'])}</div>` : ''}
+        ${sketchEl}
         <div class="detail-actions">
-          <button class="action-btn primary" onclick="prefillEmail('${name.replace(/'/g,"\\'")}')">✉ Email This Lead</button>
-          <button class="action-btn" onclick="copyText('${phone}','Phone')">📋 Copy Phone</button>
+          ${email ? `<button class="action-btn primary" data-id="${id}" onclick="prefillEmail(this.dataset.id)">✉ Email This Lead</button>` : ''}
+          ${phone ? `<button class="action-btn" data-phone="${esc(phone)}" onclick="copyText(this.dataset.phone,'Phone')">📋 Copy Phone</button>` : ''}
+          ${type === 'sponsor' ? `<button class="action-btn" data-id="${id}" onclick="findCreators(this.dataset.id)">★ Find Creators</button>` : ''}
         </div>
+        <div class="match-list" id="matches-${id}"></div>
       </div>
     </div>`;
   }).join('');
 }
 
-function toggleCard(i) { document.getElementById('sc-' + i).classList.toggle('open'); }
+function toggleCard(id) { document.getElementById('sc-' + id).classList.toggle('open'); }
 
 function copyText(text, label) {
   navigator.clipboard.writeText(text).then(() => {
@@ -1115,51 +1175,192 @@ function copyText(text, label) {
   });
 }
 
-function prefillEmail(name) {
-  const first = name.split(' ')[0];
-  document.getElementById('compose-to').value       = '';
-  document.getElementById('compose-subject').value  = `Following up — ${name}`;
+function prefillEmail(id) {
+  const r = allRows.find(x => x['ID'] === id);
+  if (!r) return;
+  const first = (r['Name'] || '').split(' ')[0];
+  document.getElementById('compose-to').value       = r['Email'] || '';
+  document.getElementById('compose-subject').value  = `Following up on your ${typeLabel(r).toLowerCase()} inquiry`;
   document.getElementById('compose-body-text').value =
-    `Hi ${first},\n\nI came across your inquiry and wanted to reach out personally.\n\n`;
+    `Hi ${first},\n\nThanks for reaching out to Edgeform. I wanted to follow up personally.\n\n`;
   showPage('email');
+}
+
+async function updateStage(select) {
+  const r = allRows.find(x => x['ID'] === select.dataset.id);
+  const previous = r?.['Stage'];
+  try {
+    const res = await api('/api/submissions/' + encodeURIComponent(select.dataset.id), { method: 'PATCH', body: JSON.stringify({ stage: select.value }) });
+    if (!res.ok) throw new Error(res.error);
+    if (r) r['Stage'] = select.value;
+    updateDashboard(allRows);
+  } catch (err) {
+    alert('Stage not saved: ' + err.message);
+    if (previous) select.value = previous;
+  }
+}
+
+async function findCreators(id) {
+  const box = document.getElementById('matches-' + id);
+  box.innerHTML = '<div class="state-box" style="padding:16px;">Finding creators…</div>';
+  try {
+    const res = await api('/api/submissions/' + encodeURIComponent(id) + '/matches');
+    if (!res.ok) throw new Error(res.error);
+    box.innerHTML = res.matches.length ? res.matches.map(m => `<div class="match-item">
+        <span class="match-score">${m.score}/100</span>
+        <strong>${esc(m.creator.name)}</strong> <span class="chip ${m.creator.rosterStatus === 'approved' ? 'chip-green' : 'chip-muted'}">${esc(m.creator.rosterStatus)}</span>
+        <div class="feed-time">${esc(m.creator.audienceSize)} · ${esc(m.creator.location)} · ${esc(m.creator.niches.join(', '))}</div>
+        <div class="creator-links">${socialLinks(m.creator.socials)}</div>
+        <div class="feed-time">${esc(m.reasons.join(' · '))}</div>
+      </div>`).join('') : '<div class="state-box" style="padding:16px;">No matching creators yet.</div>';
+  } catch (err) {
+    box.innerHTML = `<div class="state-box" style="padding:16px;">Matching failed: ${esc(err.message)}</div>`;
+  }
+}
+
+// ─── Creators roster ──────────────────────────────────────────
+function socialUrl(platform, value) {
+  const v = String(value || '').trim();
+  if (/^https?:\/\//i.test(v)) return v;
+  const handle = v.replace(/^@/, '');
+  if (!handle || platform === 'other') return '';
+  return { instagram: `https://instagram.com/${handle}`, tiktok: `https://tiktok.com/@${handle}`, youtube: `https://youtube.com/@${handle}` }[platform] || '';
+}
+
+function socialLinks(socials) {
+  return Object.entries(socials || {}).map(([platform, value]) => {
+    const url = socialUrl(platform, value);
+    const name = { instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', other: 'Other' }[platform] || esc(platform);
+    const label = `${name} ${String(value).startsWith('http') ? '↗' : esc(value)}`;
+    return url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${label}</a>` : `<span class="feed-time">${esc(platform)}: ${esc(value)}</span>`;
+  }).join('');
+}
+
+async function loadCreators() {
+  try {
+    const res = await api('/api/creators');
+    if (!res.ok) throw new Error(res.error);
+    allCreators = res.creators;
+    const niches = [...new Set(allCreators.flatMap(c => c.niches))].sort();
+    const nicheSel = document.getElementById('creator-niche');
+    const current = nicheSel.value;
+    nicheSel.innerHTML = '<option value="">All niches</option>' + niches.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    nicheSel.value = current;
+    const pending = allCreators.filter(c => c.rosterStatus === 'applied').length;
+    document.getElementById('badge-creators').textContent = allCreators.length;
+    document.getElementById('drawer-badge-creators').textContent = allCreators.length;
+    document.getElementById('kpi-creators').nextElementSibling.textContent = pending ? `${pending} waiting for review` : 'Talent roster, not sales';
+    renderCreators();
+  } catch (err) {
+    document.getElementById('creator-list').innerHTML = `<div class="state-box">Failed to load creators: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderCreators() {
+  const q = document.getElementById('creator-search').value.toLowerCase();
+  const roster = document.getElementById('creator-roster').value;
+  const niche = document.getElementById('creator-niche').value;
+  const audience = Number(document.getElementById('creator-audience').value || 0);
+  const platform = document.getElementById('creator-platform').value;
+  const rows = allCreators.filter(c =>
+    (!q || [c.name, c.email, c.location, ...Object.values(c.socials)].join(' ').toLowerCase().includes(q)) &&
+    (!roster || c.rosterStatus === roster) &&
+    (!niche || c.niches.includes(niche)) &&
+    (!audience || c.audienceTier === audience) &&
+    (!platform || c.socials[platform]));
+
+  document.getElementById('creator-list').innerHTML = rows.length ? rows.map(c => {
+    const id = esc(c.id);
+    const statusChip = { approved: 'chip-green', declined: 'chip-red', applied: 'chip-orange' }[c.rosterStatus] || 'chip-muted';
+    return `<div class="submit-card" id="cc-${id}">
+      <div class="submit-card-head" data-id="${id}" onclick="document.getElementById('cc-' + this.dataset.id).classList.toggle('open')">
+        <div class="submit-avi">${esc(c.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2))}</div>
+        <div class="submit-main">
+          <div class="submit-name">${esc(c.name)}</div>
+          <div class="submit-phone">${esc([c.location, c.audienceSize].filter(Boolean).join(' · '))}</div>
+        </div>
+        <div class="submit-meta">
+          ${c.niches.slice(0, 3).map(n => `<span class="chip chip-purple">${esc(n)}</span>`).join('')}
+          <span class="chip ${statusChip}">${esc(c.rosterStatus)}</span>
+          <span class="submit-time">${fmtDate(c.createdAt)}</span>
+          <span class="submit-chevron">▾</span>
+        </div>
+      </div>
+      <div class="submit-detail">
+        <div class="creator-links" style="margin-bottom:12px;">${socialLinks(c.socials)}${safeUrl(c.mediaKit) ? `<a href="${safeUrl(c.mediaKit)}" target="_blank" rel="noopener">Media kit ↗</a>` : ''}</div>
+        <div class="detail-grid">
+          ${detailField('Email', c.email && `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`)}
+          ${detailField('Phone', c.phone && `<a href="tel:${esc(c.phoneE164 || c.phone)}">${esc(c.phone)}</a>`)}
+          ${detailField('Audience', esc(c.audienceSize))}
+          ${detailField('Location', esc(c.location))}
+          ${detailField('Niches', esc(c.niches.join(', ')), true)}
+          ${detailField('Content', esc(c.contentTypes.join(', ')), true)}
+          ${detailField('Consent', c.consent ? '18+ and OK to share profile with brands' : '<span style="color:var(--red)">Not given</span>', true)}
+        </div>
+        <div class="c-field">
+          <label style="font-family:var(--mono);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-muted);">Internal notes</label>
+          <textarea class="c-input" id="cnotes-${id}" style="min-height:70px;">${esc(c.notes)}</textarea>
+        </div>
+        <div class="detail-actions">
+          <button class="action-btn primary" data-id="${id}" onclick="updateCreator(this.dataset.id, 'approved')">✓ Approve</button>
+          <button class="action-btn" data-id="${id}" onclick="updateCreator(this.dataset.id, 'declined')">✕ Decline</button>
+          <button class="action-btn" data-id="${id}" onclick="updateCreator(this.dataset.id)">Save Notes</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('') : '<div class="state-box"><div class="state-icon">★</div>No creators found.</div>';
+}
+
+async function updateCreator(id, rosterStatus) {
+  const notes = document.getElementById('cnotes-' + id)?.value;
+  try {
+    const res = await api('/api/creators/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify({ notes, ...(rosterStatus ? { rosterStatus } : {}) }) });
+    if (!res.ok) throw new Error(res.error);
+    const c = allCreators.find(x => x.id === id);
+    if (c) { c.notes = notes; if (rosterStatus) c.rosterStatus = rosterStatus; }
+    renderCreators();
+    document.getElementById('cc-' + id)?.classList.add('open');
+  } catch (err) {
+    alert('Not saved: ' + err.message);
+  }
 }
 
 // ─── Dashboard ────────────────────────────────────────────────
 function updateDashboard(rows) {
-  const total    = rows.length;
-  const sketches = rows.filter(r => r['Has Sketch'] === true || (r['Sketch URL'] && String(r['Sketch URL']).trim())).length;
-  const hasWeb   = rows.filter(r => String(r['Has Website']).toLowerCase().includes('yes')).length;
-  const noWeb    = total - hasWeb;
+  const sales    = rows.filter(r => r['Inquiry Type'] !== 'creator' && r['Status'] === 'complete');
+  const creators = rows.filter(r => r['Inquiry Type'] === 'creator' && r['Status'] === 'complete').length;
+  const sponsors = sales.filter(r => r['Inquiry Type'] === 'sponsor').length;
+  const fresh    = sales.filter(r => (r['Stage'] || 'new') === 'new').length;
+  const partials = rows.filter(r => r['Status'] !== 'complete').length;
 
-  document.getElementById('kpi-total').textContent    = total;
-  document.getElementById('kpi-sketches').textContent = sketches;
-  document.getElementById('kpi-has-web').textContent  = hasWeb;
-  document.getElementById('kpi-no-web').textContent   = noWeb;
-  document.getElementById('kpi-sub').textContent      = `${total} total`;
-  document.getElementById('badge-submits').textContent = total;
-  document.getElementById('drawer-badge-submits').textContent = total;
+  document.getElementById('kpi-total').textContent    = sales.length;
+  document.getElementById('kpi-creators').textContent = creators;
+  document.getElementById('kpi-sponsors').textContent = sponsors;
+  document.getElementById('kpi-new').textContent      = fresh;
+  document.getElementById('kpi-sub').textContent      = partials ? `${partials} unfinished form${partials === 1 ? '' : 's'}` : 'All forms completed';
+  document.getElementById('badge-submits').textContent = sales.length;
+  document.getElementById('drawer-badge-submits').textContent = sales.length;
 
-  const recent = [...rows].reverse().slice(0, 5);
+  const recent = [...rows].filter(r => r['Status'] === 'complete').reverse().slice(0, 5);
 
   document.getElementById('dash-tbody').innerHTML = recent.map(r => {
-    const hw   = String(r['Has Website']).toLowerCase().includes('yes');
-    const chip = hw ? '<span class="chip chip-blue">Yes</span>' : '<span class="chip chip-orange">No</span>';
+    const type = r['Inquiry Type'] || 'website';
     const date = r['Timestamp'] ? fmtDate(r['Timestamp']) : '—';
     return `<tr>
-      <td style="padding:11px 18px;font-size:12px;font-weight:500;border-bottom:1px solid var(--border);">${r['Name']||'—'}</td>
-      <td style="padding:11px 18px;font-size:12px;color:var(--text-dim);border-bottom:1px solid var(--border);">${r['Business Type']||'—'}</td>
-      <td style="padding:11px 18px;border-bottom:1px solid var(--border);">${chip}</td>
+      <td style="padding:11px 18px;font-size:12px;font-weight:500;border-bottom:1px solid var(--border);">${esc(r['Name'] || '—')}</td>
+      <td style="padding:11px 18px;font-size:12px;color:var(--text-dim);border-bottom:1px solid var(--border);">${esc(r['Business Type'] || r['Company'] || '—')}</td>
+      <td style="padding:11px 18px;border-bottom:1px solid var(--border);"><span class="chip ${INQUIRY_CHIP[type] || 'chip-muted'}">${esc(typeLabel(r))}</span></td>
       <td style="padding:11px 18px;font-family:var(--mono);font-size:10px;color:var(--text-muted);border-bottom:1px solid var(--border);">${date}</td>
     </tr>`;
-  }).join('');
+  }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);font-family:var(--mono);font-size:11px;padding:24px;">No completed inquiries yet.</td></tr>';
 
   document.getElementById('dash-feed').innerHTML = recent.map(r => {
-    const noSite = !String(r['Has Website']).toLowerCase().includes('yes');
+    const creator = r['Inquiry Type'] === 'creator';
     const date   = r['Timestamp'] ? fmtDate(r['Timestamp']) : '—';
     return `<div class="feed-item">
-      <div class="feed-dot" style="background:${noSite ? 'var(--green)' : 'var(--blue)'}"></div>
+      <div class="feed-dot" style="background:${creator ? 'var(--orange)' : 'var(--green)'}"></div>
       <div class="feed-body">
-        <div class="feed-text"><strong>${r['Name']||'—'}</strong> — ${r['Business Type']||'Unknown'} ${noSite ? '· <span style="color:var(--green)">No website</span>' : ''}</div>
+        <div class="feed-text"><strong>${esc(r['Name'] || '—')}</strong> — ${esc(typeLabel(r))}${r['Business Type'] ? ' · ' + esc(r['Business Type']) : ''}</div>
         <div class="feed-time">${date}</div>
       </div>
     </div>`;
