@@ -372,16 +372,18 @@ summary:hover{color:var(--tx)}
       <span style="font-size:10px;color:var(--t3);font-family:'SF Mono',monospace">Multiple agents? Each needs a unique name.</span>
     </div>
     <div class="row">
-      <label>Passcode</label><input id="gas-depid" type="password" autocomplete="off" style="flex:1;min-width:240px" placeholder="••••••••">
-      <button id="load-tabs">↻ Refresh Tabs</button>
+      <label>Import CSV</label><input id="import-file" type="file" accept=".csv,text/csv" style="flex:1;min-width:200px">
+      <input id="import-name" placeholder="List name" autocomplete="off" style="width:150px">
+      <button id="import-list">⬆ Import</button>
+      <button id="load-tabs">↻ Refresh Lists</button>
     </div>
-    <div class="row" title="Optional Google Apps Script /exec URL for mirroring dial attempts to another CRM or workflow.">
-      <label>External Sync</label><input id="external-sync-url" style="flex:1;min-width:240px" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+    <div class="row" title="Optional webhook URL for mirroring dial attempts to another CRM or workflow.">
+      <label>External Sync</label><input id="external-sync-url" style="flex:1;min-width:240px" placeholder="https://… (optional webhook)" autocomplete="off">
       <span id="external-sync-pending" style="font-size:10px;color:var(--t3);font-family:'SF Mono',monospace"></span>
     </div>
     <div class="tabs-row">
-      <label>Tab</label>
-      <select id="tab-sel"><option value="">— pick a tab —</option></select>
+      <label>List</label>
+      <select id="tab-sel"><option value="">— pick a list —</option></select>
       <button id="load-leads" class="btn-go">📥 Load Leads</button>
     </div>
     <div id="file-name" style="font-size:10px;color:var(--t3);font-family:'SF Mono',monospace;margin-top:6px"></div>
@@ -547,7 +549,7 @@ summary:hover{color:var(--tx)}
 
 <script>
 'use strict';
-// ══ HARDCODED SCRIPTS — tokens in {curly braces} auto-fill from CSV/sheet columns ══
+// ══ HARDCODED SCRIPTS — tokens in {curly braces} auto-fill from CSV/list columns ══
 const SCRIPTS = [
   {
     name: 'DISCOVERY',
@@ -583,7 +585,7 @@ Great, I have you down for _____. Is there anything specific you want the team t
   },
 ];
 
-// ══ TWILIO NUMBERS (default fallback — overridden by NUMBERS tab from GAS if present) ══
+// ══ TWILIO NUMBERS (default fallback — overridden by a NUMBERS list in the CRM if present) ══
 let NUMBERS = [
   {n:'+15862215707',lbl:'(586) Mount Clemens',lat:42.5973,lng:-82.8779},
   {n:'+12693869670',lbl:'(269) Colon',        lat:41.9559,lng:-85.3253},
@@ -669,10 +671,8 @@ function renderPendingSyncs(){$('pending-syncs').innerHTML=pendingSync.length?`<
 
 // ══ PERSISTED CONFIG ══
 $('worker').value=LS('dialer_worker','');
-$('gas-depid').value=LS('dialer_depid','');
 $('agent-name').value=LS('dialer_agent','');
 $('worker').addEventListener('change',e=>SS('dialer_worker',e.target.value));
-$('gas-depid').addEventListener('change',e=>SS('dialer_depid',e.target.value.trim()));
 $('agent-name').addEventListener('change',e=>SS('dialer_agent',e.target.value.trim()));
 // Theme toggle
 (function(){
@@ -777,35 +777,83 @@ $('mic').onclick=async()=>{
   }catch(e){log('Mic init failed: '+e.message,'err');setDev('ERROR','err');$('mic').disabled=false}
 };
 
-// ══ GOOGLE SHEETS (via GAS — bound to one spreadsheet) ══
+// ══ CRM LISTS (Cloudflare D1 via the CRM API) ══
+const CRM_API='https://edgeform-crm-api.edgeformmedia.workers.dev';
 async function gasCall(action,payload={}){
-  const depid=$('gas-depid').value.trim();
-  if(!depid)throw new Error('Deployment ID not set');
-  const url='https://script.google.com/macros/s/'+depid+'/exec';
-  const body=JSON.stringify({action,...payload});
-  const r=await fetch(url,{method:'POST',body,headers:{'Content-Type':'text/plain'},redirect:'follow'});
-  if(!r.ok)throw new Error('GAS HTTP '+r.status);
-  const d=await r.json();
-  if(!d.ok)throw new Error(d.error||'GAS error');
+  let session=null;try{session=JSON.parse(localStorage.getItem('edgeform_crm_session'))}catch{}
+  const r=await fetch(CRM_API+'/api/dialer',{
+    method:'POST',
+    headers:{'Content-Type':'application/json',Authorization:'Bearer '+(session?.token||'')},
+    body:JSON.stringify({action,...payload})
+  });
+  if(r.status===401){location.replace('/login/index.html');throw new Error('Session expired')}
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok||!d.ok)throw new Error(d.error||'CRM HTTP '+r.status);
   return d;
 }
 
+function parseCsv(text){
+  const rows=[];let row=[],field='',quoted=false;
+  text=text.replace(/^﻿/,'');
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(quoted){
+      if(c==='"'&&text[i+1]==='"'){field+='"';i++}
+      else if(c==='"')quoted=false;
+      else field+=c;
+    }else if(c==='"')quoted=true;
+    else if(c===','){row.push(field);field=''}
+    else if(c==='\n'||c==='\r'){
+      if(c==='\r'&&text[i+1]==='\n')i++;
+      row.push(field);rows.push(row);row=[];field='';
+    }else field+=c;
+  }
+  if(field||row.length){row.push(field);rows.push(row)}
+  return rows.filter(r=>r.some(v=>v.trim()));
+}
+
+$('import-file').addEventListener('change',()=>{
+  const f=$('import-file').files[0];
+  if(f&&!$('import-name').value.trim())$('import-name').value=f.name.replace(/\.csv$/i,'');
+});
+$('import-list').onclick=async()=>{
+  const f=$('import-file').files[0];if(!f){alert('Choose a CSV file first');return}
+  const name=$('import-name').value.trim();if(!name){alert('Name this list');return}
+  $('import-list').disabled=true;log('Importing '+f.name+'…');
+  try{
+    const [headers,...rows]=parseCsv(await f.text());
+    if(!headers||!rows.length)throw new Error('That CSV has no rows');
+    let replace=false;
+    for(;;){
+      try{await gasCall('importList',{name,headers,rows,replace});break}
+      catch(e){
+        if(!replace&&/already exists/.test(e.message)&&confirm('A list named "'+name+'" already exists.\n\nReplace it? Its call history will be cleared.')){replace=true;continue}
+        throw e;
+      }
+    }
+    log('✓ Imported '+rows.length+' rows into "'+name+'"','ok');
+    $('import-file').value='';$('import-name').value='';
+    await $('load-tabs').onclick();
+    $('tab-sel').value=name;
+  }catch(e){log('Import failed: '+e.message,'err');alert('Import failed: '+e.message)}
+  finally{$('import-list').disabled=false}
+};
+
 $('load-tabs').onclick=async()=>{
-  if(!$('gas-depid').value.trim()){alert('Enter Deployment ID first');return}
-  $('load-tabs').disabled=true;log('Loading tabs…');
+  $('load-tabs').disabled=true;log('Loading lists…');
   try{
     const d=await gasCall('listTabs');
-    const sel=$('tab-sel');sel.innerHTML='<option value="">— pick a tab —</option>';
+    const sel=$('tab-sel');sel.innerHTML='<option value="">— pick a list —</option>';
     d.tabs.forEach(t=>{
       const o=document.createElement('option');
       o.value=t.name;
       o.textContent=t.name+' ('+t.count+' leads)';
       sel.appendChild(o);
     });
-    $('file-name').textContent='📂 '+d.fileName+' — '+d.tabs.length+' tabs';
-    log('Found '+d.tabs.length+' tabs in "'+d.fileName+'"','ok');
+    $('file-name').textContent='📂 '+d.fileName+' — '+d.tabs.length+' lists';
+    log('Found '+d.tabs.length+' lists','ok');
 
-    // ── Load NUMBERS tab from GAS if present ──
+    // ── Load NUMBERS list if present ──
     if(Array.isArray(d.numbers)&&d.numbers.length){
       NUMBERS=d.numbers.map(x=>{
         const ac=(x.n||'').replace(/\D/g,'').slice(-10).slice(0,3);
@@ -814,20 +862,20 @@ $('load-tabs').onclick=async()=>{
         const label='('+ac+')';
         return{n:x.n,lbl:label,lat:coord.lat,lng:coord.lng};
       });
-      log('📞 Loaded '+NUMBERS.length+' caller IDs from NUMBERS tab','ok');
+      log('📞 Loaded '+NUMBERS.length+' caller IDs from NUMBERS list','ok');
       // Rebuild keypad dropdown
       $('kp-from').innerHTML='<option value="auto">Auto (closest match)</option>';
       NUMBERS.forEach(n=>{const o=document.createElement('option');o.value=n.n;o.textContent=n.lbl;$('kp-from').appendChild(o)});
       $('kp-from').value=LS('kp_from','auto');
     }else{
-      log('No NUMBERS tab found — using default caller IDs','warn');
+      log('No NUMBERS list found — using default caller IDs','warn');
     }
-  }catch(e){log('Tab load failed: '+e.message,'err');alert('Load tabs failed: '+e.message)}
+  }catch(e){log('List load failed: '+e.message,'err');alert('Load lists failed: '+e.message)}
   finally{$('load-tabs').disabled=false}
 };
 
 $('load-leads').onclick=async()=>{
-  const tab=$('tab-sel').value;if(!tab){alert('Pick a tab first');return}
+  const tab=$('tab-sel').value;if(!tab){alert('Pick a list first');return}
   $('load-leads').disabled=true;log('Loading leads from '+tab+'…');
   try{
     const d=await gasCall('loadTab',{tab});
@@ -842,7 +890,7 @@ $('load-leads').onclick=async()=>{
       if(!phone)return null;
       const name=ni>=0?(cells[headers[ni]]||'').trim()||'Row '+(i+2):'Row '+(i+2);
       const existingOutcomes=row.slice(headers.length).map(c=>String(c||'').trim()).filter(Boolean);
-      // Skip leads marked DELETED — manual clear of that cell in the sheet re-enables them
+      // Skip leads marked DELETED in the CRM
       if(existingOutcomes.some(o=>/^DELETED/i.test(o)))return null;
       const isDNC=existingOutcomes.some(o=>/DNC/i.test(o));
       return{rowIdx:i+2,name,phone,cells,status:isDNC?'dnc':'pending',attempts:0,history:existingOutcomes};
@@ -871,6 +919,8 @@ function normalizePhone(p){let d=p.replace(/[^\d+]/g,'');if(!d)return'';if(d.sta
 
 function checkCanStart(){const ready=!(!device||!leads.length);$('start').disabled=!ready;$('dial').disabled=!ready||dialing;updateDialBtnLabel()}
 
+setTimeout(()=>$('load-tabs').onclick(),0);
+
 // ══ SYNC QUEUE (offline-safe) ══
 async function syncOutcome(lead,outcome){
   const item={tab:tabName,rowIdx:lead.rowIdx,outcome,ts:new Date().toISOString()};
@@ -879,7 +929,6 @@ async function syncOutcome(lead,outcome){
 }
 async function flushSync(){
   if(!pendingSync.length)return;
-  if(!$('gas-depid').value.trim()){log('Deployment ID not set — '+pendingSync.length+' outcomes queued','warn');return}
   const batch=pendingSync.slice(0,10);
   try{
     await gasCall('logOutcomes',{items:batch});
@@ -1690,10 +1739,10 @@ function renderQueue(){
   });
 }
 
-// Delete a lead — marks it DELETED in the sheet, removes from local list
+// Delete a lead — marks it DELETED in the CRM, removes from local list
 async function deleteLead(i){
   const lead=leads[i];if(!lead)return;
-  if(!confirm('Delete lead '+lead.name+'?\n\nThis will mark the row as DELETED in your Google Sheet.\nTo restore later, manually clear that cell in the sheet.'))return;
+  if(!confirm('Delete lead '+lead.name+'?\n\nIt will be removed from this list in the CRM.'))return;
   log('🗑 Deleting '+lead.name+'…','warn');
   // If this is the currently-dialing lead, hang up first
   if(i===idx&&conn){try{conn.disconnect()}catch{}}
@@ -1703,7 +1752,7 @@ async function deleteLead(i){
     log('✓ Deleted '+lead.name,'ok');
   }catch(e){
     log('Delete failed: '+e.message,'err');
-    alert('Delete failed: '+e.message+'\n\nThe lead was NOT removed from the sheet. Try again or edit the sheet manually.');
+    alert('Delete failed: '+e.message+'\n\nThe lead was NOT removed. Try again.');
     return;
   }
   // Remove from local array
@@ -1749,7 +1798,7 @@ function endManual(r){log(r);clearInterval(callTimer);beepStop();resetMuteUI();c
 
 // ══ DAILY TRACKER ══
 // Counts dials, pickups, and outcomes per day. Buffers in localStorage,
-// syncs to TRACKER tab in GS via gasCall every 30s and on every outcome.
+// syncs to the CRM via gasCall every 30s and on every outcome.
 //
 // Counter rules:
 //   dials   = every device.connect() from the auto-dialer (manual keypad excluded)
@@ -1823,7 +1872,6 @@ function trkScheduleSync(){
 }
 
 async function trkSync(){
-  if(!$('gas-depid').value.trim())return;
   const t=trkLoad();
   const dirty=Object.entries(t).filter(([k,r])=>r.dirty);
   if(!dirty.length)return;

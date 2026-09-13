@@ -1,32 +1,20 @@
-const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {
-  status,
-  headers: { 'content-type': 'application/json; charset=utf-8', ...headers }
-});
+import { json, HttpError, clean, readJson, isEmail } from './lib.js';
+import { authRoutes, requireUser } from './auth.js';
+import { pipelineRoutes } from './pipeline.js';
+import { dialerRoutes } from './dialer.js';
+import { sendEmail } from './email.js';
 
 function cors(request, env) {
   const origin = request.headers.get('origin') || '';
   const allowed = (env.ALLOWED_ORIGINS || '').split(',').map(v => v.trim());
   return {
     'access-control-allow-origin': allowed.includes(origin) ? origin : allowed[0] || '*',
-    'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'access-control-allow-headers': 'content-type,authorization',
     'access-control-max-age': '86400',
     'vary': 'Origin'
   };
 }
-
-async function authorized(request, env) {
-  const token = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-  if (!token) return false;
-  try {
-    const payload = encodeURIComponent(JSON.stringify({ action: 'verifySession', token }));
-    const response = await fetch(`${env.AUTH_SERVICE_URL}?payload=${payload}`);
-    const result = await response.json();
-    return result?.ok === true;
-  } catch { return false; }
-}
-
-const clean = (value, max = 4000) => String(value ?? '').trim().slice(0, max);
 
 function mapSubmission(row) {
   let metadata = {};
@@ -51,8 +39,8 @@ function mapSubmission(row) {
 }
 
 async function createSubmission(request, env, headers) {
-  const body = await request.json().catch(() => null);
-  if (!body || !clean(body.name, 160)) return json({ ok: false, error: 'Name is required.' }, 400, headers);
+  const body = await readJson(request);
+  if (!clean(body.name, 160)) return json({ ok: false, error: 'Name is required.' }, 400, headers);
   const id = crypto.randomUUID();
   const createdAt = clean(body.timestamp, 64) || new Date().toISOString();
   const status = body.complete ? 'complete' : body.autoSave ? 'partial' : clean(body.status, 32) || 'new';
@@ -69,13 +57,13 @@ async function createSubmission(request, env, headers) {
 }
 
 async function listSubmissions(request, env, headers) {
-  if (!await authorized(request, env)) return json({ ok: false, error: 'Unauthorized' }, 401, headers);
+  await requireUser(request, env);
   const result = await env.DB.prepare('SELECT * FROM submissions ORDER BY created_at ASC LIMIT 500').all();
   return json({ ok: true, rows: result.results.map(mapSubmission), total: result.results.length }, 200, headers);
 }
 
 async function dashboard(request, env, headers) {
-  if (!await authorized(request, env)) return json({ ok: false, error: 'Unauthorized' }, 401, headers);
+  await requireUser(request, env);
   const [submissions, contacts, deals, activity] = await env.DB.batch([
     env.DB.prepare("SELECT COUNT(*) total, SUM(CASE WHEN status='complete' THEN 1 ELSE 0 END) qualified FROM submissions"),
     env.DB.prepare("SELECT COUNT(*) total FROM contacts WHERE status='active'"),
@@ -85,20 +73,54 @@ async function dashboard(request, env, headers) {
   return json({ ok: true, submissions: submissions.results[0], contacts: contacts.results[0], pipeline: deals.results[0], activity: activity.results }, 200, headers);
 }
 
+// Staff email from the dashboard composer. The sender address is derived from
+// the signed-in user, never taken from the request.
+async function composeEmail(request, env, headers) {
+  const user = await requireUser(request, env);
+  const body = await readJson(request);
+  const to = clean(body.to, 254);
+  const subject = clean(body.subject, 300);
+  const text = clean(body.body, 50000);
+  if (!isEmail(to) || !subject || !text) throw new HttpError(400, 'Fill in To, Subject, and Message.');
+  const parts = user.name.trim().toLowerCase().replace(/[^a-z\s-]/g, '').split(/\s+/).filter(Boolean);
+  const handle = (parts.length >= 2 ? `${parts[0]}.${parts[parts.length - 1]}` : parts[0]) || 'team';
+  const address = `${handle}@${env.MAIL_DOMAIN}`;
+  const result = await sendEmail(env, { from: `${user.name} <${address}>`, to, subject, text, replyTo: address });
+  return json({ ok: true, success: true, id: result.id }, 200, headers);
+}
+
+const routes = {
+  'GET /api/health': (request, env, headers) => json({ ok: true, service: 'edgeform-crm-api' }, 200, headers),
+  'POST /api/submissions': createSubmission,
+  'GET /api/submissions': listSubmissions,
+  'GET /api/dashboard': dashboard,
+  'POST /api/email/send': composeEmail,
+  ...authRoutes,
+  ...pipelineRoutes,
+  ...dialerRoutes
+};
+
+const compiled = Object.entries(routes).map(([key, handler]) => {
+  const [method, path] = key.split(' ');
+  const pattern = new RegExp('^' + path.replace(/:[a-z]+/g, '([^/]+)') + '$');
+  return { method, pattern, handler };
+});
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const headers = cors(request, env);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
     try {
-      if (url.pathname === '/api/health') return json({ ok: true, service: 'edgeform-crm-api' }, 200, headers);
-      if (url.pathname === '/api/submissions' && request.method === 'POST') return createSubmission(request, env, headers);
-      if (url.pathname === '/api/submissions' && request.method === 'GET') return listSubmissions(request, env, headers);
-      if (url.pathname === '/api/dashboard' && request.method === 'GET') return dashboard(request, env, headers);
+      for (const { method, pattern, handler } of compiled) {
+        const match = request.method === method && url.pathname.match(pattern);
+        if (match) return await handler(request, env, headers, match.slice(1).map(decodeURIComponent));
+      }
       return json({ ok: false, error: 'Not found' }, 404, headers);
     } catch (error) {
+      if (error instanceof HttpError) return json({ ok: false, success: false, error: error.message }, error.status, headers);
       console.error(error);
-      return json({ ok: false, error: 'Internal error' }, 500, headers);
+      return json({ ok: false, success: false, error: 'Internal error' }, 500, headers);
     }
   }
 };

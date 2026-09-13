@@ -664,7 +664,7 @@
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;text-align:center;max-width:480px;margin:0 auto;">
           <div style="font-size:36px;margin-bottom:16px;">⚠️</div>
           <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:8px;">No Pipeline Script Connected</div>
-          <div style="font-size:13px;color:var(--text-muted);line-height:1.6;">Contact your admin to set up your LeadHunter pipeline link.<br>Your account needs a Google Sheets URL in the Users settings.</div>
+          <div style="font-size:13px;color:var(--text-muted);line-height:1.6;">Could not load your LeadHunter link.<br>Refresh the page or sign in again.</div>
         </div>
       </div>
 
@@ -699,7 +699,7 @@
           <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
             <div style="font-family:var(--mono);font-size:10px;color:var(--green);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Step 4</div>
             <div style="font-size:15px;font-weight:600;margin-bottom:6px;">Scan Google Maps</div>
-            <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">Go to <strong style="color:var(--text);">google.com/maps</strong>, search a business type + city, then click <strong style="color:var(--green);">🎯 Scan → Sheets</strong>.</div>
+            <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">Go to <strong style="color:var(--text);">google.com/maps</strong>, search a business type + city, then click <strong style="color:var(--green);">🎯 Scan → CRM</strong>.</div>
           </div>
         </div>
 
@@ -721,7 +721,7 @@
         <div style="margin-top:16px;background:rgba(61,255,160,0.05);border:1px solid rgba(61,255,160,0.15);border-radius:10px;padding:16px 20px;display:flex;gap:12px;align-items:flex-start;">
           <span style="font-size:18px;flex-shrink:0;">💡</span>
           <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">
-            <strong style="color:var(--green);">Pro tip:</strong> Search something like <em>"plumbers Fort Lauderdale"</em> or <em>"HVAC Miami"</em> on Google Maps, then hit Scan. The script auto-scrolls, scrapes all results, filters out chains, Google-verifies each lead has no website, and saves everything directly to your pipeline sheet.
+            <strong style="color:var(--green);">Pro tip:</strong> Search something like <em>"plumbers Fort Lauderdale"</em> or <em>"HVAC Miami"</em> on Google Maps, then hit Scan. The script auto-scrolls, scrapes all results, filters out chains, Google-verifies each lead has no website, and saves everything directly to your CRM pipeline.
           </div>
         </div>
       </div>
@@ -911,13 +911,10 @@
 </div>
 
 <script>
-const GAS_AUTH     = 'https://script.google.com/macros/s/AKfycby7Mx_dPxxYqjc9LUuAvUP1_X0nVO2ip24XnC9A9bC80FaSZMDq5QB10AK22rK4GcEh/exec';
 const CRM_API      = 'https://edgeform-crm-api.edgeformmedia.workers.dev';
-const EMAIL_WORKER = 'https://email.edgeformmedia.workers.dev';
+const MAIL_DOMAIN  = 'edgeformmarketing.com';
 const SESSION_KEY  = 'edgeform_crm_session';
 const LOGIN_URL    = '/login/index.html';
-// Sheets CSV endpoint — reads directly from the published spreadsheet
-const SHEET_ID     = '1GAu9V_Qui5H9jFkULEY7T9HaqCKV_v9t3wjeFnnE96E';
 
 let allSubmits  = [];
 let currentUser = {};
@@ -927,21 +924,30 @@ function getSession() { try { return JSON.parse(localStorage.getItem(SESSION_KEY
 function clearSession() { localStorage.removeItem(SESSION_KEY); }
 function redirect() { window.location.href = LOGIN_URL; }
 
-async function gasReq(url, payload) {
-  const r = await fetch(url + '?payload=' + encodeURIComponent(JSON.stringify(payload)));
-  return r.json();
+async function api(path, options = {}) {
+  const r = await fetch(CRM_API + path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getSession()?.token || ''}`, ...(options.headers || {}) }
+  });
+  const data = await r.json();
+  if (r.status === 401) { clearSession(); redirect(); }
+  return data;
 }
 
-// ─── Boot — retry up to 3x to handle GAS cold starts ─────────
+// ─── Boot ─────────────────────────────────────────────────────
 (async () => {
   const session = getSession();
   if (!session?.token) { redirect(); return; }
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const r = await gasReq(GAS_AUTH, { action: 'verifySession', token: session.token });
-      if (r.ok) { window._userGasUrl = r.gas_url || ''; initApp(session); initLeadsPage(r.gas_url || ''); return; }
-      // GAS responded ok:false — session genuinely invalid, clear and redirect
+      const r = await api('/api/auth/me');
+      if (r.ok) {
+        initApp({ ...session, name: r.user.name, email: r.user.email });
+        initLeadsPage(r.leadhunter_url || '');
+        return;
+      }
+      // API responded ok:false — session genuinely invalid, clear and redirect
       clearSession(); redirect(); return;
     } catch {
       // Network/cold start error — wait and retry
@@ -974,10 +980,10 @@ function initApp(session) {
   document.getElementById('greeting').textContent = `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}, ${first}.`;
   document.getElementById('today-str').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  // Email composer — build from address: firstname.lastname@edgeform-media.com
-  const parts   = name.trim().toLowerCase().split(/\s+/);
+  // Email composer — from address (set server-side): firstname.lastname@MAIL_DOMAIN
+  const parts   = name.trim().toLowerCase().replace(/[^a-z\s-]/g, '').split(/\s+/).filter(Boolean);
   const handle  = parts.length >= 2 ? `${parts[0]}.${parts[parts.length - 1]}` : parts[0];
-  const fromAddr = `${handle}@edgeform-media.com`;
+  const fromAddr = `${handle}@${MAIL_DOMAIN}`;
   document.getElementById('compose-from').value = `${name} <${fromAddr}>`;
   document.getElementById('sig-name').textContent = name;
 
@@ -990,8 +996,7 @@ function initApp(session) {
   setInterval(async () => {
     const s = getSession();
     if (!s?.token) { redirect(); return; }
-    const r = await gasReq(GAS_AUTH, { action: 'verifySession', token: s.token }).catch(() => null);
-    if (!r?.ok) { clearSession(); redirect(); }
+    await api('/api/auth/me').catch(() => {}); // api() redirects on 401; network blips don't log you out
   }, 5 * 60 * 1000);
 
   document.getElementById('auth-guard').style.display = 'none';
@@ -1015,11 +1020,7 @@ async function loadSubmits() {
     '<div class="state-box"><div class="state-icon">◈</div>Loading…</div>';
 
   try {
-    const session = getSession();
-    const r    = await fetch(CRM_API + '/api/submissions', {
-      headers: { Authorization: `Bearer ${session?.token || ''}` }
-    });
-    const data = await r.json();
+    const data = await api('/api/submissions');
 
     if (!data.ok) throw new Error(data.error || 'Cloud data error');
 
@@ -1215,10 +1216,6 @@ async function sendEmail() {
     return;
   }
 
-  const parts    = currentUser.name.trim().toLowerCase().split(/\s+/);
-  const handle   = parts.length >= 2 ? `${parts[0]}.${parts[parts.length-1]}` : parts[0];
-  const fromAddr = `${handle}@edgeform-media.com`;
-
   // Plain text body with signature appended
   const fullBody = `${bodyTxt}\n\n--\n${currentUser.name}\nEdgeform Media\nwww.edgeform-media.com`;
 
@@ -1226,19 +1223,10 @@ async function sendEmail() {
   btn.classList.add('loading'); btn.disabled = true;
 
   try {
-    const res = await fetch(EMAIL_WORKER, {
+    const data = await api('/api/email/send', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from:    `${currentUser.name} <${fromAddr}>`,
-        to,
-        subject,
-        body:    fullBody,
-        replyTo: fromAddr,
-      })
+      body: JSON.stringify({ to, subject, body: fullBody })
     });
-
-    const data = await res.json();
 
     if (data.success) {
       msgEl.className = 'email-msg success show';
@@ -1262,8 +1250,8 @@ async function sendEmail() {
 const LEAD_SCRIPT_TEMPLATE = `// ==UserScript==
 // @name         LeadHunter — Maps Scraper
 // @namespace    https://agent.nf-financial.life
-// @version      2.1
-// @description  Scrapes Google Maps, saves directly to Google Sheets
+// @version      3.0
+// @description  Scrapes Google Maps, saves directly to Edgeform CRM
 // @author       Thomas @ NF Financial
 // @match        https://www.google.com/maps*
 // @match        https://maps.google.com/*
@@ -1271,15 +1259,14 @@ const LEAD_SCRIPT_TEMPLATE = `// ==UserScript==
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addStyle
-// @connect      script.google.com
-// @connect      script.googleusercontent.com
+// @connect      edgeform-crm-api.edgeformmedia.workers.dev
 // @run-at       document-start
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  const SHEETS_URL_KEY = 'lh_sheets_url';
+  const SHEETS_URL_KEY = 'lh_crm_url';
   function getSheetsUrl() { return GM_getValue(SHEETS_URL_KEY, ''); }
   function setSheetsUrl(u) { GM_setValue(SHEETS_URL_KEY, u); }
 
@@ -1442,15 +1429,15 @@ const LEAD_SCRIPT_TEMPLATE = `// ==UserScript==
     cfgPanel.id = 'lh-config-panel';
 
     const cfgTitle = document.createElement('h3');
-    cfgTitle.textContent = '⚙ LeadHunter — Google Sheets URL';
+    cfgTitle.textContent = '⚙ LeadHunter — CRM Link';
 
     const cfgDesc = document.createElement('p');
-    cfgDesc.innerHTML = 'Paste your Google Apps Script Web App URL below.<br>Leads will be saved directly to your Sheet on every scan.<br><br>URL format: <span style="color:#a78bfa">https://script.google.com/macros/s/.../exec</span>';
+    cfgDesc.innerHTML = 'Paste your LeadHunter link from the CRM (Make More Leads page).<br>Leads are saved directly to your pipeline on every scan.<br><br>URL format: <span style="color:#a78bfa">https://edgeform-crm-api.edgeformmedia.workers.dev/api/leadhunter/...</span>';
 
     const urlInput = document.createElement('input');
     urlInput.id = 'lh-sheets-input';
     urlInput.type = 'text';
-    urlInput.placeholder = 'https://script.google.com/macros/s/.../exec';
+    urlInput.placeholder = 'https://edgeform-crm-api.edgeformmedia.workers.dev/api/leadhunter/...';
 
     const saveBtn = document.createElement('button');
     saveBtn.id = 'lh-cfg-save';
@@ -1471,11 +1458,11 @@ const LEAD_SCRIPT_TEMPLATE = `// ==UserScript==
 
     const scanBtn = document.createElement('button');
     scanBtn.id = 'lh-scan-btn';
-    scanBtn.textContent = '🎯 Scan → Sheets';
+    scanBtn.textContent = '🎯 Scan → CRM';
 
     const cfgBtn = document.createElement('button');
     cfgBtn.id = 'lh-cfg-btn';
-    cfgBtn.title = 'Set Google Sheets URL';
+    cfgBtn.title = 'Set CRM link';
     cfgBtn.textContent = '⚙';
 
     btnRow.appendChild(scanBtn);
@@ -1503,7 +1490,7 @@ const LEAD_SCRIPT_TEMPLATE = `// ==UserScript==
         scanBtn.innerHTML = '🎯 Scan Leads &nbsp;<span style="font-size:9px;background:rgba(255,59,92,0.2);color:#ff3b5c;border:1px solid rgba(255,59,92,0.4);border-radius:3px;padding:2px 6px;letter-spacing:0.5px">NO SHEETS URL</span>';
       } else {
         scanBtn.classList.remove('lh-no-url');
-        scanBtn.textContent = '🎯 Scan → Sheets';
+        scanBtn.textContent = '🎯 Scan → CRM';
       }
     }
 
@@ -1512,14 +1499,14 @@ const LEAD_SCRIPT_TEMPLATE = `// ==UserScript==
 
     saveBtn.addEventListener('click', () => {
       const val = urlInput.value.trim();
-      if (!val.includes('script.google.com')) {
-        setStatus('⚠ Must be a script.google.com/macros/s/.../exec URL', 'lh-warn', 3500);
+      if (!val.includes('/api/leadhunter/')) {
+        setStatus('⚠ Must be your LeadHunter link from the CRM', 'lh-warn', 3500);
         return;
       }
       setSheetsUrl(val);
       cfgPanel.classList.remove('lh-open');
       refreshUI();
-      setStatus('✅ Sheets URL saved — ready to scan!', 'lh-ok', 3000);
+      setStatus('✅ CRM link saved — ready to scan!', 'lh-ok', 3000);
     });
 
     // ── append to DOM + re-inject guard ──────────────────────────
@@ -1536,7 +1523,7 @@ const LEAD_SCRIPT_TEMPLATE = `// ==UserScript==
     refreshUI();
     if (!getSheetsUrl()) {
       cfgPanel.classList.add('lh-open');
-      setStatus('👆 Paste your Google Sheets URL to get started', 'lh-warn');
+      setStatus('👆 Paste your CRM link to get started', 'lh-warn');
     }
 
     // ── auto-scroll the Maps sidebar to load all results ─────────
@@ -1699,7 +1686,7 @@ const LEAD_SCRIPT_TEMPLATE = `// ==UserScript==
       const sheetsUrl = getSheetsUrl();
       if (!sheetsUrl) {
         cfgPanel.classList.add('lh-open');
-        setStatus('⚠ Set your Sheets URL first', 'lh-warn');
+        setStatus('⚠ Set your CRM link first', 'lh-warn');
         return;
       }
 
@@ -1741,12 +1728,12 @@ const LEAD_SCRIPT_TEMPLATE = `// ==UserScript==
       const falsePositives = noWebsiteCandidates.length - confirmedNoWeb;
 
       setStatus(
-        \`✅ \${confirmedNoWeb} confirmed no-website · \${falsePositives} had hidden sites · saving to Sheets...\`,
+        \`✅ \${confirmedNoWeb} confirmed no-website · \${falsePositives} had hidden sites · saving to CRM...\`,
         'lh-ok'
       );
       scanBtn.textContent = \`☁ Saving...\`;
 
-      // Step 4: push to Sheets
+      // Step 4: push to CRM
       pushToSheets(results, sheetsUrl, (ok, added, updated) => {
         if (ok) {
           setStatus(
@@ -1756,14 +1743,14 @@ const LEAD_SCRIPT_TEMPLATE = `// ==UserScript==
           scanBtn.textContent = \`✅ \${confirmedNoWeb} clean leads saved\`;
         } else {
           cacheLocally(results);
-          setStatus('⚠ Sheets unreachable — saved locally. Check ⚙ URL.', 'lh-warn', 7000);
+          setStatus('⚠ CRM unreachable — saved locally. Check ⚙ link.', 'lh-warn', 7000);
           scanBtn.textContent = '⚠ Check ⚙ URL';
         }
         setTimeout(() => { scanBtn.disabled = false; refreshUI(); }, 5000);
       });
     });
 
-    // ── push to Sheets ─────────────────────────────────────────────
+    // ── push to CRM ────────────────────────────────────────────────
     function pushToSheets(results, url, cb) {
       const scanQuery = document.title.replace(' - Google Maps','').trim();
       const leads = results.map(b => ({
@@ -1944,7 +1931,7 @@ const LEAD_SCRIPT_TEMPLATE = `// ==UserScript==
 })();`;
 
 function getPersonalizedScript(gasUrl) {
-  // Inject the user's GAS URL so the script works immediately on install
+  // Inject the user's LeadHunter link so the script works immediately on install
   // Replace the default empty getSheetsUrl with one that returns their URL
   return LEAD_SCRIPT_TEMPLATE
     .replace(
@@ -1952,8 +1939,8 @@ function getPersonalizedScript(gasUrl) {
       "function getSheetsUrl() { return GM_getValue(SHEETS_URL_KEY, '" + gasUrl + "'); }"
     )
     .replace(
-      "const SHEETS_URL_KEY = 'lh_sheets_url';",
-      "const SHEETS_URL_KEY = 'lh_sheets_url'; // Pre-configured for your account"
+      "const SHEETS_URL_KEY = 'lh_crm_url';",
+      "const SHEETS_URL_KEY = 'lh_crm_url'; // Pre-configured for your account"
     );
 }
 
@@ -2003,7 +1990,7 @@ function initLeadsPage(gasUrl) {
 
 async function signOut() {
   const s = getSession();
-  if (s?.token) gasReq(GAS_AUTH, { action: 'logout', token: s.token }).catch(() => {});
+  if (s?.token) await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
   clearSession();
   window.location.href = LOGIN_URL;
 }

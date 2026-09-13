@@ -802,28 +802,27 @@ nav {
 </head>
 <body>
 
-<!-- Setup Screen -->
+<!-- Loading / Import Screen -->
 <div id="setup-screen">
   <div class="setup-card">
-    <div class="setup-title">⚡ Pipeline Setup</div>
-    <div class="setup-sub">Choose how to load your leads. Use the default script saved to your login, or enter a new Google Apps Script link for this browser.</div>
-    <div class="setup-status" id="setup-status">Checking default script…</div>
-    <div class="setup-actions">
-      <button class="setup-btn" id="setup-default-btn" onclick="loadDefaultSetup()">Load Default →</button>
-      <button class="setup-btn secondary" onclick="showManualSetup(true)">Enter New Script Link</button>
-    </div>
+    <div class="setup-title">⚡ Pipeline</div>
+    <div class="setup-sub" id="setup-sub">Loading your leads…</div>
+    <div class="setup-status" id="setup-status"></div>
     <div class="setup-manual" id="setup-manual">
-      <label class="setup-label">New LeadHunter GAS URL</label>
-      <input class="setup-input" id="setup-gas-url" placeholder="https://script.google.com/macros/s/…/exec" onkeydown="if(event.key==='Enter') saveSetup()">
-      <button class="setup-btn" onclick="saveSetup()">Connect New Link →</button>
-      <div class="setup-hint">Manual links override the default only on this device. Use “Load Default” anytime to switch back.</div>
+      <label class="setup-label">Import leads from CSV</label>
+      <input class="setup-input" type="file" id="import-file" accept=".csv,text/csv">
+      <button class="setup-btn" id="import-btn" onclick="importCsv()">Import CSV →</button>
+      <div class="setup-hint">Export your old Google Sheet as CSV (File → Download → Comma-separated values). Duplicates are merged by name + address, and existing stages and notes are kept.</div>
+      <div class="setup-actions">
+        <button class="setup-btn secondary" onclick="closeImport()">Close</button>
+      </div>
     </div>
   </div>
 </div>
 
 <!-- Nav -->
 <nav>
-  <button class="nav-menu-btn" onclick="resetSetup()">☰</button>
+  <button class="nav-menu-btn" onclick="openImport()" title="Import leads">☰</button>
   <div class="nav-title" id="nav-title">PIPELINE</div>
   <span class="nav-user-name" id="nav-caller"></span>
   <button class="nav-signout" onclick="goBack()">
@@ -995,10 +994,8 @@ nav {
 
 <script>
 // ─── CONFIG ───────────────────────────────────────────────────
-const GAS_AUTH    = 'https://script.google.com/macros/s/AKfycby7Mx_dPxxYqjc9LUuAvUP1_X0nVO2ip24XnC9A9bC80FaSZMDq5QB10AK22rK4GcEh/exec';
-const SETUP_KEY   = 'pipeline_setup';
-const APPTS_KEY   = 'pipeline_appointments';
-const GCAL_KEY    = 'pipeline_gcal_id';
+const CRM_API     = 'https://edgeform-crm-api.edgeformmedia.workers.dev';
+const SESSION_KEY = 'edgeform_crm_session';
 
 const STAGE_CLASSES = {
   'New Lead':          's-new',
@@ -1119,7 +1116,6 @@ function escHtml(str) {
 
 // ─── State ────────────────────────────────────────────────────
 let setup        = null;
-let authDefaultGasUrl = '';
 let allLeads     = [];
 let filteredLeads = [];
 let currentLeadIdx = 0;
@@ -1127,163 +1123,119 @@ let appointments = [];
 let calMonth     = new Date();
 let currentLead  = null;
 
-// ─── Setup helpers ───────────────────────────────────────────
-function getSavedSetup() {
-  try { return JSON.parse(localStorage.getItem(SETUP_KEY)) || null; }
-  catch { return null; }
+// ─── API ─────────────────────────────────────────────────────
+function getSession() {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { return null; }
 }
 
-function saveSetupState() {
-  if (setup) localStorage.setItem(SETUP_KEY, JSON.stringify(setup));
+async function api(path, options = {}) {
+  const r = await fetch(CRM_API + path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getSession()?.token || ''}` }
+  });
+  if (r.status === 401) { window.location.href = '/login/index.html'; throw new Error('Session expired'); }
+  const data = await r.json();
+  if (!data.ok) throw new Error(data.error || `Request failed (${r.status})`);
+  return data;
+}
+
+function connectionButtonsHtml() {
+  return `<div class="state-actions">
+    <button class="state-action-btn" onclick="loadLeads()">Retry</button>
+    <button class="state-action-btn secondary" onclick="openImport()">Import CSV</button>
+  </div>`;
 }
 
 function startPipeline() {
   document.getElementById('setup-screen').style.display = 'none';
   loadLeads();
-  renderCalendar();
-}
-
-function connectionButtonsHtml() {
-  return `<div class="state-actions">
-    <button class="state-action-btn" onclick="loadDefaultSetup()">Load Default</button>
-    <button class="state-action-btn secondary" onclick="openSetupOptions(true)">Enter New Script Link</button>
-  </div>`;
-}
-
-function refreshSetupControls() {
-  const status = document.getElementById('setup-status');
-  const defaultBtn = document.getElementById('setup-default-btn');
-  const manualInput = document.getElementById('setup-gas-url');
-  const defaultUrl = authDefaultGasUrl || setup?.defaultGasUrl || '';
-
-  if (manualInput && setup?.manualGasUrl) manualInput.value = setup.manualGasUrl;
-
-  if (!status || !defaultBtn) return;
-
-  if (defaultUrl) {
-    defaultBtn.disabled = false;
-    status.textContent = 'Default script ready' + (setup?.callerName ? ' for ' + setup.callerName : '') + '.';
-  } else {
-    defaultBtn.disabled = true;
-    status.textContent = 'No default script link found yet. Enter a new Script link below.';
-    showManualSetup(false);
-  }
-}
-
-function openSetupOptions(showManual = false) {
-  document.getElementById('setup-screen').style.display = 'flex';
-  const manual = document.getElementById('setup-manual');
-  if (manual) manual.classList.toggle('open', !!showManual);
-  refreshSetupControls();
-  if (showManual) showManualSetup(true);
-}
-
-function showManualSetup(focusInput = false) {
-  const manual = document.getElementById('setup-manual');
-  const input = document.getElementById('setup-gas-url');
-  if (manual) manual.classList.add('open');
-  if (input && setup?.manualGasUrl) input.value = setup.manualGasUrl;
-  if (focusInput && input) setTimeout(() => input.focus(), 60);
-}
-
-function loadDefaultSetup() {
-  const defaultUrl = authDefaultGasUrl || setup?.defaultGasUrl || '';
-  if (!defaultUrl) {
-    showManualSetup(true);
-    alert('No default Script link is saved on this login yet. Paste a new one.');
-    return;
-  }
-
-  setup = setup || {};
-  setup.gasUrl = defaultUrl;
-  setup.defaultGasUrl = defaultUrl;
-  setup.useManualUrl = false;
-  delete setup.manualGasUrl;
-  saveSetupState();
-  startPipeline();
-}
-
-function saveSetup() {
-  const gasUrl = document.getElementById('setup-gas-url').value.trim();
-  if (!gasUrl) { alert('Please paste your LeadHunter GAS URL.'); return; }
-  setup = setup || {};
-  setup.gasUrl = gasUrl;
-  setup.manualGasUrl = gasUrl;
-  setup.defaultGasUrl = authDefaultGasUrl || setup.defaultGasUrl || '';
-  setup.useManualUrl = true;
-  saveSetupState();
-  startPipeline();
-}
-
-function resetSetup() {
-  openSetupOptions(false);
+  loadAppointments();
 }
 
 function goBack() {
   window.location.href = '/home/index.html';
 }
 
-// ─── Init — pull name + GAS URL from auth session ─────────────
+// ─── CSV import ──────────────────────────────────────────────
+function openImport() {
+  document.getElementById('setup-sub').textContent = 'Bring leads in from a spreadsheet export.';
+  document.getElementById('setup-status').textContent = '';
+  document.getElementById('setup-manual').classList.add('open');
+  document.getElementById('setup-screen').style.display = 'flex';
+}
+
+function closeImport() {
+  document.getElementById('setup-screen').style.display = 'none';
+}
+
+// RFC 4180-ish: quoted fields, escaped quotes, CRLF.
+function parseCsv(text) {
+  const rows = []; let row = [], field = '', quoted = false;
+  text = text.replace(/^﻿/, '');
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (c === '"') quoted = false;
+      else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(field); rows.push(row); row = []; field = '';
+    } else field += c;
+  }
+  if (field || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(v => v.trim()));
+}
+
+async function importCsv() {
+  const file = document.getElementById('import-file').files[0];
+  const status = document.getElementById('setup-status');
+  if (!file) { status.textContent = 'Choose a CSV file first.'; return; }
+  const btn = document.getElementById('import-btn');
+  btn.disabled = true;
+  try {
+    const [headers, ...rows] = parseCsv(await file.text());
+    if (!headers || !rows.length) throw new Error('That CSV has no rows.');
+    const objects = rows.map(r => Object.fromEntries(headers.map((h, i) => [h, r[i] ?? ''])));
+    let added = 0, updated = 0, skipped = 0;
+    for (let i = 0; i < objects.length; i += 1000) {
+      status.textContent = `Importing ${Math.min(i + 1000, objects.length)} / ${objects.length}…`;
+      const r = await api('/api/leads/import', { method: 'POST', body: JSON.stringify({ rows: objects.slice(i, i + 1000) }) });
+      added += r.added; updated += r.updated; skipped += r.skipped;
+    }
+    status.textContent = `✓ ${added} added · ${updated} merged${skipped ? ` · ${skipped} skipped (no name)` : ''}`;
+    loadLeads();
+  } catch (err) {
+    status.textContent = 'Import failed: ' + err.message;
+  }
+  btn.disabled = false;
+}
+
+// ─── Init — pull name from auth session ───────────────────────
 (async function init() {
-  try { appointments = JSON.parse(localStorage.getItem(APPTS_KEY)) || []; } catch {}
-
-  // Get session saved by login page
-  let session = null;
-  try { session = JSON.parse(localStorage.getItem('edgeform_crm_session')); } catch {}
-
-  if (!session?.token) {
+  if (!getSession()?.token) {
     window.location.href = '/login/index.html';
     return;
   }
-
-  const savedSetup = getSavedSetup();
-
   try {
-    const r    = await fetch(GAS_AUTH + '?payload=' + encodeURIComponent(JSON.stringify({
-      action: 'getUserConfig',
-      token:  session.token,
-    })));
-    const data = await r.json();
-
-    if (!data.ok) {
-      window.location.href = '/login/index.html';
-      return;
-    }
-
-    authDefaultGasUrl = data.gas_url || '';
-    setup = {
-      ...(savedSetup || {}),
-      callerName: data.name,
-      defaultGasUrl: authDefaultGasUrl,
-      email:      data.email,
-      role:       data.role,
-    };
-
-    setup.gasUrl = setup.useManualUrl && setup.manualGasUrl
-      ? setup.manualGasUrl
-      : authDefaultGasUrl;
-
-    document.getElementById('nav-caller').textContent = data.name;
-    refreshSetupControls();
-
-    if (setup.gasUrl) {
-      startPipeline();
-    } else {
-      openSetupOptions(true);
-    }
-
-  } catch(err) {
-    setup = savedSetup || null;
-    authDefaultGasUrl = setup?.defaultGasUrl || '';
-    refreshSetupControls();
-
-    if (setup?.gasUrl) {
-      startPipeline();
-    } else {
-      openSetupOptions(true);
-    }
+    const { user } = await api('/api/auth/me');
+    setup = { callerName: user.name, email: user.email, role: user.role };
+    document.getElementById('nav-caller').textContent = user.name;
+    startPipeline();
+  } catch (err) {
+    document.getElementById('setup-status').textContent = 'Could not reach the CRM: ' + err.message;
   }
 })();
+
+async function loadAppointments() {
+  try {
+    appointments = (await api('/api/appointments')).appointments || [];
+  } catch (err) { console.warn('Appointments failed to load:', err); }
+  renderCalendar();
+  if (allLeads.length) renderLeadList(filteredLeads);
+}
 
 // ─── Load leads ───────────────────────────────────────────────
 async function loadLeads() {
@@ -1291,10 +1243,7 @@ async function loadLeads() {
     `<div class="state-box"><div class="state-icon">👥</div>Loading leads…${connectionButtonsHtml()}</div>`;
 
   try {
-    const r    = await fetch(setup.gasUrl + '?action=getLeads');
-    const data = await r.json();
-
-    if (!data.success) throw new Error(data.error || 'GAS error');
+    const data = await api('/api/leads');
 
     allLeads = (data.leads || []);
 
@@ -1534,35 +1483,24 @@ function renderDetail(l, idx) {
 
 // ─── Stage update ─────────────────────────────────────────────
 async function updateStage(name, address, stage, idx) {
-  // Find the header key that maps to 'stage' and update it
-  const stageHeader = Object.entries(fieldMap).find(([h,k]) => k === 'stage');
-  const stageKey = stageHeader ? stageHeader[0] : 'Stage';
-  filteredLeads[idx][stageKey] = stage;
-  const gi = allLeads.findIndex(l => F(l, 'name') === name);
-  if (gi >= 0) allLeads[gi][stageKey] = stage;
-
-  renderDetail(filteredLeads[idx], idx);
+  const lead = filteredLeads[idx];
+  lead.Stage = stage;
+  renderDetail(lead, idx);
 
   try {
-    const payload = btoa(JSON.stringify({ action: 'updateStage', name, address, stage }));
-    await fetch(`${setup.gasUrl}?action=updateStage&payload=${payload}`);
-  } catch(e) { console.warn('Stage sync failed:', e); }
+    await api('/api/leads/' + encodeURIComponent(F(lead, 'id')), { method: 'PATCH', body: JSON.stringify({ stage }) });
+  } catch(e) { showToast('Stage not saved: ' + e.message); }
 }
 
 async function saveNotes(name, address, idx) {
   const notes = document.getElementById('detail-notes').value;
-  const notesHeader = Object.entries(fieldMap).find(([h,k]) => k === 'notes');
-  const notesKey = notesHeader ? notesHeader[0] : 'Notes';
-  filteredLeads[idx][notesKey] = notes;
-  const gi = allLeads.findIndex(l => F(l, 'name') === name);
-  if (gi >= 0) allLeads[gi][notesKey] = notes;
+  const lead = filteredLeads[idx];
+  lead.Notes = notes;
 
   try {
-    const stage = F(filteredLeads[idx], 'stage') || 'New Lead';
-    const payload = btoa(JSON.stringify({ action: 'updateStage', name, address, stage, notes }));
-    await fetch(`${setup.gasUrl}?action=updateStage&payload=${payload}`);
+    await api('/api/leads/' + encodeURIComponent(F(lead, 'id')), { method: 'PATCH', body: JSON.stringify({ notes }) });
     showToast('Notes saved ✓');
-  } catch(e) { showToast('Saved locally only'); }
+  } catch(e) { showToast('Notes not saved: ' + e.message); }
 }
 
 // ─── Pipeline ─────────────────────────────────────────────────
@@ -1756,35 +1694,26 @@ async function bookAppointment() {
   btn.classList.add('loading'); btn.disabled = true;
 
   try {
-    // Route through GAS — CalendarApp creates the Google Calendar event server-side
-    const payload = {
-      action: 'bookAppointment',
-      leadName, company, phone, email, mapsUrl,
-      address, booker, datetime, duration, notes,
-    };
+    const r = await api('/api/appointments', {
+      method: 'POST',
+      body: JSON.stringify({
+        leadId: currentLead ? F(currentLead, 'id') : '',
+        leadName, company, phone, email, mapsUrl, address, booker, notes, duration,
+        datetime, startsAt: new Date(datetime).toISOString(),
+      }),
+    });
 
-    const r    = await gasPayload('bookAppointment', payload);
-
-    if (!r.success) throw new Error(r.error || 'GAS error');
-
-    // Also cache locally for instant calendar render
-    const appt = {
-      id:        r.apptId || Date.now().toString(),
-      leadName, company, phone, email, mapsUrl,
-      booker, datetime, duration, notes,
-      calEventId: r.calEventId || '',
-      createdAt:  new Date().toISOString(),
-    };
-    appointments.push(appt);
-    localStorage.setItem(APPTS_KEY, JSON.stringify(appointments));
+    appointments.push(r.appointment);
+    if (currentLead) currentLead.Stage = 'Appt Set';
 
     btn.classList.remove('loading'); btn.disabled = false;
     msgEl.className = 'book-msg ok show';
-    msgEl.textContent = r.calCreated
-      ? '✓ Booked! Google Calendar event created + email reminders set.'
-      : '✓ Appointment saved to sheet. Calendar event creation failed — check GAS permissions.';
+    msgEl.textContent = r.invited
+      ? '✓ Booked! A calendar invite was emailed to you.'
+      : '✓ Booked! (The calendar invite email could not be sent.)';
 
     renderCalendar();
+    renderLeadList(filteredLeads);
     setTimeout(() => closeModal(), 2800);
 
   } catch(err) {
@@ -1792,15 +1721,6 @@ async function bookAppointment() {
     msgEl.className = 'book-msg err show';
     msgEl.textContent = 'Error: ' + err.message;
   }
-}
-
-// ─── Helpers ─────────────────────────────────────────────────
-// ─── GAS payload helper ───────────────────────────────────────
-async function gasPayload(action, data) {
-  data.action = action;
-  const payload = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-  const r = await fetch(`${setup.gasUrl}?action=${action}&payload=${encodeURIComponent(payload)}`);
-  return r.json();
 }
 
 // ─── Log call result ──────────────────────────────────────────
@@ -1815,9 +1735,9 @@ async function logCallResult(leadName, phone, address, result) {
   logs.unshift({ leadName, phone, result, agent, timestamp: now.toISOString() });
   localStorage.setItem(key, JSON.stringify(logs.slice(0, 500)));
 
-  // Push to GAS
   try {
-    await gasPayload('logCall', { leadName, phone, address, result, agent });
+    const lead = allLeads.find(l => F(l, 'name') === leadName);
+    await api('/api/calls', { method: 'POST', body: JSON.stringify({ leadId: lead ? F(lead, 'id') : '', leadName, phone, result, agent }) });
   } catch(e) { console.warn('logCall failed:', e); }
 
   showToast(label);
