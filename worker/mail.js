@@ -115,29 +115,30 @@ function brand(env) {
     phoneDigits: digits,
     phoneDisplay: digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : digits,
     website: env.MAIL_WEBSITE || `https://${env.MAIL_DOMAIN}`,
-    logo: env.MAIL_LOGO_URL || `${env.APP_URL}/assets/logo.png`
+    logo: env.MAIL_LOGO_URL || `${env.APP_URL}/assets/efmg-logo.png`
   };
 }
 
 export function signatureHtml(env, { name, title, box }) {
   const b = brand(env);
   const address = boxAddress(env, box);
-  const link = 'color:#1d4ed8;text-decoration:none;';
+  const link = 'color:#0e1a3b;text-decoration:none;font-weight:bold;';
   const maps = `https://maps.google.com/?q=${encodeURIComponent(b.address)}`;
   return `<table class="edgeform-signature" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:22px;border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;">
 <tr>
-<td style="vertical-align:middle;padding:0 16px 0 0;">
-<div style="background:#0b1713;border-radius:10px;padding:12px 14px;"><img src="${escapeHtml(b.logo)}" width="150" alt="${escapeHtml(b.company)}" style="display:block;width:150px;max-width:150px;height:auto;border:0;"></div>
-</td>
-<td style="vertical-align:middle;padding:2px 0 2px 16px;border-left:2px solid #1d4ed8;">
-<div style="font-size:15px;line-height:20px;font-weight:bold;color:#0b1713;">${escapeHtml(name)}</div>
+<td style="padding:0 0 10px 0;">
+<div style="font-size:15px;line-height:20px;font-weight:bold;color:#0e1a3b;">${escapeHtml(name)}</div>
 ${title ? `<div style="font-size:12px;line-height:17px;color:#55605b;">${escapeHtml(title)}</div>` : ''}
-<div style="font-size:13px;line-height:19px;font-weight:bold;color:#1d4ed8;margin-top:2px;">${escapeHtml(b.company)}</div>
-<div style="font-size:12px;line-height:19px;color:#43504b;margin-top:6px;">
+</td>
+</tr>
+<tr>
+<td style="padding:0 0 10px 0;"><img src="${escapeHtml(b.logo)}" width="260" height="35" alt="${escapeHtml(b.company)}" style="display:block;width:260px;max-width:260px;height:auto;border:0;"></td>
+</tr>
+<tr>
+<td style="font-size:12px;line-height:19px;color:#43504b;border-top:1px solid #d7dbe3;padding-top:8px;">
 Call or text: <a href="tel:+1${b.phoneDigits}" style="${link}">${escapeHtml(b.phoneDisplay)}</a><br>
 <a href="mailto:${address}" style="${link}">${address}</a> &nbsp;|&nbsp; <a href="${escapeHtml(b.website)}" style="${link}">${escapeHtml(b.website.replace(/^https?:\/\//, ''))}</a><br>
 <a href="${maps}" style="color:#43504b;text-decoration:none;">${escapeHtml(b.address)}</a>
-</div>
 </td>
 </tr>
 </table>`;
