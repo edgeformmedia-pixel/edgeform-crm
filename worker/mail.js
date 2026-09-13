@@ -889,6 +889,7 @@ export async function syncInbound(env) {
   for (let page = 0; page < 5; page++) {
     const list = await resend(env, `/emails/receiving?limit=50${after ? `&after=${encodeURIComponent(after)}` : ''}`);
     const items = list.data || [];
+    if (page === 0) console.log('mail sync', { listed: items.length, newest: items[0]?.id || null });
     if (!items.length) break;
     const marks = items.map(() => '?').join(',');
     const seen = new Set((await env.DB.prepare(`SELECT key FROM mail_state WHERE key IN (${marks})`).bind(...items.map(i => `seen:${i.id}`)).all()).results.map(r => r.key));
