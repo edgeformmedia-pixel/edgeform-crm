@@ -1,9 +1,9 @@
-import { json, HttpError, clean, readJson, isEmail } from './lib.js';
+import { json, HttpError } from './lib.js';
 import { authRoutes, requireUser } from './auth.js';
 import { userRoutes } from './users.js';
 import { intakeRoutes } from './intake.js';
 import { dialerRoutes } from './dialer.js';
-import { sendEmail } from './email.js';
+import { mailRoutes, mailCron } from './mail.js';
 
 function cors(request, env) {
   const origin = request.headers.get('origin') || '';
@@ -28,30 +28,14 @@ async function dashboard(request, env, headers) {
   return json({ ok: true, submissions: submissions.results[0], contacts: contacts.results[0], pipeline: deals.results[0], activity: activity.results }, 200, headers);
 }
 
-// Staff email from the dashboard composer. The sender address is derived from
-// the signed-in user, never taken from the request.
-async function composeEmail(request, env, headers) {
-  const user = await requireUser(request, env);
-  const body = await readJson(request);
-  const to = clean(body.to, 254);
-  const subject = clean(body.subject, 300);
-  const text = clean(body.body, 50000);
-  if (!isEmail(to) || !subject || !text) throw new HttpError(400, 'Fill in To, Subject, and Message.');
-  const parts = user.name.trim().toLowerCase().replace(/[^a-z\s-]/g, '').split(/\s+/).filter(Boolean);
-  const handle = (parts.length >= 2 ? `${parts[0]}.${parts[parts.length - 1]}` : parts[0]) || 'team';
-  const address = `${handle}@${env.MAIL_DOMAIN}`;
-  const result = await sendEmail(env, { from: `${user.name} <${address}>`, to, subject, text, replyTo: address });
-  return json({ ok: true, success: true, id: result.id }, 200, headers);
-}
-
 const routes = {
   'GET /api/health': (request, env, headers) => json({ ok: true, service: 'edgeform-crm-api' }, 200, headers),
   ...intakeRoutes,
   'GET /api/dashboard': dashboard,
-  'POST /api/email/send': composeEmail,
   ...authRoutes,
   ...userRoutes,
-  ...dialerRoutes
+  ...dialerRoutes,
+  ...mailRoutes
 };
 
 const compiled = Object.entries(routes).map(([key, handler]) => {
@@ -76,5 +60,10 @@ export default {
       console.error(error);
       return json({ ok: false, success: false, error: 'Internal error' }, 500, headers);
     }
+  },
+
+  // Every minute: scheduled sends, inbound mail sync, trash cleanup.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(mailCron(env));
   }
 };

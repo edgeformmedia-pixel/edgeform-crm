@@ -215,18 +215,27 @@
   .send-btn.loading .btn-text { opacity: 0; }
   .send-btn.loading::after { content: ''; position: absolute; inset: 0; margin: auto; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.65s linear infinite; }
 
-  /* Signature panel */
-  .sig-preview { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; position: sticky; top: calc(var(--nav-h) + 16px); }
-  .sig-head { padding: 14px 18px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--text-dim); letter-spacing: 0.08em; text-transform: uppercase; }
-  .sig-body { padding: 20px; font-size: 13px; color: var(--text-dim); line-height: 1.8; }
-
-  /* 4:1 ratio logo — show at 160x40 */
-  .sig-logo { width: 160px; height: 40px; object-fit: contain; object-position: left; margin-bottom: 14px; display: block; opacity: 0.9; }
-  .sig-name { font-weight: 600; color: var(--text); font-size: 14px; }
-  .sig-role { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
-  .sig-divider { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
-  .sig-link { color: var(--accent-bright); text-decoration: none; font-size: 12px; font-family: var(--mono); }
-  .sig-link:hover { text-decoration: underline; }
+  /* Mail hub */
+  .mail-hub { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .mail-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 10px; position: relative; overflow: hidden; }
+  .mail-card.admin { background: #102019; color: #edf3ef; border-color: #102019; }
+  .mail-card .mc-icon { width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center; font-size: 19px; background: var(--accent-glow); }
+  .mail-card.admin .mc-icon { background: rgba(255,255,255,.08); }
+  .mail-card .mc-title { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
+  .mail-card .mc-addr { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+  .mail-card.admin .mc-addr, .mail-card.admin .mc-desc { color: #aebcb5; }
+  .mail-card .mc-desc { font-size: 13px; color: var(--text-dim); line-height: 1.6; flex: 1; }
+  .mail-card .mc-unread { position: absolute; top: 20px; right: 20px; font-family: var(--mono); font-size: 11px; padding: 3px 10px; border-radius: 99px; background: var(--accent); color: #fff; }
+  .mail-card .mc-actions { display: flex; gap: 8px; margin-top: 6px; }
+  .mc-open { flex: 1; text-align: center; text-decoration: none; background: var(--accent); color: #fff; border-radius: 9px; padding: 11px 14px; font-weight: 500; font-size: 14px; }
+  .mc-open:hover { opacity: .9; }
+  .mail-card.admin .mc-open { background: #e7eee9; color: #102219; }
+  .mc-compose { text-decoration: none; border: 1px solid var(--border); border-radius: 9px; padding: 11px 14px; font-size: 14px; color: var(--text-dim); background: none; cursor: pointer; font-family: var(--sans); }
+  .mail-card.admin .mc-compose { border-color: #3d5148; color: #cfdcd5; }
+  .mail-status { font-family: var(--mono); font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+  .mail-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--border-hi); }
+  .mail-status.ok i { background: #36b37e; }
+  .mail-status.off i { background: var(--orange); }
 
   .email-msg { font-family: var(--mono); font-size: 11px; padding: 9px 12px; border-radius: 6px; margin-top: 10px; display: none; border: 1px solid; }
   .email-msg.show { display: block; }
@@ -488,8 +497,9 @@
       <span class="drawer-item-icon">★</span> Creators
       <span class="drawer-item-badge" id="drawer-badge-creators">—</span>
     </a>
-    <a class="drawer-item" id="drawer-nav-email-page" href="#" onclick="drawerNav('email')">
-      <span class="drawer-item-icon">✉</span> Email
+    <a class="drawer-item" id="drawer-nav-mail-page" href="#" onclick="drawerNav('mail')">
+      <span class="drawer-item-icon">✉</span> Mail
+      <span class="drawer-item-badge" id="drawer-badge-mail" hidden>0</span>
     </a>
     <a class="drawer-item" id="drawer-nav-billing-page" href="#" onclick="drawerNav('billing')">
       <span class="drawer-item-icon">💳</span> Billing
@@ -526,8 +536,9 @@
         <span class="side-icon">★</span> Creators
         <span class="side-badge" id="badge-creators">—</span>
       </a>
-      <a class="side-item" id="nav-email-page" href="#" onclick="showPage('email');return false;">
-        <span class="side-icon">✉</span> Email
+      <a class="side-item" id="nav-mail-page" href="#" onclick="showPage('mail');return false;">
+        <span class="side-icon">✉</span> Mail
+        <span class="side-badge live" id="badge-mail" hidden>0</span>
       </a>
       <a class="side-item" id="nav-billing-page" href="#" onclick="showPage('billing');return false;">
         <span class="side-icon">💳</span> Billing
@@ -660,50 +671,16 @@
       </div>
     </div>
 
-    <!-- ══ EMAIL COMPOSER ══ -->
-    <div class="page-view" id="page-email">
+    <!-- ══ MAIL ══ -->
+    <div class="page-view" id="page-mail">
       <div class="page-head">
-        <div class="page-title">Compose Email</div>
-        <div class="page-sub">Sending from your Edgeform Media address</div>
+        <div class="page-title">Mail</div>
+        <div class="page-sub">Shared team inboxes · send, receive, and reply as Edgeform Marketing Group</div>
       </div>
-      <div class="email-layout">
-        <div class="compose-panel">
-          <div class="compose-head"><span class="compose-title">New Message</span></div>
-          <div class="compose-body">
-            <div class="c-field">
-              <label>From</label>
-              <input class="c-input readonly" id="compose-from" type="text" readonly>
-            </div>
-            <div class="c-field">
-              <label>To</label>
-              <input class="c-input" id="compose-to" type="email" placeholder="recipient@example.com">
-            </div>
-            <div class="c-field">
-              <label>Subject</label>
-              <input class="c-input" id="compose-subject" type="text" placeholder="Subject…">
-            </div>
-            <div class="c-field">
-              <label>Message</label>
-              <textarea class="c-input" id="compose-body-text" placeholder="Write your message here…"></textarea>
-            </div>
-            <button class="send-btn" id="send-btn" onclick="sendEmail()">
-              <span class="btn-text">Send Email →</span>
-            </button>
-            <div class="email-msg" id="email-msg"></div>
-          </div>
-        </div>
-
-        <div class="sig-preview">
-          <div class="sig-head">Signature Preview</div>
-          <div class="sig-body">
-            <img src="/assets/logo.png" alt="Edgeform Media" class="sig-logo" onerror="this.style.display='none'">
-            <div class="sig-name" id="sig-name">—</div>
-            <div class="sig-role">Edgeform Media</div>
-            <hr class="sig-divider">
-            <a href="https://www.edgeform-media.com" target="_blank" class="sig-link">www.edgeform-media.com</a>
-          </div>
-        </div>
+      <div class="mail-hub" id="mail-hub">
+        <div class="state-box"><div class="state-icon">✉</div>Loading inboxes…</div>
       </div>
+      <div class="mail-status" id="mail-status"><i></i><span>Checking connection…</span></div>
     </div>
 
     <!-- ══ USERS (admins) ══ -->
@@ -938,8 +915,7 @@
 </div>
 
 <script>
-const CRM_API      = 'https://edgeform-crm-api.edgeformmedia.workers.dev';
-const MAIL_DOMAIN  = 'edgeformmarketing.com';
+const CRM_API      = ['localhost', '127.0.0.1'].includes(location.hostname) ? 'http://localhost:8787' : 'https://edgeform-crm-api.edgeformmedia.workers.dev';
 const SESSION_KEY  = 'edgeform_crm_session';
 const LOGIN_URL    = '/login/index.html';
 
@@ -1013,12 +989,8 @@ function initApp(session) {
   document.getElementById('greeting').textContent = `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}, ${first}.`;
   document.getElementById('today-str').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  // Email composer — from address (set server-side): firstname.lastname@MAIL_DOMAIN
-  const parts   = name.trim().toLowerCase().replace(/[^a-z\s-]/g, '').split(/\s+/).filter(Boolean);
-  const handle  = parts.length >= 2 ? `${parts[0]}.${parts[parts.length - 1]}` : parts[0];
-  const fromAddr = `${handle}@${MAIL_DOMAIN}`;
-  document.getElementById('compose-from').value = `${name} <${fromAddr}>`;
-  document.getElementById('sig-name').textContent = name;
+  loadMailHub();
+  setInterval(loadMailHub, 60 * 1000);
 
   // Clock
   const tick = () => document.getElementById('sb-clock').textContent =
@@ -1261,11 +1233,59 @@ function prefillEmail(id) {
   const r = allRows.find(x => x['ID'] === id);
   if (!r) return;
   const first = (r['Name'] || '').split(' ')[0];
-  document.getElementById('compose-to').value       = r['Email'] || '';
-  document.getElementById('compose-subject').value  = `Following up on your ${typeLabel(r).toLowerCase()} inquiry`;
-  document.getElementById('compose-body-text').value =
-    `Hi ${first},\n\nThanks for reaching out to Edgeform. I wanted to follow up personally.\n\n`;
-  showPage('email');
+  openMailCompose('inquiries', {
+    to: [{ name: r['Name'] || '', email: r['Email'] || '' }],
+    subject: `Following up on your ${typeLabel(r).toLowerCase()} inquiry`,
+    text: `Hi ${first},\n\nThanks for reaching out to Edgeform. I wanted to follow up personally.\n\n`
+  });
+}
+
+// ─── Mail ─────────────────────────────────────────────────────
+const MAIL_BOX_COPY = {
+  team: { icon: '👥', desc: 'Day-to-day client conversations, projects, and anything addressed to the whole team.' },
+  inquiries: { icon: '◈', desc: 'New business: website leads, CRM and consulting requests, and influencer briefs.' },
+  admin: { icon: '🔒', desc: 'Private to the master admin. Billing, vendors, legal, and account notices. Also catches mail sent to unknown addresses.' }
+};
+
+// Hands a prepared message to the mail app, which opens its composer on load.
+// sessionStorage keeps the recipient out of the URL.
+function openMailCompose(box, { to = [], subject = '', text = '' } = {}) {
+  sessionStorage.setItem('edgeform_mail_compose', JSON.stringify({ box, to, subject, html: escHtml(text).replace(/\n/g, '<br>') }));
+  window.location.href = `/mail/index.html?box=${encodeURIComponent(box)}`;
+}
+
+async function loadMailHub() {
+  const hub = document.getElementById('mail-hub');
+  let data;
+  try {
+    data = await api('/api/mail/boxes');
+    if (!data.ok) throw new Error(data.error || 'Could not load mail');
+  } catch (err) {
+    hub.innerHTML = `<div class="state-box"><div class="state-icon">✉</div>${escHtml(err.message)}</div>`;
+    return;
+  }
+  const total = data.boxes.reduce((n, b) => n + b.unread, 0);
+  for (const id of ['badge-mail', 'drawer-badge-mail']) {
+    const badge = document.getElementById(id);
+    badge.hidden = !total;
+    badge.textContent = total;
+  }
+  hub.innerHTML = data.boxes.map(b => `
+    <div class="mail-card ${b.key === 'admin' ? 'admin' : ''}">
+      ${b.unread ? `<span class="mc-unread">${b.unread} unread</span>` : ''}
+      <div class="mc-icon">${MAIL_BOX_COPY[b.key]?.icon || '✉'}</div>
+      <div><div class="mc-title">${escHtml(b.label)}</div><div class="mc-addr">${escHtml(b.address)}</div></div>
+      <div class="mc-desc">${MAIL_BOX_COPY[b.key]?.desc || ''}</div>
+      <div class="mc-actions">
+        <a class="mc-open" href="/mail/index.html?box=${b.key}">Open ${escHtml(b.label)}</a>
+        <button class="mc-compose" onclick="openMailCompose('${b.key}')" title="New message from ${escHtml(b.address)}">✎</button>
+      </div>
+    </div>`).join('');
+  const status = document.getElementById('mail-status');
+  status.className = 'mail-status ' + (data.connected ? 'ok' : 'off');
+  status.querySelector('span').textContent = data.connected
+    ? 'Connected · sending and receiving live'
+    : 'Not connected yet · drafts work, sending and receiving start once the Resend API key is added';
 }
 
 async function updateStage(select) {
@@ -1452,50 +1472,6 @@ function updateDashboard(rows) {
 function fmtDate(ts) {
   const d = new Date(ts);
   return isNaN(d) ? ts : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-// ─── Send Email ───────────────────────────────────────────────
-async function sendEmail() {
-  const to      = document.getElementById('compose-to').value.trim();
-  const subject = document.getElementById('compose-subject').value.trim();
-  const bodyTxt = document.getElementById('compose-body-text').value.trim();
-  const msgEl   = document.getElementById('email-msg');
-
-  msgEl.className = 'email-msg';
-
-  if (!to || !subject || !bodyTxt) {
-    msgEl.className = 'email-msg error show';
-    msgEl.textContent = 'Fill in To, Subject, and Message.';
-    return;
-  }
-
-  // Plain text body with signature appended
-  const fullBody = `${bodyTxt}\n\n--\n${currentUser.name}\nEdgeform Media\nwww.edgeform-media.com`;
-
-  const btn = document.getElementById('send-btn');
-  btn.classList.add('loading'); btn.disabled = true;
-
-  try {
-    const data = await api('/api/email/send', {
-      method: 'POST',
-      body: JSON.stringify({ to, subject, body: fullBody })
-    });
-
-    if (data.success) {
-      msgEl.className = 'email-msg success show';
-      msgEl.textContent = `✓ Sent to ${to}`;
-      document.getElementById('compose-to').value        = '';
-      document.getElementById('compose-subject').value   = '';
-      document.getElementById('compose-body-text').value = '';
-    } else {
-      throw new Error(data.error || 'Worker error');
-    }
-  } catch (err) {
-    msgEl.className = 'email-msg error show';
-    msgEl.textContent = 'Send failed: ' + err.message;
-  }
-
-  btn.classList.remove('loading'); btn.disabled = false;
 }
 
 // ─── Users (admins) ───────────────────────────────────────────
@@ -1816,9 +1792,7 @@ function emailInvoiceLink() {
   const url     = document.getElementById('inv-result-url').textContent;
   const amount  = document.getElementById('inv-amount').value;
   if (!toEmail) { alert('Enter client email first.'); return; }
-  document.getElementById('compose-to').value       = toEmail;
-  document.getElementById('compose-subject').value  = `Invoice — ${service || 'Web Design Services'}`;
-  document.getElementById('compose-body-text').value =
+  openMailCompose('team', { to: [{ name, email: toEmail }], subject: `Invoice — ${service || 'Web Design Services'}`, text:
 `Hi ${name ? name.split(' ')[0] : 'there'},
 
 Please find your invoice for ${service || 'services rendered'} below.
@@ -1828,8 +1802,7 @@ Amount Due: $${parseFloat(amount || 0).toFixed(2)}
 Pay securely here:
 ${url}
 
-Thank you for your business!`;
-  showPage('email');
+Thank you for your business!` });
 }
 
 function emailSubLink() {
@@ -1839,9 +1812,7 @@ function emailSubLink() {
   const recurring = document.getElementById('sub-recurring').value;
   const url       = document.getElementById('sub-result-url').textContent;
   if (!toEmail) { alert('Enter client email first.'); return; }
-  document.getElementById('compose-to').value       = toEmail;
-  document.getElementById('compose-subject').value  = `Your ${service || 'Website'} Subscription — Edgeform Media`;
-  document.getElementById('compose-body-text').value =
+  openMailCompose('team', { to: [{ name, email: toEmail }], subject: `Your ${service || 'Website'} Subscription — Edgeform Marketing Group`, text:
 `Hi ${name ? name.split(' ')[0] : 'there'},
 
 Here is your secure checkout link to get started with ${service || 'your website subscription'}.
@@ -1853,8 +1824,7 @@ ${url}
 
 Once checkout is complete, your subscription will be active and all future billing is handled automatically.
 
-Any questions? Just reply to this email.`;
-  showPage('email');
+Any questions? Just reply to this email.` });
 }
 
 function setBillBtnLoading(id, loading) {

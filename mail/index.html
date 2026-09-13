@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Edgeform Mail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="mail.css">
+</head>
+<body>
+
+<div id="guard" class="guard">
+  <div class="guard-mark">✉</div>
+  <div class="guard-text" id="guard-text">OPENING MAIL</div>
+</div>
+
+<header class="topbar">
+  <button class="icon-btn only-mobile" id="rail-toggle" aria-label="Folders">☰</button>
+  <a class="brand" href="/home/index.html" title="Back to the CRM">
+    <span class="brand-mark">E</span><span class="brand-name">Edgeform <em>Mail</em></span>
+  </a>
+  <nav class="box-tabs" id="box-tabs" aria-label="Mailboxes"></nav>
+  <div class="search">
+    <span class="search-icon">⌕</span>
+    <input id="search" type="search" placeholder="Search mail" autocomplete="off">
+  </div>
+  <div class="top-right">
+    <span class="conn" id="conn" title=""><i></i><span></span></span>
+    <button class="icon-btn" id="sync-btn" title="Check for new mail">↻</button>
+    <button class="icon-btn" id="settings-btn" title="Signature, templates & preferences">⚙</button>
+    <button class="icon-btn" id="help-btn" title="Keyboard shortcuts">?</button>
+    <a class="back-crm" href="/home/index.html">← CRM</a>
+  </div>
+</header>
+
+<div class="app">
+  <aside class="rail" id="rail">
+    <button class="compose-btn" id="compose-btn"><span>✎</span> Compose</button>
+    <div class="rail-box" id="rail-box"></div>
+    <ul class="folders" id="folders"></ul>
+    <div class="rail-foot" id="rail-foot"></div>
+  </aside>
+  <div class="rail-scrim" id="rail-scrim"></div>
+
+  <section class="list-pane" id="list-pane">
+    <div class="list-toolbar">
+      <label class="check"><input type="checkbox" id="select-all"><span></span></label>
+      <div class="bulk" id="bulk" hidden></div>
+      <div class="list-title" id="list-title">Inbox</div>
+      <button class="text-btn" id="empty-folder" hidden></button>
+    </div>
+    <div class="notice" id="notice" hidden></div>
+    <div class="thread-list" id="thread-list" role="list"></div>
+  </section>
+
+  <section class="read-pane" id="read-pane">
+    <div class="empty-read" id="empty-read">
+      <div class="empty-icon">✉</div>
+      <div>Select a conversation to read it</div>
+      <div class="empty-hint">Press <kbd>c</kbd> to compose · <kbd>?</kbd> for shortcuts</div>
+    </div>
+    <div class="thread-view" id="thread-view" hidden></div>
+  </section>
+</div>
+
+<!-- Composer -->
+<div class="composer" id="composer" hidden>
+  <div class="composer-head" id="composer-head">
+    <span class="composer-title" id="composer-title">New message</span>
+    <span class="composer-saved" id="composer-saved"></span>
+    <button class="icon-btn sm" id="composer-min" title="Minimize">▁</button>
+    <button class="icon-btn sm" id="composer-max" title="Full screen">⤢</button>
+    <button class="icon-btn sm" id="composer-close" title="Save & close">✕</button>
+  </div>
+  <div class="composer-body" id="composer-body">
+    <div class="c-row from-row">
+      <label>From</label>
+      <select id="c-from"></select>
+    </div>
+    <div class="c-row">
+      <label>To</label>
+      <div class="chips" data-field="to" id="c-to"></div>
+      <button class="text-btn sm" id="c-show-cc">Cc/Bcc</button>
+    </div>
+    <div class="c-row" id="c-cc-row" hidden>
+      <label>Cc</label>
+      <div class="chips" data-field="cc" id="c-cc"></div>
+    </div>
+    <div class="c-row" id="c-bcc-row" hidden>
+      <label>Bcc</label>
+      <div class="chips" data-field="bcc" id="c-bcc"></div>
+    </div>
+    <div class="c-row">
+      <input id="c-subject" class="c-subject" placeholder="Subject" maxlength="300">
+    </div>
+
+    <div class="toolbar" id="toolbar" role="toolbar" aria-label="Formatting">
+      <button data-cmd="undo" title="Undo (Ctrl+Z)">↶</button>
+      <button data-cmd="redo" title="Redo (Ctrl+Y)">↷</button>
+      <span class="sep"></span>
+      <select id="t-font" title="Font">
+        <option value="Arial, Helvetica, sans-serif">Arial</option>
+        <option value="'Helvetica Neue', Helvetica, Arial, sans-serif">Helvetica</option>
+        <option value="Georgia, 'Times New Roman', serif">Georgia</option>
+        <option value="'Times New Roman', Times, serif">Times</option>
+        <option value="Verdana, Geneva, sans-serif">Verdana</option>
+        <option value="Tahoma, Geneva, sans-serif">Tahoma</option>
+        <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
+        <option value="'Courier New', Courier, monospace">Courier</option>
+      </select>
+      <select id="t-size" title="Font size">
+        <option value="10">10</option><option value="11">11</option><option value="12">12</option>
+        <option value="13">13</option><option value="14" selected>14</option><option value="16">16</option>
+        <option value="18">18</option><option value="20">20</option><option value="24">24</option>
+        <option value="28">28</option><option value="32">32</option><option value="36">36</option>
+        <option value="48">48</option>
+      </select>
+      <button data-cmd="fontStep" data-step="-1" title="Smaller text">A-</button>
+      <button data-cmd="fontStep" data-step="1" title="Larger text">A+</button>
+      <span class="sep"></span>
+      <button data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+      <button data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+      <button data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+      <button data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+      <label class="color-btn" title="Text color"><span class="color-a" id="t-color-swatch">A</span><input type="color" id="t-color" value="#111111"></label>
+      <label class="color-btn" title="Highlight"><span class="color-hl" id="t-hl-swatch">▇</span><input type="color" id="t-hl" value="#fff59d"></label>
+      <span class="sep"></span>
+      <button data-cmd="justifyLeft" title="Align left">⯇</button>
+      <button data-cmd="justifyCenter" title="Center">≡</button>
+      <button data-cmd="justifyRight" title="Align right">⯈</button>
+      <span class="sep"></span>
+      <button data-cmd="insertUnorderedList" title="Bulleted list">•≡</button>
+      <button data-cmd="insertOrderedList" title="Numbered list">1≡</button>
+      <button data-cmd="outdent" title="Decrease indent">⇤</button>
+      <button data-cmd="indent" title="Increase indent">⇥</button>
+      <button data-cmd="blockquote" title="Quote">❝</button>
+      <span class="sep"></span>
+      <button data-cmd="link" title="Insert link (Ctrl+K)">🔗</button>
+      <button data-cmd="unlink" title="Remove link">⛓</button>
+      <button data-cmd="image" title="Insert image">🖼</button>
+      <button data-cmd="insertHorizontalRule" title="Divider">―</button>
+      <button data-cmd="removeFormat" title="Clear formatting">T̸</button>
+    </div>
+
+    <div class="editor-wrap" id="editor-wrap">
+      <div class="editor" id="editor" contenteditable="true" spellcheck="true" aria-label="Message body"></div>
+      <div class="sig-preview" id="sig-preview" title="Added automatically when you send"></div>
+      <div class="drop-hint">Drop files to attach</div>
+    </div>
+    <div class="c-attachments" id="c-attachments"></div>
+  </div>
+  <div class="composer-foot" id="composer-foot">
+    <div class="send-group">
+      <button class="send-btn" id="send-btn">Send</button>
+      <button class="send-more" id="send-more" title="Schedule send">▾</button>
+      <div class="menu" id="schedule-menu" hidden></div>
+    </div>
+    <button class="icon-btn" id="attach-btn" title="Attach files">📎</button>
+    <button class="icon-btn" id="template-btn" title="Templates">▤</button>
+    <div class="menu up" id="template-menu" hidden></div>
+    <span class="foot-note" id="foot-note"></span>
+    <button class="icon-btn danger" id="discard-btn" title="Discard draft">🗑</button>
+    <input type="file" id="file-input" multiple hidden>
+    <input type="file" id="image-input" accept="image/*" hidden>
+  </div>
+</div>
+
+<button class="fab only-mobile" id="fab-compose" aria-label="Compose">✎</button>
+<div class="toast-wrap" id="toasts"></div>
+<div class="modal-scrim" id="modal-scrim" hidden></div>
+<div class="modal" id="modal" hidden></div>
+<div class="suggest" id="suggest" hidden></div>
+
+<script src="mail.js"></script>
+</body>
+</html>

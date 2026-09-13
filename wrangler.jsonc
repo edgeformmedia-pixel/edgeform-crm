@@ -4,7 +4,7 @@
   "main": "worker/index.js",
   "compatibility_date": "2026-09-12",
   "observability": { "enabled": true },
-  // Secrets (set with `wrangler secret put`): RESEND_API_KEY
+  // Secrets (set with `wrangler secret put`): RESEND_API_KEY, RESEND_WEBHOOK_SECRET (optional)
   "vars": {
     "MAIL_FROM": "Edgeform CRM <noreply@edgeformmarketing.com>",
     "MAIL_DOMAIN": "edgeformmarketing.com",
@@ -12,11 +12,24 @@
     "EMAIL_WORKER_URL": "https://email.edgeformmedia.workers.dev",
     // Base URL used in invite links.
     "APP_URL": "https://crm.edgeformmarketing.com",
+    // Public URL of this Worker, used for inline images in received mail.
+    "API_URL": "https://edgeform-crm-api.edgeformmedia.workers.dev",
+    // Shared inboxes: the only account with access to admin@.
+    "MAIL_OWNER_EMAIL": "edgeformmedia@gmail.com",
+    // Email signature.
+    "MAIL_COMPANY": "Edgeform Marketing Group",
+    "MAIL_ADDRESS": "55 NE 2nd St, Miami, FL 33132",
+    "MAIL_PHONE": "5862246692",
+    "MAIL_WEBSITE": "https://edgeformmarketing.com",
+    "MAIL_LOGO_URL": "https://crm.edgeformmarketing.com/assets/logo.png",
     "ALLOWED_ORIGINS": "https://crm.edgeformmarketing.com,https://edgeformmarketing.com,https://www.edgeformmarketing.com,https://edgeform-media.com,https://www.edgeform-media.com,https://crm.edgeform-media.com,http://localhost:8787,http://localhost:8000,http://localhost:5173,http://localhost:4174,http://127.0.0.1:5173,http://127.0.0.1:4174"
   },
-  // Website sketch images uploaded by the intake form.
+  "triggers": { "crons": ["* * * * *"] },
   "r2_buckets": [
-    { "binding": "SKETCHES", "bucket_name": "edgeform-crm-sketches" }
+    // Website sketch images uploaded by the intake form.
+    { "binding": "SKETCHES", "bucket_name": "edgeform-crm-sketches" },
+    // Email attachments, inline images, and oversized message bodies.
+    { "binding": "MAIL_FILES", "bucket_name": "edgeform-crm-mail" }
   ],
   "d1_databases": [
     {
