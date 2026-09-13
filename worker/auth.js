@@ -92,8 +92,8 @@ async function signup(request, env, headers) {
       .bind(name, passwordHash, now(), user.id).run();
     user = { ...user, name };
   } else {
-    const { n } = await env.DB.prepare('SELECT COUNT(*) n FROM users WHERE verified = 1').first();
-    user = { id: crypto.randomUUID(), email, name, role: n === 0 ? 'admin' : 'member' };
+    // Role is settled at verification so only the first *verified* account becomes admin.
+    user = { id: crypto.randomUUID(), email, name, role: 'member' };
     await env.DB.prepare(
       `INSERT INTO users (id, created_at, updated_at, email, name, role, password_hash, verified, lead_key)
        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`
@@ -123,7 +123,11 @@ async function verify(request, env, headers) {
     throw new HttpError(400, 'Invalid or expired code.');
   }
   await env.DB.batch([
-    env.DB.prepare('UPDATE users SET verified = 1, failed_logins = 0, locked_until = NULL, updated_at = ? WHERE id = ?').bind(now(), user.id),
+    env.DB.prepare(
+      `UPDATE users SET verified = 1, failed_logins = 0, locked_until = NULL, updated_at = ?,
+         role = CASE WHEN role = 'admin' OR (SELECT COUNT(*) FROM users WHERE verified = 1 AND role = 'admin') = 0 THEN 'admin' ELSE role END
+       WHERE id = ?`
+    ).bind(now(), user.id),
     env.DB.prepare('DELETE FROM verification_codes WHERE user_id = ?').bind(user.id)
   ]);
   const token = await createSession(env, user);
