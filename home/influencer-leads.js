@@ -255,6 +255,19 @@ function iflDiscoveryNumber(id) {
   return value === '' ? null : Number(value);
 }
 
+function iflDiscoveryDiagnostics(d, summary) {
+  if (!d) return '';
+  const domains = Object.entries(d.sourceDomains || {}).slice(0, 8).map(([domain, n]) => `${esc(domain)} (${n})`).join(', ');
+  const unconfirmed = (d.unconfirmed || []).slice(0, 8).map(u => `<li>${esc(u.name)}: ${esc(u.reason)}</li>`).join('');
+  const status = d.incompleteReason ? `${esc(d.responseStatus)} (${esc(d.incompleteReason)})` : esc(d.responseStatus || 'unknown');
+  return `<details class="ifl-discovery-diagnostics"${summary.imported ? '' : ' open'}><summary>Search details</summary>
+    <div>Response: ${status} · ${d.sourceCount} sources consulted · ${d.candidateCount} candidates · ${d.rejectedCount} rejected</div>
+    ${d.searchQueries?.length ? `<div>Queries: ${d.searchQueries.slice(0, 8).map(esc).join(' · ')}</div>` : ''}
+    ${domains ? `<div>Top sources: ${domains}</div>` : ''}
+    ${unconfirmed ? `<div>Not confirmed:</div><ul>${unconfirmed}</ul>` : ''}
+    <div class="ifl-ai-meta">Run ${esc(d.runId)}</div></details>`;
+}
+
 async function runIflDiscovery() {
   const query = document.getElementById('ifl-d-query').value.trim();
   const count = iflDiscoveryNumber('ifl-d-count');
@@ -276,8 +289,8 @@ async function runIflDiscovery() {
     msg.className = 'email-msg error show';
     return;
   }
-  if (!Number.isFinite(budgetUsd) || budgetUsd < 0.05 || budgetUsd > 25) {
-    msg.textContent = 'Estimated spend limit must be between $0.05 and $25.';
+  if (!Number.isFinite(budgetUsd) || budgetUsd < 0.1 || budgetUsd > 25) {
+    msg.textContent = 'Estimated spend limit must be between $0.10 and $25.';
     msg.className = 'email-msg error show';
     return;
   }
@@ -289,7 +302,7 @@ async function runIflDiscovery() {
   button.disabled = true;
   button.classList.add('loading');
   button.querySelector('.btn-text').textContent = 'Searching…';
-  msg.textContent = 'Searching public Instagram results and verifying profile links. This can take a minute…';
+  msg.textContent = 'Searching public web sources and confirming Instagram handles. This can take a few minutes…';
   msg.className = 'email-msg show';
   try {
     const response = await iflRequest('/discover', {
@@ -306,7 +319,7 @@ async function runIflDiscovery() {
     results.innerHTML = `<div class="ifl-discovery-summary"><strong>${summary.imported} new creator${summary.imported === 1 ? '' : 's'} added</strong><span>${summary.found} found · ${summary.duplicates} already in CRM · ${summary.failed} skipped</span></div>
       ${response.searchSummary ? `<p class="ifl-copy">${esc(response.searchSummary)}</p>` : ''}
       <div class="ifl-discovery-usage"><span>${usage.webSearchCalls} web search call${usage.webSearchCalls === 1 ? '' : 's'}</span><span>${usage.inputTokens.toLocaleString()} input tokens</span><span>${usage.outputTokens.toLocaleString()} output tokens</span><span>≈ $${Number(usage.estimatedCostUsd).toFixed(4)}</span></div>
-      ${summary.errors?.length ? `<div class="ifl-import-errors">${summary.errors.map(esc).join('<br>')}</div>` : ''}${reduced}`;
+      ${summary.errors?.length ? `<div class="ifl-import-errors">${summary.errors.map(esc).join('<br>')}</div>` : ''}${reduced}${iflDiscoveryDiagnostics(response.diagnostics, summary)}`;
     results.hidden = false;
     msg.textContent = summary.imported ? 'Discovery complete. The new profiles are ready to review below.' : 'Discovery completed, but no new profiles were added.';
     msg.className = 'email-msg success show';

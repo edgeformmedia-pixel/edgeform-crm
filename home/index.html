@@ -1274,7 +1274,7 @@
   <div class="ops-modal ifl-modal" role="dialog" aria-labelledby="ifl-discovery-title">
     <div class="ops-modal-head"><span class="compose-title" id="ifl-discovery-title">Find Influencers</span><button class="drawer-close" onclick="closeIflDiscovery()" aria-label="Close">✕</button></div>
     <div class="ops-modal-body">
-      <p class="ifl-profile-help">Search public web results for real Instagram creator profiles. Results are added as Ready to Review; nothing is messaged or followed automatically.</p>
+      <p class="ifl-profile-help">Searches public web sources (articles, creator pages, link-in-bio pages) for real creators and adds them as Ready to Review only when their Instagram handle is confirmed by a source. Nothing is messaged, followed, or scraped.</p>
       <div class="ops-form-grid">
         <div class="c-field full"><label>What kind of influencers?</label><textarea class="c-input" id="ifl-d-query" placeholder="Beauty creators who make authentic skincare tutorials for women ages 25–40"></textarea></div>
         <div class="c-field"><label>Niche</label><input class="c-input" id="ifl-d-niche" list="ifl-niche-options" placeholder="Beauty &amp; Skincare"></div>
@@ -1282,7 +1282,7 @@
         <div class="c-field"><label>Minimum followers</label><input class="c-input" id="ifl-d-followerMin" type="number" min="0" placeholder="10000"></div>
         <div class="c-field"><label>Maximum followers</label><input class="c-input" id="ifl-d-followerMax" type="number" min="0" placeholder="100000"></div>
         <div class="c-field"><label>Creator limit</label><input class="c-input" id="ifl-d-count" type="number" min="1" max="50" value="25"></div>
-        <div class="c-field"><label>Estimated spend limit</label><div class="ifl-dollar"><span>$</span><input class="c-input" id="ifl-d-budgetUsd" type="number" min="0.05" max="25" step="0.05" value="5"></div></div>
+        <div class="c-field"><label>Estimated spend limit</label><div class="ifl-dollar"><span>$</span><input class="c-input" id="ifl-d-budgetUsd" type="number" min="0.10" max="25" step="0.05" value="5"></div></div>
         <div class="c-field full"><label>Exclusions / red flags</label><textarea class="c-input" id="ifl-d-exclusions" placeholder="No brand accounts, repost pages, or creators focused on cosmetic procedures"></textarea></div>
       </div>
       <div class="ifl-budget-note">The spend limit is a conservative request estimate, not an OpenAI account billing lock. Results show reported tokens, search calls, and estimated cost.</div>
