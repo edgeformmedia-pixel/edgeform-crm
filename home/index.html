@@ -1278,7 +1278,9 @@
     <div class="ops-modal-body">
       <p class="ifl-profile-help">Searches public web sources (articles, creator pages, link-in-bio pages) for real creators and adds them as Ready to Review only when their Instagram handle is confirmed by a source. Nothing is messaged, followed, or scraped. Searches run in the background, so you can close this window while one runs.</p>
       <div class="ops-form-grid">
+        <div class="c-field full"><label>Search profile</label><div class="ifl-profile-row"><select class="c-input" id="ifl-d-profile" onchange="applyIflDiscoveryProfile()"><option value="">No profile</option></select><button class="action-btn" type="button" onclick="saveIflDiscoveryProfile()">Save profile</button><button class="action-btn" type="button" id="ifl-d-profile-delete" onclick="deleteIflDiscoveryProfile()" hidden>Delete</button></div></div>
         <div class="c-field full"><label>What kind of influencers?</label><textarea class="c-input" id="ifl-d-query" placeholder="Beauty creators who make authentic skincare tutorials for women ages 25–40"></textarea></div>
+        <div class="c-field full"><label>Reference creators (find more like these)</label><input class="c-input" id="ifl-d-lookalikes" autocomplete="off" placeholder="@aiguyofficial, @mavgpt"></div>
         <div class="c-field"><label>Niche</label><input class="c-input" id="ifl-d-niche" list="ifl-niche-options" placeholder="Beauty &amp; Skincare"></div>
         <div class="c-field"><label>Location</label><input class="c-input" id="ifl-d-location" placeholder="Miami, FL or United States"></div>
         <div class="c-field"><label>Minimum followers</label><input class="c-input" id="ifl-d-followerMin" type="number" min="0" placeholder="10000"></div>

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
-  collectConsultedSources, decryptSecret, encryptSecret, leadIdentity, parseCsv, planDiscoveryBudget, redactSecrets, sourceKey,
+  collectConsultedSources, decryptSecret, encryptSecret, leadIdentity, normalizeDiscoveryProfile, parseCsv, parseReferenceCreators, planDiscoveryBudget, redactSecrets, sourceKey,
   validateAnalysis, verifyDiscoveredCreator, wasConsulted
 } from '../worker/influencer-leads.js';
 
@@ -43,7 +43,8 @@ test('saved API keys are encrypted with authenticated encryption', async () => {
 test('discovery planner honors creator and conservative spend limits', () => {
   const standard = planDiscoveryBudget({ count: 50, budgetUsd: 5 });
   assert.equal(standard.effectiveCount, 50);
-  assert.equal(standard.maxToolCalls, 16);
+  assert.equal(standard.maxToolCalls, 24);
+  assert.equal(planDiscoveryBudget({ count: 25, budgetUsd: 5 }).maxToolCalls, 16);
   assert.ok(standard.estimatedMaxCost <= 5);
 
   const constrained = planDiscoveryBudget({ count: 50, budgetUsd: 0.1 });
@@ -155,6 +156,59 @@ test('discovery keeps metrics only when a consulted page states them', () => {
   );
 });
 
+test('reference creators become bare handles and are never returned as results', () => {
+  assert.deepEqual(parseReferenceCreators('@AIGuyOfficial, https://www.instagram.com/mavgpt/?hl=en\n@aiguyofficial reels'), ['aiguyofficial', 'mavgpt']);
+  assert.deepEqual(parseReferenceCreators(['@a', 'b', 'not a handle!']), ['a', 'b']);
+  assert.equal(parseReferenceCreators(Array.from({ length: 20 }, (_, i) => `creator${i}`)).length, 10);
+  const consulted = collectConsultedSources(openAiResponse);
+  assert.throws(() => verifyDiscoveredCreator(candidate(), consulted, { lookalikes: ['aimoneymaya'] }), error => error.reason === 'reference_creator');
+});
+
+test('dated activity must come from a consulted page, and stale creators are rejected', () => {
+  const consulted = collectConsultedSources(openAiResponse);
+  const now = Date.parse('2026-09-14T00:00:00Z');
+  const withActivity = (activity_date, activity_source_url = 'https://creatorstats.example.org/maya') => candidate({ activity_date, activity_source_url });
+
+  const recent = verifyDiscoveredCreator(withActivity('2026-08'), consulted, {}, now).lead;
+  assert.deepEqual(recent.tags, ['AI discovered']);
+  assert.match(recent.recentPostNotes, /Latest activity found: 2026-08/);
+
+  assert.throws(() => verifyDiscoveredCreator(withActivity('2025-06-01'), consulted, {}, now), error => error.reason === 'inactive');
+  assert.doesNotThrow(() => verifyDiscoveredCreator(withActivity('2025-09'), consulted, {}, now));
+
+  for (const unverified of [withActivity('2024-01', 'https://invented.example.com/old'), withActivity('2027-05'), withActivity('last spring'), candidate()]) {
+    const lead = verifyDiscoveredCreator(unverified, consulted, {}, now).lead;
+    assert.deepEqual(lead.tags, ['AI discovered', 'Activity unverified']);
+    assert.match(lead.recentPostNotes, /No dated recent activity found/);
+  }
+});
+
+test('emails are saved only when published on a consulted page', () => {
+  const consulted = collectConsultedSources(openAiResponse);
+  const sourced = verifyDiscoveredCreator(candidate({ email: 'Maya@AIMoney.co', email_source_url: 'https://linktr.ee/aimoneymaya' }), consulted);
+  assert.equal(sourced.lead.email, 'maya@aimoney.co');
+  assert.match(sourced.lead.recentPostNotes, /Email source: https:\/\/linktr\.ee\/aimoneymaya/);
+
+  const unsourced = verifyDiscoveredCreator(candidate({ email: 'maya@aimoney.co', email_source_url: 'https://guessed.example.com' }), consulted);
+  assert.equal(unsourced.lead.email, '');
+  assert.ok(unsourced.droppedMetrics.includes('email'));
+  assert.equal(verifyDiscoveredCreator(candidate({ email: 'not-an-email', email_source_url: 'https://linktr.ee/aimoneymaya' }), consulted).lead.email, '');
+  assert.equal(verifyDiscoveredCreator(candidate(), consulted).lead.email, '');
+  assert.equal(leadIdentity(sourced.lead), 'aimoneymaya');
+});
+
+test('search profiles validate their fields', () => {
+  const profile = normalizeDiscoveryProfile({ name: ' Ulio ', brief: 'AI agency creators', followerMin: '1,000', followerMax: 20000, lookalikes: '@aiguyofficial @mavgpt', creatorCount: 25, budgetUsd: 5 });
+  assert.equal(profile.name, 'Ulio');
+  assert.equal(profile.follower_min, 1000);
+  assert.equal(profile.lookalikes, '["aiguyofficial","mavgpt"]');
+  assert.throws(() => normalizeDiscoveryProfile({ name: '' }), /Name the search profile/);
+  assert.throws(() => normalizeDiscoveryProfile({ name: 'x', followerMin: 5, followerMax: 1 }), /cannot exceed/);
+  assert.throws(() => normalizeDiscoveryProfile({ name: 'x', creatorCount: 51 }), /between 1 and 50/);
+  assert.throws(() => normalizeDiscoveryProfile({ name: 'x', budgetUsd: 0.01 }), /\$0.10 and \$25/);
+  assert.equal(normalizeDiscoveryProfile({ name: 'x', budgetUsd: '' }).budget_usd, null);
+});
+
 test('secrets are redacted from logged error text', () => {
   const text = redactSecrets('Incorrect API key provided: sk-proj-abc123****wxyz. Header Bearer sk-live-secret');
   assert.doesNotMatch(text, /abc123|wxyz|sk-live-secret/);
@@ -175,6 +229,9 @@ test('Find Creators is nested after Creators and before Operations in both navig
   assert.match(html, /Find Creators Settings/);
   assert.match(html, /type="password"[^>]+autocomplete="off"/);
   assert.match(html, /id="ifl-discovery-modal"/);
+  assert.match(html, /id="ifl-d-profile"[^>]+onchange="applyIflDiscoveryProfile\(\)"/);
+  assert.match(html, /id="ifl-d-lookalikes"/);
+  assert.match(html, /id="ifl-discovery-cancel"[^>]+hidden/);
   assert.match(html, /id="ifl-d-count"[^>]+max="50"/);
   assert.match(html, /id="ifl-d-budgetUsd"[^>]+min="0.10"[^>]+value="5"/);
   assert.match(html, /conservative request estimate, not an OpenAI account billing lock/);

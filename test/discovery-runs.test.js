@@ -205,3 +205,42 @@ test('stuck starts fail, expired runs are cancelled, and OpenAI start errors are
     assert.doesNotMatch(row.error + row.api_error, /abcd|wxyz/);
   });
 });
+
+test('search profiles are shared CRUD records, and runs pass reference creators and fill missing emails', needsSqlite, async () => {
+  const h = harness();
+  await withFetch(h, async () => {
+    await h.session('u1'); await h.session('u2');
+    const created = await h.call('POST /api/influencer-leads/discovery-profiles', 'u1', { body: { name: 'Ulio', brief: 'AI agency creators', followerMax: 20000, lookalikes: '@aiguyofficial, @mavgpt', creatorCount: 25, budgetUsd: 5 } });
+    assert.equal(created.status, 201);
+    assert.deepEqual(created.profile.lookalikes, ['aiguyofficial', 'mavgpt']);
+    assert.equal((await h.call('POST /api/influencer-leads/discovery-profiles', 'u2', { body: { name: 'ulio' } })).status, 409);
+    const updated = await h.call('PATCH /api/influencer-leads/discovery-profiles/:id', 'u2', { params: [created.profile.id], body: { name: 'Ulio', brief: 'Updated brief', followerMax: 20000 } });
+    assert.equal(updated.profile.brief, 'Updated brief');
+    assert.equal((await h.call('GET /api/influencer-leads/discovery-profiles', 'u2')).profiles.length, 1);
+
+    // maya.ai already exists without an email; the run finds her published email and adds it.
+    h.sqlite.prepare("INSERT INTO influencer_leads (id,created_by_user_id,created_at,updated_at,handle,profile_url,status,tags,email) VALUES ('l1','u1','t','t','maya.ai','https://www.instagram.com/maya.ai/','New','[]','')").run();
+    const started = await h.call('POST /api/influencer-leads/discover', 'u1', { body: { ...start.body, lookalikes: '@aiguyofficial', profileId: created.profile.id } });
+    const input = JSON.parse(h.openai.calls.find(c => c.method === 'POST' && c.path === '').body.input);
+    assert.deepEqual(input.reference_creators, ['@aiguyofficial']);
+    assert.ok(!('profileId' in input) && !('lookalikes' in input));
+    assert.equal(JSON.parse(h.run(started.run.id).criteria).profileId, created.profile.id);
+
+    const response = completedResponse();
+    const message = response.output[1].content[0];
+    const payload = JSON.parse(message.text);
+    Object.assign(payload.creators[0], { email: 'maya@example.com', email_source_url: 'https://news.example.com/list' });
+    payload.creators.push({ ...payload.creators[0], handle: 'aiguyofficial', email: '' });
+    message.text = JSON.stringify(payload);
+    h.openai.responses.set('resp_1', response);
+    h.age(started.run.id, { polled_at: '' });
+    await discoveryCron(h.env);
+    const row = h.run(started.run.id);
+    assert.equal(row.duplicate_count, 1);
+    assert.match(row.rejections, /reference_creator/);
+    assert.equal(h.sqlite.prepare("SELECT email FROM influencer_leads WHERE handle = 'maya.ai'").get().email, 'maya@example.com');
+
+    assert.equal((await h.call('DELETE /api/influencer-leads/discovery-profiles/:id', 'u1', { params: [created.profile.id] })).status, 200);
+    assert.equal((await h.call('GET /api/influencer-leads/discovery-profiles', 'u1')).profiles.length, 0);
+  });
+});

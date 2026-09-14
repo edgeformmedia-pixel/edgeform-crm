@@ -226,6 +226,81 @@ let iflDiscoveryTimer = null;
 const IFL_DISCOVERY_POLL_MS = 4000;
 const IFL_RECENT_RESULT_MS = 30 * 60000;
 
+let iflDiscoveryProfiles = [];
+const IFL_PROFILE_STORAGE_KEY = 'ifl-discovery-profile';
+const IFL_DISCOVERY_FIELDS = { brief: 'ifl-d-query', niche: 'ifl-d-niche', location: 'ifl-d-location', followerMin: 'ifl-d-followerMin', followerMax: 'ifl-d-followerMax', exclusions: 'ifl-d-exclusions', creatorCount: 'ifl-d-count', budgetUsd: 'ifl-d-budgetUsd' };
+
+function iflRememberProfile(id) { try { id ? localStorage.setItem(IFL_PROFILE_STORAGE_KEY, id) : localStorage.removeItem(IFL_PROFILE_STORAGE_KEY); } catch {} }
+function iflRememberedProfile() { try { return localStorage.getItem(IFL_PROFILE_STORAGE_KEY) || ''; } catch { return ''; } }
+
+function renderIflDiscoveryProfiles(selectedId) {
+  const select = document.getElementById('ifl-d-profile');
+  select.innerHTML = '<option value="">No profile</option>' + iflDiscoveryProfiles.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  select.value = iflDiscoveryProfiles.some(p => p.id === selectedId) ? selectedId : '';
+  document.getElementById('ifl-d-profile-delete').hidden = !select.value;
+}
+
+function applyIflDiscoveryProfile() {
+  const id = document.getElementById('ifl-d-profile').value;
+  const profile = iflDiscoveryProfiles.find(p => p.id === id);
+  document.getElementById('ifl-d-profile-delete').hidden = !profile;
+  iflRememberProfile(profile?.id);
+  if (!profile) return;
+  Object.entries(IFL_DISCOVERY_FIELDS).forEach(([field, inputId]) => {
+    const value = profile[field];
+    if (field === 'creatorCount' || field === 'budgetUsd') { if (value !== null && value !== undefined) document.getElementById(inputId).value = value; }
+    else document.getElementById(inputId).value = value ?? '';
+  });
+  document.getElementById('ifl-d-lookalikes').value = (profile.lookalikes || []).map(handle => '@' + handle).join(', ');
+}
+
+function iflDiscoveryFormValues() {
+  const values = Object.fromEntries(Object.entries(IFL_DISCOVERY_FIELDS).map(([field, inputId]) => [field, document.getElementById(inputId).value.trim()]));
+  return { ...values, lookalikes: document.getElementById('ifl-d-lookalikes').value.trim() };
+}
+
+async function saveIflDiscoveryProfile() {
+  const msg = document.getElementById('ifl-discovery-msg');
+  const selected = iflDiscoveryProfiles.find(p => p.id === document.getElementById('ifl-d-profile').value);
+  let name = selected?.name;
+  let update = !!selected && confirm(`Update the "${selected.name}" profile with the current fields?\n\nChoose Cancel to save a new profile instead.`);
+  if (!update) {
+    name = prompt('Name this search profile:', selected ? `${selected.name} copy` : '');
+    if (!name?.trim()) return;
+  }
+  try {
+    const body = JSON.stringify({ ...iflDiscoveryFormValues(), name: name.trim() });
+    const { profile } = update
+      ? await iflRequest(`/discovery-profiles/${encodeURIComponent(selected.id)}`, { method: 'PATCH', body })
+      : await iflRequest('/discovery-profiles', { method: 'POST', body });
+    iflDiscoveryProfiles = [...iflDiscoveryProfiles.filter(p => p.id !== profile.id), profile].sort((a, b) => a.name.localeCompare(b.name));
+    renderIflDiscoveryProfiles(profile.id);
+    applyIflDiscoveryProfile();
+    msg.textContent = `Saved the "${profile.name}" search profile.`;
+    msg.className = 'email-msg success show';
+  } catch (error) {
+    msg.textContent = error.message;
+    msg.className = 'email-msg error show';
+  }
+}
+
+async function deleteIflDiscoveryProfile() {
+  const selected = iflDiscoveryProfiles.find(p => p.id === document.getElementById('ifl-d-profile').value);
+  if (!selected || !confirm(`Delete the "${selected.name}" search profile? Creators already found are not affected.`)) return;
+  const msg = document.getElementById('ifl-discovery-msg');
+  try {
+    await iflRequest(`/discovery-profiles/${encodeURIComponent(selected.id)}`, { method: 'DELETE' });
+    iflDiscoveryProfiles = iflDiscoveryProfiles.filter(p => p.id !== selected.id);
+    iflRememberProfile('');
+    renderIflDiscoveryProfiles('');
+    msg.textContent = `Deleted the "${selected.name}" search profile.`;
+    msg.className = 'email-msg show';
+  } catch (error) {
+    msg.textContent = error.message;
+    msg.className = 'email-msg error show';
+  }
+}
+
 async function openIflDiscovery() {
   const modal = document.getElementById('ifl-discovery-modal');
   const msg = document.getElementById('ifl-discovery-msg');
@@ -234,6 +309,21 @@ async function openIflDiscovery() {
   document.getElementById('ifl-discovery-results').hidden = true;
   modal.hidden = false;
   iflCheckDiscoveryRuns({ showRecent: true });
+  try {
+    const { profiles } = await iflRequest('/discovery-profiles');
+    iflDiscoveryProfiles = profiles || [];
+    const current = document.getElementById('ifl-d-profile').value || iflRememberedProfile();
+    renderIflDiscoveryProfiles(current);
+    // Fill from the saved profile only when the form is untouched, so a half-written brief is never overwritten.
+    if (document.getElementById('ifl-d-profile').value && !document.getElementById('ifl-d-query').value.trim()) {
+      applyIflDiscoveryProfile();
+      return document.getElementById('ifl-d-query').focus();
+    }
+    if (document.getElementById('ifl-d-profile').value) return document.getElementById('ifl-d-query').focus();
+  } catch (error) {
+    msg.textContent = `Could not load search profiles: ${error.message}`;
+    msg.className = 'email-msg error show';
+  }
   try {
     const { profile } = await iflRequest('/profile');
     const defaults = {
@@ -425,6 +515,8 @@ async function runIflDiscovery() {
       method: 'POST',
       body: JSON.stringify({
         query, count, budgetUsd, followerMin, followerMax,
+        lookalikes: document.getElementById('ifl-d-lookalikes').value.trim(),
+        profileId: document.getElementById('ifl-d-profile').value,
         niche: document.getElementById('ifl-d-niche').value.trim(),
         location: document.getElementById('ifl-d-location').value.trim(),
         exclusions: document.getElementById('ifl-d-exclusions').value.trim()

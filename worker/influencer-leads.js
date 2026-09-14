@@ -37,7 +37,7 @@ const ANALYSIS_SCHEMA = {
 };
 
 const MIN_DISCOVERY_BUDGET = 0.1;
-const MAX_DISCOVERY_TOOL_CALLS = 16;
+const MAX_DISCOVERY_TOOL_CALLS = 24;
 // First path segments on instagram.com that are never creator profiles.
 const RESERVED_INSTAGRAM_PATHS = new Set(['p', 'reel', 'reels', 'tv', 'igtv', 'explore', 'stories', 'accounts', 'direct', 'about', 'developer',
   'legal', 'privacy', 'terms', 'web', 'challenge', 'emails', 'session', 'api', 'graphql', 'static', 'oauth', 'invites', 'lite', 'nametag',
@@ -56,10 +56,12 @@ const DISCOVERY_SCHEMA = {
           location: { type: 'string' }, bio: { type: 'string' },
           follower_count: { type: ['integer', 'null'] }, average_views: { type: ['integer', 'null'] }, engagement_rate: { type: ['number', 'null'] },
           metrics_source_url: { type: 'string' }, handle_source_url: { type: 'string' },
+          activity_date: { type: 'string' }, activity_source_url: { type: 'string' },
+          email: { type: 'string' }, email_source_url: { type: 'string' },
           source_urls: { type: 'array', items: { type: 'string' } }, evidence: { type: 'string' }
         },
         required: ['handle', 'instagram_url', 'name', 'niche', 'location', 'bio', 'follower_count', 'average_views', 'engagement_rate',
-          'metrics_source_url', 'handle_source_url', 'source_urls', 'evidence']
+          'metrics_source_url', 'handle_source_url', 'activity_date', 'activity_source_url', 'email', 'email_source_url', 'source_urls', 'evidence']
       }
     },
     unconfirmed: {
@@ -72,13 +74,20 @@ const DISCOVERY_SCHEMA = {
 
 const DISCOVERY_INSTRUCTIONS = (limit) => `You build a shortlist of real, individual Instagram creators from public web sources.
 
-1. Search the open web, not only instagram.com. Good sources: creator roundups and "top creators" articles, news and podcast interviews, YouTube or TikTok channel pages, link-in-bio pages (Linktree, Beacons, Stan), personal websites, newsletters, and agency or marketplace rosters. Vary your queries with synonyms, niche terms, and location.
-2. For each candidate, confirm their Instagram handle on a page returned by your searches that explicitly shows "@handle" or links to instagram.com/handle. Put that exact page URL in handle_source_url. Never derive or guess a handle from a person's name or another platform's username.
-3. Return up to ${limit} confirmed creators. Put the pages that show they fit the brief in source_urls, and one or two sentences in evidence describing what those pages say.
-4. Only fill follower_count, average_views, or engagement_rate when a consulted page states the number explicitly; set metrics_source_url to that page. Otherwise use null and an empty metrics_source_url. Leave name, location, and bio empty unless a source states them.
-5. List candidates you considered but could not confirm in unconfirmed with a short reason. Do not include guessed handles there.
-6. Exclude brands, stores, publications, meme or repost pages, and duplicates. Honor the exclusions and follower range when a source states follower counts.
-7. Only read public web search results. Do not log in, scrape, message, follow, like, or take any action on Instagram or other platforms.`;
+1. Search the open web, not only instagram.com. Good sources: YouTube channels and videos, TikTok profiles, podcast episode pages, link-in-bio pages (Linktree, Beacons, Stan), personal websites and newsletters, X profiles, community posts (Skool, Reddit) where creators share their own links, creator roundups, and agency or marketplace rosters. Vary your queries with synonyms, niche terms, tools, and location.
+2. If reference_creators are given, study what they post about, their format, and their audience, then find different creators who are similar. Never return a reference creator.
+3. Confirm each candidate's Instagram handle on a page returned by your searches that explicitly shows "@handle" or links to instagram.com/handle. Put that exact page URL in handle_source_url. Never derive or guess a handle from a person's name or another platform's username. Confirmation is the slow step: prefer pages that show a creator's links directly (YouTube About or descriptions, link-in-bio pages, podcast show notes, roundups listing several handles), and move on after two failed attempts for one person.
+4. Prefer creators who are active now. Put the date of their most recent dated post, video, episode, or article you found in activity_date (YYYY-MM or YYYY-MM-DD) and that page in activity_source_url; leave both empty if you found no dated activity. Skip creators whose latest dated activity is more than 12 months old.
+5. Return up to ${limit} confirmed creators. Put the pages that show they fit the brief in source_urls, and one or two sentences in evidence describing what those pages say.
+6. Only fill follower_count, average_views, or engagement_rate when a consulted page states the number explicitly; set metrics_source_url to that page. Otherwise use null and an empty metrics_source_url. Leave name, location, and bio empty unless a source states them.
+   If a consulted page shows a contact or business email the creator published (YouTube About, website contact page, link-in-bio, media kit), put it in email and that page in email_source_url. Never guess an email from a name or domain; otherwise leave both empty.
+7. When follower_max is set, favor early-stage creators documenting their own journey over widely known personalities, and skip anyone a source shows well above the range.
+8. List candidates you considered but could not confirm in unconfirmed with a short reason. Do not include guessed handles there.
+9. Exclude brands, stores, publications, meme or repost pages, and duplicates. Honor the exclusions and follower range when a source states follower counts.
+10. Only read public web search results. Do not log in, scrape, message, follow, like, or take any action on Instagram or other platforms.`;
+
+const MAX_REFERENCE_CREATORS = 10;
+const INACTIVE_AFTER_MS = 365 * 86400000;
 
 function parseJson(value, fallback) {
   try { return JSON.parse(value); } catch { return fallback; }
@@ -133,7 +142,7 @@ export function planDiscoveryBudget({ count, budgetUsd, inputRate = 2, outputRat
   // Finding a creator on the open web and then confirming their handle usually takes more than one search,
   // so keep at least half the desired searches before lowering the creator count. Output tokens include reasoning.
   for (let effectiveCount = requestedCount; effectiveCount >= 1; effectiveCount--) {
-    const desiredToolCalls = Math.min(MAX_DISCOVERY_TOOL_CALLS, 3 + Math.ceil(effectiveCount / 4));
+    const desiredToolCalls = Math.min(MAX_DISCOVERY_TOOL_CALLS, 3 + Math.ceil(effectiveCount / 2));
     const maxOutputTokens = 2000 + effectiveCount * 250;
     for (let maxToolCalls = desiredToolCalls; maxToolCalls >= Math.max(2, Math.ceil(desiredToolCalls / 2)); maxToolCalls--) {
       const estimatedMaxCost = baseInputCost + maxToolCalls * perSearch + maxOutputTokens / 1e6 * outputRate;
@@ -508,11 +517,12 @@ class DiscoveryRejection extends Error {
 }
 
 // Turns one model-proposed creator into a lead, or throws DiscoveryRejection with a machine-readable reason.
-export function verifyDiscoveredCreator(value, consulted, criteria = {}) {
+export function verifyDiscoveredCreator(value, consulted, criteria = {}, nowMs = Date.now()) {
   if (!value || typeof value !== 'object') throw new DiscoveryRejection('invalid_shape', 'Candidate was not an object.');
   const rawHandle = clean(value.handle, 200).replace(/^@/, '').toLowerCase();
   const handle = normalizeHandle(rawHandle);
   if (!handle || RESERVED_INSTAGRAM_PATHS.has(handle) || /^\.|\.$|\.\./.test(handle)) throw new DiscoveryRejection('invalid_handle', `"${clean(value.handle, 60)}" is not a valid Instagram handle.`);
+  if ((criteria.lookalikes || []).includes(handle)) throw new DiscoveryRejection('reference_creator', `@${handle} is one of the reference creators.`);
   const instagramUrl = clean(value.instagram_url, 500);
   if (instagramUrl) {
     const urlHandle = /instagram\.com/i.test(instagramUrl) ? normalizeHandle(instagramUrl) : '';
@@ -541,17 +551,45 @@ export function verifyDiscoveredCreator(value, consulted, criteria = {}) {
   if (followerCount !== null && ((criteria.followerMin != null && followerCount < criteria.followerMin) || (criteria.followerMax != null && followerCount > criteria.followerMax))) {
     throw new DiscoveryRejection('outside_follower_range', `@${handle} has ${followerCount} followers, outside the requested range.`);
   }
+  const activity = verifiedActivity(value, consulted, nowMs);
+  if (activity.stale) throw new DiscoveryRejection('inactive', `@${handle}'s latest dated activity (${activity.date}) is more than 12 months old.`);
+  const emailSource = clean(value.email_source_url, 500);
+  const suppliedEmail = clean(value.email, 254).toLowerCase().replace(/^mailto:/, '');
+  const email = suppliedEmail && isEmail(suppliedEmail) && emailSource && wasConsulted(emailSource, consulted) ? suppliedEmail : '';
+  if (suppliedEmail && !email) dropped.push('email');
   const notes = [clean(value.evidence, 1200), verifiedSources.length ? `Sources:\n${verifiedSources.join('\n')}` : '',
+    activity.date ? `Latest activity found: ${activity.date} (${activity.url})` : 'No dated recent activity found. Check the account is still active.',
+    email ? `Email source: ${emailSource}` : '',
     metricsVerified && (followerCount !== null || averageViews !== null || engagementRate !== null) ? `Metrics source: ${clean(value.metrics_source_url, 500)}` : '',
     dropped.length ? `Unverified ${dropped.join(', ')} omitted.` : ''].filter(Boolean).join('\n\n');
   return {
     lead: {
-      handle, profileUrl, name: clean(value.name, 160), niche: clean(value.niche, 160), location: clean(value.location, 160), bio: clean(value.bio, 3000),
+      handle, profileUrl, name: clean(value.name, 160), email, niche: clean(value.niche, 160), location: clean(value.location, 160), bio: clean(value.bio, 3000),
       followerCount, averageViews, engagementRate, recentPostNotes: clean(notes, 3000), source: 'OpenAI web discovery',
-      tags: ['AI discovered'], status: 'Ready to Review', notes: ''
+      tags: activity.date ? ['AI discovered'] : ['AI discovered', 'Activity unverified'], status: 'Ready to Review', notes: ''
     },
     droppedMetrics: dropped
   };
+}
+
+// A dated activity only counts when its page was consulted; dates in the future are ignored.
+function verifiedActivity(value, consulted, nowMs) {
+  const date = clean(value.activity_date, 20);
+  const url = clean(value.activity_source_url, 500);
+  const match = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(date);
+  if (!match || !url || !wasConsulted(url, consulted)) return { date: '', url: '', stale: false };
+  const month = Number(match[2]), day = Number(match[3] || 1);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return { date: '', url: '', stale: false };
+  // Month-only dates count from the end of that month.
+  const time = match[3] ? Date.UTC(Number(match[1]), month - 1, day) : Date.UTC(Number(match[1]), month, 0);
+  if (time > nowMs + 31 * 86400000) return { date: '', url: '', stale: false };
+  return { date, url, stale: nowMs - time > INACTIVE_AFTER_MS };
+}
+
+// Reference creators as bare handles, from a list or free text of @handles and profile URLs.
+export function parseReferenceCreators(value) {
+  const tokens = Array.isArray(value) ? value : String(value ?? '').split(/[\s,;]+/);
+  return [...new Set(tokens.map(token => normalizeHandle(clean(token, 200))).filter(handle => handle && !RESERVED_INSTAGRAM_PATHS.has(handle)))].slice(0, MAX_REFERENCE_CREATORS);
 }
 
 const ACTIVE_RUN_STATUSES = ['starting', 'running', 'importing'];
@@ -591,6 +629,7 @@ async function openAiResponses(env, apiKey, path = '', { method = 'GET', body } 
 
 // Background mode: OpenAI keeps working after this Worker request ends, and the run is collected by polling.
 export function buildDiscoveryRequest({ model, plan, query, criteria }) {
+  const { lookalikes = [], profileId, ...filters } = criteria;
   return {
     model,
     background: true,
@@ -603,7 +642,7 @@ export function buildDiscoveryRequest({ model, plan, query, criteria }) {
     max_output_tokens: plan.maxOutputTokens,
     include: ['web_search_call.action.sources'],
     instructions: DISCOVERY_INSTRUCTIONS(plan.effectiveCount),
-    input: JSON.stringify({ request: query, ...criteria, creator_limit: plan.effectiveCount }),
+    input: JSON.stringify({ request: query, ...filters, reference_creators: lookalikes.map(handle => '@' + handle), creator_limit: plan.effectiveCount }),
     text: { format: { type: 'json_schema', name: 'influencer_discovery', strict: true, schema: DISCOVERY_SCHEMA } }
   };
 }
@@ -630,6 +669,14 @@ export function serializeDiscoveryRun(row) {
 
 const emptyOutcome = () => ({ parsed: null, consulted: collectConsultedSources({}), summary: { found: 0, imported: 0, duplicates: 0, failed: 0, errors: [] }, rejections: [] });
 
+// A creator already in the CRM keeps their data, but gains a sourced email if they had none.
+async function fillMissingEmail(env, candidate, consulted, criteria) {
+  try {
+    const { lead } = verifyDiscoveredCreator(candidate, consulted, criteria);
+    if (lead.email) await env.DB.prepare("UPDATE influencer_leads SET email = ?, updated_at = ? WHERE handle = ? AND email = ''").bind(lead.email, now(), lead.handle).run();
+  } catch {}
+}
+
 async function importDiscoveryResponse(env, row, data) {
   const outcome = { ...emptyOutcome(), consulted: collectConsultedSources(data) };
   const outputText = responseOutputText(data);
@@ -654,7 +701,11 @@ async function importDiscoveryResponse(env, row, data) {
       await insertLead(env, { id: row.user_id }, lead);
       summary.imported++;
     } catch (error) {
-      if (error instanceof HttpError && error.status === 409) { summary.duplicates++; continue; }
+      if (error instanceof HttpError && error.status === 409) {
+        summary.duplicates++;
+        await fillMissingEmail(env, candidate, outcome.consulted, criteria);
+        continue;
+      }
       summary.failed++;
       const reason = error instanceof DiscoveryRejection ? error.reason : 'invalid_lead';
       rejections.push({ handle: clean(candidate?.handle, 60), name: clean(candidate?.name, 120), reason, detail: clean(redactSecrets(error.message), 300) });
@@ -800,7 +851,8 @@ async function discoverInfluencers(request, env, headers) {
   if (!query) throw new HttpError(400, 'Describe the influencers you want to find.');
   const criteria = {
     niche: clean(body.niche, 160), location: clean(body.location, 160), followerMin: intOrNull(body.followerMin, 'Minimum followers'),
-    followerMax: intOrNull(body.followerMax, 'Maximum followers'), exclusions: clean(body.exclusions, 1000)
+    followerMax: intOrNull(body.followerMax, 'Maximum followers'), exclusions: clean(body.exclusions, 1000),
+    lookalikes: parseReferenceCreators(body.lookalikes), profileId: clean(body.profileId, 64)
   };
   if (criteria.followerMin !== null && criteria.followerMax !== null && criteria.followerMin > criteria.followerMax) throw new HttpError(400, 'Minimum followers cannot exceed maximum followers.');
   const plan = planDiscoveryBudget({ count: body.count, budgetUsd: body.budgetUsd, ...discoveryPricing(env) });
@@ -875,6 +927,66 @@ async function cancelDiscoveryRun(request, env, headers, [id]) {
     await cancelOpenAiRun(env, row, apiKey, 'user');
   }
   return json({ ok: true, run: serializeDiscoveryRun(await readRun(env, row.id)) }, 200, headers);
+}
+
+export function normalizeDiscoveryProfile(input) {
+  const name = clean(input.name, 80);
+  if (!name) throw new HttpError(400, 'Name the search profile.');
+  const followerMin = intOrNull(input.followerMin, 'Minimum followers'), followerMax = intOrNull(input.followerMax, 'Maximum followers');
+  if (followerMin !== null && followerMax !== null && followerMin > followerMax) throw new HttpError(400, 'Minimum followers cannot exceed maximum followers.');
+  const creatorCount = intOrNull(input.creatorCount, 'Creator limit');
+  if (creatorCount !== null && (creatorCount < 1 || creatorCount > MAX_DISCOVERY_CREATORS)) throw new HttpError(400, `Creator limit must be between 1 and ${MAX_DISCOVERY_CREATORS}.`);
+  const budget = input.budgetUsd === '' || input.budgetUsd === null || input.budgetUsd === undefined ? null : Number(input.budgetUsd);
+  if (budget !== null && (!Number.isFinite(budget) || budget < MIN_DISCOVERY_BUDGET || budget > 25)) throw new HttpError(400, 'Estimated spend limit must be between $0.10 and $25.');
+  return {
+    name, brief: clean(input.brief, 1000), niche: clean(input.niche, 160), location: clean(input.location, 160), follower_min: followerMin,
+    follower_max: followerMax, exclusions: clean(input.exclusions, 1000), lookalikes: JSON.stringify(parseReferenceCreators(input.lookalikes)),
+    creator_count: creatorCount, budget_usd: budget
+  };
+}
+
+function mapDiscoveryProfile(row) {
+  return {
+    id: row.id, name: row.name, brief: row.brief, niche: row.niche, location: row.location, followerMin: row.follower_min,
+    followerMax: row.follower_max, exclusions: row.exclusions, lookalikes: parseJson(row.lookalikes, []), creatorCount: row.creator_count,
+    budgetUsd: row.budget_usd, updatedAt: row.updated_at
+  };
+}
+
+async function writeDiscoveryProfile(env, sql, values) {
+  try { await env.DB.prepare(sql).bind(...values).run(); }
+  catch (error) {
+    if (/unique/i.test(String(error?.message))) throw new HttpError(409, 'A search profile with that name already exists.');
+    throw error;
+  }
+}
+
+async function listDiscoveryProfiles(request, env, headers) {
+  await requireUser(request, env);
+  const { results } = await env.DB.prepare('SELECT * FROM discovery_profiles ORDER BY name COLLATE NOCASE').all();
+  return json({ ok: true, profiles: results.map(mapDiscoveryProfile) }, 200, headers);
+}
+
+async function createDiscoveryProfile(request, env, headers) {
+  const user = await requireUser(request, env);
+  const row = { id: crypto.randomUUID(), ...normalizeDiscoveryProfile(await readJson(request)), created_by_user_id: user.id, updated_by_user_id: user.id, created_at: now(), updated_at: now() };
+  await writeDiscoveryProfile(env, `INSERT INTO discovery_profiles (${Object.keys(row).join(',')}) VALUES (${Object.keys(row).map(() => '?').join(',')})`, Object.values(row));
+  return json({ ok: true, profile: mapDiscoveryProfile(await env.DB.prepare('SELECT * FROM discovery_profiles WHERE id = ?').bind(row.id).first()) }, 201, headers);
+}
+
+async function updateDiscoveryProfile(request, env, headers, [id]) {
+  const user = await requireUser(request, env);
+  if (!await env.DB.prepare('SELECT 1 FROM discovery_profiles WHERE id = ?').bind(id).first()) throw new HttpError(404, 'Search profile not found.');
+  const fields = { ...normalizeDiscoveryProfile(await readJson(request)), updated_by_user_id: user.id, updated_at: now() };
+  await writeDiscoveryProfile(env, `UPDATE discovery_profiles SET ${Object.keys(fields).map(key => `${key} = ?`).join(',')} WHERE id = ?`, [...Object.values(fields), id]);
+  return json({ ok: true, profile: mapDiscoveryProfile(await env.DB.prepare('SELECT * FROM discovery_profiles WHERE id = ?').bind(id).first()) }, 200, headers);
+}
+
+async function deleteDiscoveryProfile(request, env, headers, [id]) {
+  await requireUser(request, env);
+  const result = await env.DB.prepare('DELETE FROM discovery_profiles WHERE id = ?').bind(id).run();
+  if (!result.meta.changes) throw new HttpError(404, 'Search profile not found.');
+  return json({ ok: true }, 200, headers);
 }
 
 function analysisPayload(lead, profile) {
@@ -974,6 +1086,10 @@ export const influencerLeadRoutes = {
   'GET /api/influencer-leads/discover/runs': listDiscoveryRuns,
   'GET /api/influencer-leads/discover/runs/:id': getDiscoveryRun,
   'POST /api/influencer-leads/discover/runs/:id/cancel': cancelDiscoveryRun,
+  'GET /api/influencer-leads/discovery-profiles': listDiscoveryProfiles,
+  'POST /api/influencer-leads/discovery-profiles': createDiscoveryProfile,
+  'PATCH /api/influencer-leads/discovery-profiles/:id': updateDiscoveryProfile,
+  'DELETE /api/influencer-leads/discovery-profiles/:id': deleteDiscoveryProfile,
   'GET /api/influencer-leads/profile': getProfile,
   'PATCH /api/influencer-leads/profile': saveProfile,
   'GET /api/influencer-leads/settings': getAiSettings,
