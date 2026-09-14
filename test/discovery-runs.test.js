@@ -220,9 +220,12 @@ test('search profiles are shared CRUD records, and runs pass reference creators 
 
     // maya.ai already exists without an email; the run finds her published email and adds it.
     h.sqlite.prepare("INSERT INTO influencer_leads (id,created_by_user_id,created_at,updated_at,handle,profile_url,status,tags,email) VALUES ('l1','u1','t','t','maya.ai','https://www.instagram.com/maya.ai/','New','[]','')").run();
+    h.sqlite.prepare("INSERT INTO influencer_lead_notes (id,lead_id,user_id,author,body,created_at) VALUES ('n1','l1','u1','Tester','too old, owns an AI agency','t')").run();
     const started = await h.call('POST /api/influencer-leads/discover', 'u1', { body: { ...start.body, lookalikes: '@aiguyofficial', profileId: created.profile.id } });
     const input = JSON.parse(h.openai.calls.find(c => c.method === 'POST' && c.path === '').body.input);
     assert.deepEqual(input.reference_creators, ['@aiguyofficial']);
+    assert.deepEqual(input.already_in_crm, ['@maya.ai']);
+    assert.deepEqual(input.team_feedback, [{ creator: '@maya.ai', status: 'New', note: 'too old, owns an AI agency' }]);
     assert.ok(!('profileId' in input) && !('lookalikes' in input));
     assert.equal(JSON.parse(h.run(started.run.id).criteria).profileId, created.profile.id);
 

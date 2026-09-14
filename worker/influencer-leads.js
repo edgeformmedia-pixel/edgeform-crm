@@ -74,8 +74,9 @@ const DISCOVERY_SCHEMA = {
 
 const DISCOVERY_INSTRUCTIONS = (limit) => `You build a shortlist of real, individual Instagram creators from public web sources.
 
-1. Search the open web, not only instagram.com. Good sources: YouTube channels and videos, TikTok profiles, podcast episode pages, link-in-bio pages (Linktree, Beacons, Stan), personal websites and newsletters, X profiles, community posts (Skool, Reddit) where creators share their own links, creator roundups, and agency or marketplace rosters. Vary your queries with synonyms, niche terms, tools, and location.
+1. Search the open web, including instagram.com itself. Good sources: TikTok profiles and videos, YouTube channels and Shorts, podcast episode pages, link-in-bio and storefront pages (Linktree, Beacons, Stan, Whop, Gumroad), personal websites and newsletters, X profiles, community posts (Skool, Reddit) where creators share their own links, creator roundups, and agency or marketplace rosters. Vary your queries with synonyms, niche terms, tools, location, and the exact phrases small creators put in bios, captions, and video titles. Short-form creators often cross-post the same videos to TikTok, Instagram, and YouTube Shorts under similar names.
 2. If reference_creators are given, study what they post about, their format, and their audience, then find different creators who are similar. They show the topic and style to match, not the size: they may be much larger, so follow the follower range. Never return a reference creator.
+   Skip everyone in already_in_crm. team_feedback holds the team's notes on creators they reviewed: treat them as preferences, learn what the team rejects (for example age, location, or type of account), and avoid similar creators.
 3. Confirm each candidate's Instagram handle on a page returned by your searches that explicitly shows "@handle" or links to instagram.com/handle. Put that exact page URL in handle_source_url. Never derive or guess a handle from a person's name or another platform's username. Confirmation is the slow step: prefer pages that show a creator's links directly (YouTube About or descriptions, link-in-bio pages, podcast show notes, roundups listing several handles), and move on after two failed attempts for one person.
 4. Prefer creators who are active now. Put the date of their most recent dated post, video, episode, or article you found in activity_date (YYYY-MM or YYYY-MM-DD) and that page in activity_source_url; leave both empty if you found no dated activity. A missing date is fine and is not a reason to skip someone; only skip creators whose latest dated activity is more than 12 months old.
 5. Keep searching until you have ${limit} confirmed creators or have used all your searches; do not stop after a handful. Return up to ${limit} confirmed creators. Put the pages that show they fit the brief in source_urls, and one or two sentences in evidence describing what those pages say.
@@ -87,6 +88,8 @@ const DISCOVERY_INSTRUCTIONS = (limit) => `You build a shortlist of real, indivi
 10. Only read public web search results. Do not log in, scrape, message, follow, like, or take any action on Instagram or other platforms.`;
 
 const MAX_REFERENCE_CREATORS = 10;
+const MAX_CONTEXT_HANDLES = 400;
+const MAX_CONTEXT_FEEDBACK = 40;
 const INACTIVE_AFTER_MS = 365 * 86400000;
 
 function parseJson(value, fallback) {
@@ -628,7 +631,7 @@ async function openAiResponses(env, apiKey, path = '', { method = 'GET', body } 
 }
 
 // Background mode: OpenAI keeps working after this Worker request ends, and the run is collected by polling.
-export function buildDiscoveryRequest({ model, plan, query, criteria }) {
+export function buildDiscoveryRequest({ model, plan, query, criteria, existingHandles = [], feedback = [] }) {
   const { lookalikes = [], profileId, ...filters } = criteria;
   return {
     model,
@@ -642,7 +645,8 @@ export function buildDiscoveryRequest({ model, plan, query, criteria }) {
     max_output_tokens: plan.maxOutputTokens,
     include: ['web_search_call.action.sources'],
     instructions: DISCOVERY_INSTRUCTIONS(plan.effectiveCount),
-    input: JSON.stringify({ request: query, ...filters, reference_creators: lookalikes.map(handle => '@' + handle), creator_limit: plan.effectiveCount }),
+    input: JSON.stringify({ request: query, ...filters, reference_creators: lookalikes.map(handle => '@' + handle),
+      already_in_crm: existingHandles.map(handle => '@' + handle), team_feedback: feedback, creator_limit: plan.effectiveCount }),
     text: { format: { type: 'json_schema', name: 'influencer_discovery', strict: true, schema: DISCOVERY_SCHEMA } }
   };
 }
@@ -844,6 +848,19 @@ export async function discoveryCron(env) {
   await advanceActiveRuns(env, results || [], CRON_POLL_INTERVAL_MS);
 }
 
+// Handles already in the CRM, so results aren't spent on them, and the team's latest review notes.
+async function discoveryContext(env) {
+  const [leads, notes] = await env.DB.batch([
+    env.DB.prepare("SELECT handle FROM influencer_leads WHERE handle <> '' ORDER BY created_at DESC LIMIT ?").bind(MAX_CONTEXT_HANDLES),
+    env.DB.prepare(`SELECT l.handle, l.status, n.body FROM influencer_lead_notes n JOIN influencer_leads l ON l.id = n.lead_id
+      WHERE l.handle <> '' ORDER BY n.created_at DESC LIMIT ?`).bind(MAX_CONTEXT_FEEDBACK)
+  ]);
+  return {
+    existingHandles: leads.results.map(row => row.handle),
+    feedback: notes.results.map(row => ({ creator: '@' + row.handle, status: row.status, note: clean(row.body, 300) }))
+  };
+}
+
 async function discoverInfluencers(request, env, headers) {
   const user = await requireUser(request, env);
   const body = await readJson(request);
@@ -874,7 +891,7 @@ async function discoverInfluencers(request, env, headers) {
   if (!inserted.meta.changes) throw new HttpError(409, 'You already have a discovery search running. Wait for it to finish or cancel it.');
   let data;
   try {
-    data = await openAiResponses(env, apiKey, '', { method: 'POST', body: buildDiscoveryRequest({ model, plan, query, criteria }) });
+    data = await openAiResponses(env, apiKey, '', { method: 'POST', body: buildDiscoveryRequest({ model, plan, query, criteria, ...await discoveryContext(env) }) });
     if (!data.id) throw new HttpError(502, 'OpenAI did not return a discovery response ID.');
   } catch (error) {
     await writeDiscoveryOutcome(env, run, {}, emptyOutcome(), 'failed', { error: error.message, apiError: error.apiError || null, expectStatus: 'starting' });
