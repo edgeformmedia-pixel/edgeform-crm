@@ -180,6 +180,31 @@
   .match-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface2); }
   .match-score { font-family: var(--mono); font-size: 11px; color: var(--accent-bright); float: right; }
   .creator-links a { color: var(--accent-bright); text-decoration: none; margin-right: 10px; font-size: 12px; }
+  .cr-head-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .cr-head-actions a.action-btn { text-decoration: none; }
+  .cr-row-links { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
+  .cr-link { font-family: var(--mono); font-size: 10px; color: var(--accent-bright); text-decoration: none; border: 1px solid rgba(123,108,255,0.25); border-radius: 99px; padding: 1px 8px; white-space: nowrap; }
+  .cr-link:hover { background: var(--accent-glow); }
+  .cr-followers { display: flex; gap: 16px; flex-shrink: 0; }
+  .cr-followers div { text-align: right; font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+  .cr-followers b { display: block; font-family: var(--sans); font-size: 15px; letter-spacing: 0; text-transform: none; color: var(--text); }
+  .cr-followers .muted { font-family: var(--mono); font-size: 11px; color: var(--text-muted); align-self: center; }
+  .cr-edit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 12px; }
+  .cr-edit-grid .c-input { font-size: 12px; padding: 7px 10px; }
+  .cr-notes { margin-top: 6px; }
+  .cr-note-add { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 10px; }
+  .cr-note-add textarea.c-input { min-height: 44px; flex: 1; }
+  .cr-note { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin-bottom: 6px; }
+  .cr-note summary { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; list-style: none; font-size: 13px; }
+  .cr-note summary::-webkit-details-marker { display: none; }
+  .cr-note summary::before { content: '▸'; font-size: 10px; color: var(--text-muted); transition: transform 0.15s; }
+  .cr-note[open] summary::before { transform: rotate(90deg); }
+  .cr-note-when { font-family: var(--mono); font-size: 11px; color: var(--accent-bright); white-space: nowrap; }
+  .cr-note-preview { flex: 1; min-width: 0; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cr-note[open] .cr-note-preview { visibility: hidden; }
+  .cr-note-body { padding: 0 12px 10px 32px; white-space: pre-wrap; font-size: 13px; line-height: 1.6; color: var(--text); }
+  .cr-note-meta { display: flex; align-items: center; gap: 8px; padding: 0 12px 8px 32px; font-family: var(--mono); font-size: 10px; color: var(--text-muted); }
+  @media (max-width: 700px) { .cr-head { flex-wrap: wrap; } .cr-followers { order: 5; width: 100%; padding-left: 52px; justify-content: flex-start; } .cr-followers div { text-align: left; } .cr-note-add { flex-direction: column; } .cr-note-add .action-btn { align-self: flex-end; } }
 
   .sketch-link { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--accent-bright); text-decoration: none; border: 1px solid rgba(123,108,255,0.3); border-radius: 6px; padding: 5px 10px; transition: all 0.15s; }
   .sketch-link:hover { background: var(--accent-glow); }
@@ -771,7 +796,12 @@
     <div class="page-view" id="page-creators">
       <div class="page-head">
         <div class="page-title">Creators</div>
-        <div class="page-sub">Influencers who applied to the network. Approve the ones you want to offer to sponsors.</div>
+        <div class="page-sub">Creators who applied or that we already work with. Approve the ones you want to offer to sponsors.</div>
+        <div class="cr-head-actions">
+          <button class="action-btn primary" onclick="openCreatorForm()">+ Add creator</button>
+          <button class="action-btn" onclick="copyText(CREATOR_APPLY_URL, 'Application link')">Copy application link</button>
+          <a class="action-btn" href="https://edgeformmarketing.com/form/?type=creator" target="_blank" rel="noopener">View form ↗</a>
+        </div>
       </div>
       <div class="submits-toolbar">
         <input class="search-box" id="creator-search" type="text" placeholder="Search name, handle, location…" oninput="renderCreators()">
@@ -1113,6 +1143,36 @@
       <button class="action-btn" id="op-delete" onclick="deleteOperation()" hidden>Delete</button>
       <button class="action-btn" onclick="closeOperation()">Cancel</button>
       <button class="send-btn" id="op-save" onclick="saveOperation()"><span class="btn-text">Create Operation</span></button>
+    </div>
+  </div>
+</div>
+
+<div class="ops-modal-bg" id="creator-modal" hidden onclick="if (event.target === this) closeCreatorForm()">
+  <div class="ops-modal" role="dialog" aria-labelledby="creator-modal-title">
+    <div class="ops-modal-head">
+      <span class="compose-title" id="creator-modal-title">Add creator</span>
+      <button class="drawer-close" onclick="closeCreatorForm()" aria-label="Close">✕</button>
+    </div>
+    <div class="ops-modal-body">
+      <div class="ops-form-grid">
+        <div class="c-field full"><label>Name</label><input class="c-input" id="cf-name" type="text" placeholder="Jane Doe"></div>
+        <div class="c-field"><label>Instagram</label><input class="c-input" id="cf-instagram" type="text" placeholder="@handle or link"></div>
+        <div class="c-field"><label>Instagram followers</label><input class="c-input" id="cf-instagram-followers" type="number" min="0" placeholder="0"></div>
+        <div class="c-field"><label>TikTok</label><input class="c-input" id="cf-tiktok" type="text" placeholder="@handle or link"></div>
+        <div class="c-field"><label>TikTok followers</label><input class="c-input" id="cf-tiktok-followers" type="number" min="0" placeholder="0"></div>
+        <div class="c-field"><label>YouTube</label><input class="c-input" id="cf-youtube" type="text" placeholder="@handle or link"></div>
+        <div class="c-field"><label>YouTube subscribers</label><input class="c-input" id="cf-youtube-followers" type="number" min="0" placeholder="0"></div>
+        <div class="c-field"><label>Email</label><input class="c-input" id="cf-email" type="email"></div>
+        <div class="c-field"><label>Phone</label><input class="c-input" id="cf-phone" type="tel"></div>
+        <div class="c-field"><label>Location</label><input class="c-input" id="cf-location" type="text" placeholder="Miami, FL"></div>
+        <div class="c-field"><label>Other link</label><input class="c-input" id="cf-other" type="text" placeholder="https://"></div>
+        <div class="c-field full"><label>First note</label><textarea class="c-input" id="cf-note" style="min-height:70px;" placeholder="How we met, rates, what they're good at…"></textarea></div>
+      </div>
+      <div class="email-msg" id="cf-msg"></div>
+    </div>
+    <div class="ops-modal-foot">
+      <button class="action-btn" onclick="closeCreatorForm()">Cancel</button>
+      <button class="send-btn" id="cf-save" onclick="saveNewCreator()"><span class="btn-text">Add creator</span></button>
     </div>
   </div>
 </div>
@@ -1557,24 +1617,89 @@ async function loadCreators() {
     const current = nicheSel.value;
     nicheSel.innerHTML = '<option value="">All niches</option>' + niches.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
     nicheSel.value = current;
-    const pending = allCreators.filter(c => c.rosterStatus === 'applied').length;
-    document.getElementById('badge-creators').textContent = allCreators.length;
-    document.getElementById('drawer-badge-creators').textContent = allCreators.length;
-    document.getElementById('kpi-creators').nextElementSibling.textContent = pending ? `${pending} waiting for review` : 'Talent roster, not sales';
     renderCreators();
   } catch (err) {
     document.getElementById('creator-list').innerHTML = `<div class="state-box">Failed to load creators: ${esc(err.message)}</div>`;
   }
 }
 
+const CREATOR_APPLY_URL = 'https://edgeformmarketing.com/form/?type=creator';
+const CREATOR_PLATFORMS = [['instagram', 'Instagram', 'IG'], ['tiktok', 'TikTok', 'TikTok'], ['youtube', 'YouTube', 'YT']];
+const openCreators = new Set();
+
+const compactNum = (n) => new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+
+function creatorRowLinks(c) {
+  const links = [...CREATOR_PLATFORMS.map(([k, name]) => [k, name]), ['other', 'Link']]
+    .map(([k, name]) => [name, socialUrl(k, c.socials[k])]).filter(([, url]) => url);
+  return links.map(([name, url]) => `<a class="cr-link" href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(name)} ↗</a>`).join('');
+}
+
+function creatorFollowers(c) {
+  const counts = CREATOR_PLATFORMS.filter(([k]) => c.followers[k] !== undefined);
+  if (!counts.length) return `<span class="muted">${c.audienceSize ? esc(c.audienceSize) + ' (from form)' : 'No follower counts'}</span>`;
+  return counts.map(([k, , short]) => `<div><b>${compactNum(c.followers[k])}</b>${short}</div>`).join('');
+}
+
+function creatorNotesHtml(c) {
+  const id = esc(c.id);
+  return `<div class="detail-section-title">Notes (${c.notes.length})</div>
+    <div class="cr-note-add">
+      <textarea class="c-input" id="cnote-${id}" placeholder="Add a note… (Ctrl+Enter to save)" data-id="${id}" onkeydown="if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) addCreatorNote(this.dataset.id)"></textarea>
+      <button class="action-btn primary" data-id="${id}" onclick="addCreatorNote(this.dataset.id)">Add note</button>
+    </div>
+    <div class="cr-notes">${c.notes.map(n => `<details class="cr-note">
+      <summary><span class="cr-note-when">${fmtDateTime(n.createdAt)}</span><span class="cr-note-preview">${esc(n.body.split('\n')[0])}</span></summary>
+      <div class="cr-note-body">${esc(n.body)}</div>
+      <div class="cr-note-meta">${n.author ? esc(n.author) : ''}<button class="opd-x" title="Delete note" data-id="${id}" data-note="${esc(n.id)}" onclick="deleteCreatorNote(this.dataset.id, this.dataset.note)">Delete</button></div>
+    </details>`).join('') || '<div class="feed-time">No notes yet.</div>'}</div>`;
+}
+
+function creatorProfileHtml(c) {
+  const id = esc(c.id);
+  const input = (field, label, value, type = 'text') =>
+    `<div class="c-field"><label>${label}</label><input class="c-input" data-cfield="${field}" type="${type}"${type === 'number' ? ' min="0"' : ''} value="${esc(value ?? '')}"></div>`;
+  return `<div class="detail-section-title">Profile</div>
+    <div class="cr-edit-grid" id="cprofile-${id}">
+      ${input('name', 'Name', c.name)}
+      ${input('email', 'Email', c.email, 'email')}
+      ${input('phone', 'Phone', c.phone, 'tel')}
+      ${input('location', 'Location', c.location)}
+      ${CREATOR_PLATFORMS.map(([k, name]) => input('socials.' + k, name, c.socials[k]) + input('followers.' + k, k === 'youtube' ? 'YouTube subscribers' : name + ' followers', c.followers[k], 'number')).join('')}
+      ${input('socials.other', 'Other link', c.socials.other)}
+    </div>
+    <div class="detail-actions" style="align-items:center;">
+      <button class="action-btn primary" data-id="${id}" onclick="saveCreatorProfile(this.dataset.id)">Save profile</button>
+      ${c.followersUpdatedAt ? `<span class="feed-time">Follower counts updated ${fmtDateTime(c.followersUpdatedAt)}</span>` : ''}
+    </div>`;
+}
+
+function creatorApplicationHtml(c) {
+  if (c.source === 'manual') return '';
+  return `<div class="detail-section-title">Application</div>
+    <div class="detail-grid">
+      ${detailField('Applied', fmtDateTime(c.createdAt))}
+      ${detailField('Audience (their answer)', esc(c.audienceSize))}
+      ${detailField('Media kit', safeUrl(c.mediaKit) && `<a href="${safeUrl(c.mediaKit)}" target="_blank" rel="noopener">Open ↗</a>`)}
+      ${detailField('Niches', esc(c.niches.join(', ')), true)}
+      ${detailField('Content', esc(c.contentTypes.join(', ')), true)}
+      ${detailField('Consent', c.consent ? '18+ and OK to share profile with brands' : '<span style="color:var(--red)">Not given</span>', true)}
+    </div>`;
+}
+
 function renderCreators() {
+  const pending = allCreators.filter(c => c.rosterStatus === 'applied').length;
+  document.getElementById('badge-creators').textContent = allCreators.length;
+  document.getElementById('drawer-badge-creators').textContent = allCreators.length;
+  document.getElementById('kpi-creators').nextElementSibling.textContent = pending ? `${pending} waiting for review` : 'Talent roster, not sales';
+
   const q = document.getElementById('creator-search').value.toLowerCase();
   const roster = document.getElementById('creator-roster').value;
   const niche = document.getElementById('creator-niche').value;
   const audience = Number(document.getElementById('creator-audience').value || 0);
   const platform = document.getElementById('creator-platform').value;
   const rows = allCreators.filter(c =>
-    (!q || [c.name, c.email, c.location, ...Object.values(c.socials)].join(' ').toLowerCase().includes(q)) &&
+    (!q || [c.name, c.email, c.location, ...Object.values(c.socials), ...c.notes.map(n => n.body)].join(' ').toLowerCase().includes(q)) &&
     (!roster || c.rosterStatus === roster) &&
     (!niche || c.niches.includes(niche)) &&
     (!audience || c.audienceTier === audience) &&
@@ -1583,56 +1708,134 @@ function renderCreators() {
   document.getElementById('creator-list').innerHTML = rows.length ? rows.map(c => {
     const id = esc(c.id);
     const statusChip = { approved: 'chip-green', declined: 'chip-red', applied: 'chip-orange' }[c.rosterStatus] || 'chip-muted';
-    return `<div class="submit-card" id="cc-${id}">
-      <div class="submit-card-head" data-id="${id}" onclick="document.getElementById('cc-' + this.dataset.id).classList.toggle('open')">
+    return `<div class="submit-card${openCreators.has(c.id) ? ' open' : ''}" id="cc-${id}">
+      <div class="submit-card-head cr-head" data-id="${id}" onclick="toggleCreator(this.dataset.id)">
         <div class="submit-avi">${esc(c.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2))}</div>
         <div class="submit-main">
           <div class="submit-name">${esc(c.name)}</div>
-          <div class="submit-phone">${esc([c.location, c.audienceSize].filter(Boolean).join(' · '))}</div>
+          <div class="cr-row-links">${creatorRowLinks(c) || '<span class="submit-phone">No links yet</span>'}</div>
         </div>
+        <div class="cr-followers">${creatorFollowers(c)}</div>
         <div class="submit-meta">
-          ${c.niches.slice(0, 3).map(n => `<span class="chip chip-purple">${esc(n)}</span>`).join('')}
           <span class="chip ${statusChip}">${esc(c.rosterStatus)}</span>
-          <span class="submit-time">${fmtDate(c.createdAt)}</span>
           <span class="submit-chevron">▾</span>
         </div>
       </div>
       <div class="submit-detail">
-        <div class="creator-links" style="margin-bottom:12px;">${socialLinks(c.socials)}${safeUrl(c.mediaKit) ? `<a href="${safeUrl(c.mediaKit)}" target="_blank" rel="noopener">Media kit ↗</a>` : ''}</div>
-        <div class="detail-grid">
-          ${detailField('Email', c.email && `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`)}
-          ${detailField('Phone', c.phone && `<a href="tel:${esc(c.phoneE164 || c.phone)}">${esc(c.phone)}</a>`)}
-          ${detailField('Audience', esc(c.audienceSize))}
-          ${detailField('Location', esc(c.location))}
-          ${detailField('Niches', esc(c.niches.join(', ')), true)}
-          ${detailField('Content', esc(c.contentTypes.join(', ')), true)}
-          ${detailField('Consent', c.consent ? '18+ and OK to share profile with brands' : '<span style="color:var(--red)">Not given</span>', true)}
-        </div>
-        <div class="c-field">
-          <label style="font-family:var(--mono);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-muted);">Internal notes</label>
-          <textarea class="c-input" id="cnotes-${id}" style="min-height:70px;">${esc(c.notes)}</textarea>
-        </div>
-        <div class="detail-actions">
-          <button class="action-btn primary" data-id="${id}" onclick="updateCreator(this.dataset.id, 'approved')">✓ Approve</button>
-          <button class="action-btn" data-id="${id}" onclick="updateCreator(this.dataset.id, 'declined')">✕ Decline</button>
-          <button class="action-btn" data-id="${id}" onclick="updateCreator(this.dataset.id)">Save Notes</button>
+        ${creatorNotesHtml(c)}
+        ${creatorProfileHtml(c)}
+        ${creatorApplicationHtml(c)}
+        <div class="detail-actions" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">
+          ${c.rosterStatus !== 'approved' ? `<button class="action-btn primary" data-id="${id}" onclick="setCreatorStatus(this.dataset.id, 'approved')">✓ Approve</button>` : ''}
+          ${c.rosterStatus !== 'declined' ? `<button class="action-btn" data-id="${id}" onclick="setCreatorStatus(this.dataset.id, 'declined')">✕ Decline</button>` : ''}
+          <button class="action-btn" style="margin-left:auto;" data-id="${id}" onclick="deleteCreator(this.dataset.id)">Delete creator</button>
         </div>
       </div>
     </div>`;
   }).join('') : '<div class="state-box"><div class="state-icon">★</div>No creators found.</div>';
 }
 
-async function updateCreator(id, rosterStatus) {
-  const notes = document.getElementById('cnotes-' + id)?.value;
+function toggleCreator(id) {
+  const open = document.getElementById('cc-' + id).classList.toggle('open');
+  open ? openCreators.add(id) : openCreators.delete(id);
+}
+
+function replaceCreator(creator) {
+  const i = allCreators.findIndex(x => x.id === creator.id);
+  if (i >= 0) allCreators[i] = creator; else allCreators.unshift(creator);
+  renderCreators();
+}
+
+async function creatorRequest(path, options) {
+  const res = await api('/api/creators' + path, options);
+  if (!res.ok) throw new Error(res.error || 'Something went wrong.');
+  return res;
+}
+
+async function setCreatorStatus(id, rosterStatus) {
   try {
-    const res = await api('/api/creators/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify({ notes, ...(rosterStatus ? { rosterStatus } : {}) }) });
-    if (!res.ok) throw new Error(res.error);
-    const c = allCreators.find(x => x.id === id);
-    if (c) { c.notes = notes; if (rosterStatus) c.rosterStatus = rosterStatus; }
+    replaceCreator((await creatorRequest('/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify({ rosterStatus }) })).creator);
+  } catch (err) { alert('Not saved: ' + err.message); }
+}
+
+async function saveCreatorProfile(id) {
+  const body = { socials: {}, followers: {} };
+  document.querySelectorAll(`#cprofile-${CSS.escape(id)} [data-cfield]`).forEach(el => {
+    const [group, key] = el.dataset.cfield.split('.');
+    if (key) body[group][key] = el.value.trim();
+    else body[group] = el.value.trim();
+  });
+  try {
+    replaceCreator((await creatorRequest('/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(body) })).creator);
+  } catch (err) { alert('Not saved: ' + err.message); }
+}
+
+async function deleteCreator(id) {
+  const c = allCreators.find(x => x.id === id);
+  if (!c || !confirm(`Delete ${c.name} and all their notes? This can't be undone.`)) return;
+  try {
+    await creatorRequest('/' + encodeURIComponent(id), { method: 'DELETE' });
+    allCreators = allCreators.filter(x => x.id !== id);
     renderCreators();
-    document.getElementById('cc-' + id)?.classList.add('open');
+  } catch (err) { alert('Not deleted: ' + err.message); }
+}
+
+async function addCreatorNote(id) {
+  const box = document.getElementById('cnote-' + id);
+  const text = box.value.trim();
+  if (!text) return box.focus();
+  try {
+    const { note } = await creatorRequest(`/${encodeURIComponent(id)}/notes`, { method: 'POST', body: JSON.stringify({ body: text }) });
+    const c = allCreators.find(x => x.id === id);
+    c.notes.unshift(note);
+    renderCreators();
+  } catch (err) { alert('Note not saved: ' + err.message); }
+}
+
+async function deleteCreatorNote(id, noteId) {
+  if (!confirm('Delete this note?')) return;
+  try {
+    await creatorRequest(`/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' });
+    const c = allCreators.find(x => x.id === id);
+    c.notes = c.notes.filter(n => n.id !== noteId);
+    renderCreators();
+  } catch (err) { alert('Not deleted: ' + err.message); }
+}
+
+const CREATOR_FORM_FIELDS = ['name', 'instagram', 'instagram-followers', 'tiktok', 'tiktok-followers', 'youtube', 'youtube-followers', 'email', 'phone', 'location', 'other', 'note'];
+
+function openCreatorForm() {
+  CREATOR_FORM_FIELDS.forEach(f => { document.getElementById('cf-' + f).value = ''; });
+  document.getElementById('cf-msg').className = 'email-msg';
+  document.getElementById('creator-modal').hidden = false;
+  document.getElementById('cf-name').focus();
+}
+
+function closeCreatorForm() {
+  document.getElementById('creator-modal').hidden = true;
+}
+
+async function saveNewCreator() {
+  const v = (f) => document.getElementById('cf-' + f).value.trim();
+  const msg = document.getElementById('cf-msg');
+  const btn = document.getElementById('cf-save');
+  if (!v('name')) { msg.textContent = 'Name is required.'; msg.className = 'email-msg show error'; return; }
+  const body = {
+    name: v('name'), email: v('email'), phone: v('phone'), location: v('location'),
+    socials: { instagram: v('instagram'), tiktok: v('tiktok'), youtube: v('youtube'), other: v('other') },
+    followers: Object.fromEntries(CREATOR_PLATFORMS.map(([k]) => [k, v(k + '-followers')]).filter(([, n]) => n !== ''))
+  };
+  btn.disabled = true;
+  try {
+    const { creator } = await creatorRequest('', { method: 'POST', body: JSON.stringify(body) });
+    if (v('note')) creator.notes.unshift((await creatorRequest(`/${encodeURIComponent(creator.id)}/notes`, { method: 'POST', body: JSON.stringify({ body: v('note') }) })).note);
+    openCreators.add(creator.id);
+    replaceCreator(creator);
+    closeCreatorForm();
   } catch (err) {
-    alert('Not saved: ' + err.message);
+    msg.textContent = err.message; msg.className = 'email-msg show error';
+  } finally {
+    btn.disabled = false;
   }
 }
 

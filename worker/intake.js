@@ -277,38 +277,132 @@ async function updateSubmission(request, env, headers, [id]) {
 }
 
 // ── Creator roster ────────────────────────────────────────────
-function mapCreator(c) {
+const FOLLOWER_COLUMNS = { instagram: 'instagram_followers', tiktok: 'tiktok_followers', youtube: 'youtube_followers' };
+const SOCIAL_COLUMNS = { instagram: 'instagram', tiktok: 'tiktok', youtube: 'youtube', other: 'other_social' };
+
+function mapCreator(c, notes = []) {
   return {
-    id: c.id, leadId: c.lead_id, submissionId: c.submission_id, contactId: c.contact_id, createdAt: c.created_at, updatedAt: c.updated_at,
+    id: c.id, leadId: c.lead_id, submissionId: c.submission_id, contactId: c.contact_id, source: c.source, createdAt: c.created_at, updatedAt: c.updated_at,
     name: c.name, email: c.email, phone: c.phone, phoneE164: c.phone_e164,
     socials: Object.fromEntries(Object.entries({ instagram: c.instagram, tiktok: c.tiktok, youtube: c.youtube, other: c.other_social }).filter(([, v]) => v)),
+    followers: Object.fromEntries(Object.entries(FOLLOWER_COLUMNS).filter(([, col]) => c[col] !== null).map(([k, col]) => [k, c[col]])),
+    followersUpdatedAt: c.followers_updated_at,
     audienceSize: c.audience_size, audienceTier: c.audience_tier, niches: parse(c.niches, []), location: c.location,
     contentTypes: parse(c.content_types, []), mediaKit: c.media_kit, consent: c.consent === 1,
-    formStatus: c.form_status, rosterStatus: c.roster_status, notes: c.notes
+    formStatus: c.form_status, rosterStatus: c.roster_status, notes
   };
+}
+
+const mapNote = (n) => ({ id: n.id, body: n.body, author: n.author, createdAt: n.created_at });
+
+// Largest follower count, bucketed like the form's audience sizes so sponsor matching keeps working.
+function followerTier(counts) {
+  const max = Math.max(-1, ...counts.filter(n => n !== null && n !== undefined));
+  if (max < 0) return null;
+  const [, size, tier] = [[500000, '500K+', 5], [100000, '100K–500K', 4], [25000, '25K–100K', 3], [5000, '5K–25K', 2], [0, 'Under 5K', 1]].find(([min]) => max >= min);
+  return { size, tier };
+}
+
+function followerCount(v) {
+  if (v === null || v === '') return null;
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n) || n < 0) throw new HttpError(400, 'Follower counts must be positive numbers.');
+  return n;
+}
+
+// Shared by create and update: only keys present in the body are returned.
+function creatorFields(body) {
+  const fields = {};
+  if (body.name !== undefined) {
+    fields.name = clean(body.name, 160);
+    if (!fields.name) throw new HttpError(400, 'Name is required.');
+  }
+  if (body.email !== undefined) fields.email = clean(body.email, 254).toLowerCase();
+  if (body.phone !== undefined) fields.phone = clean(body.phone, 40);
+  if (body.location !== undefined) fields.location = clean(body.location, 160);
+  for (const [key, col] of Object.entries(SOCIAL_COLUMNS)) if (isPlainObject(body.socials) && body.socials[key] !== undefined) fields[col] = clean(body.socials[key], 300);
+  for (const [key, col] of Object.entries(FOLLOWER_COLUMNS)) if (isPlainObject(body.followers) && body.followers[key] !== undefined) fields[col] = followerCount(body.followers[key]);
+  if (body.rosterStatus !== undefined) {
+    if (!ROSTER_STATUSES.includes(body.rosterStatus)) throw new HttpError(400, `rosterStatus must be one of: ${ROSTER_STATUSES.join(', ')}`);
+    fields.roster_status = body.rosterStatus;
+  }
+  return fields;
+}
+
+// Changing any follower count re-stamps the date and re-buckets the audience size.
+function applyFollowers(fields, existing = {}) {
+  if (!Object.values(FOLLOWER_COLUMNS).some(col => col in fields)) return;
+  fields.followers_updated_at = now();
+  const tier = followerTier(Object.values(FOLLOWER_COLUMNS).map(col => (col in fields ? fields[col] : existing[col])));
+  if (tier) { fields.audience_size = tier.size; fields.audience_tier = tier.tier; }
+}
+
+async function creatorWithNotes(env, id) {
+  const [creator, notes] = await env.DB.batch([
+    env.DB.prepare('SELECT * FROM creators WHERE id = ?').bind(id),
+    env.DB.prepare('SELECT * FROM creator_notes WHERE creator_id = ? ORDER BY created_at DESC').bind(id)
+  ]);
+  return mapCreator(creator.results[0], notes.results.map(mapNote));
 }
 
 async function listCreators(request, env, headers) {
   await requireUser(request, env);
   const includePartial = new URL(request.url).searchParams.get('include') === 'partial';
-  const result = await env.DB.prepare(
-    `SELECT * FROM creators ${includePartial ? '' : "WHERE form_status = 'complete'"} ORDER BY created_at DESC LIMIT 2000`
-  ).all();
-  return json({ ok: true, creators: result.results.map(mapCreator) }, 200, headers);
+  const [creators, notes] = await env.DB.batch([
+    env.DB.prepare(`SELECT * FROM creators ${includePartial ? '' : "WHERE form_status = 'complete'"} ORDER BY created_at DESC LIMIT 2000`),
+    env.DB.prepare('SELECT * FROM creator_notes ORDER BY created_at DESC')
+  ]);
+  const byCreator = {};
+  for (const n of notes.results) (byCreator[n.creator_id] ||= []).push(mapNote(n));
+  return json({ ok: true, creators: creators.results.map(c => mapCreator(c, byCreator[c.id])) }, 200, headers);
+}
+
+// Creators we already work with: added by hand, approved, and OK to offer to sponsors.
+async function createCreator(request, env, headers) {
+  await requireUser(request, env);
+  const fields = creatorFields({ name: '', ...await readJson(request) });
+  applyFollowers(fields);
+  const id = crypto.randomUUID();
+  const row = { id, source: 'manual', created_at: now(), updated_at: now(), consent: 1, form_status: 'complete', roster_status: 'approved', ...fields };
+  await env.DB.prepare(`INSERT INTO creators (${Object.keys(row).join(', ')}) VALUES (${Object.keys(row).map(() => '?').join(', ')})`)
+    .bind(...Object.values(row)).run();
+  return json({ ok: true, creator: await creatorWithNotes(env, id) }, 201, headers);
 }
 
 async function updateCreator(request, env, headers, [id]) {
   await requireUser(request, env);
-  const body = await readJson(request);
-  const sets = [], values = [];
-  if (body.rosterStatus !== undefined) {
-    if (!ROSTER_STATUSES.includes(body.rosterStatus)) throw new HttpError(400, `rosterStatus must be one of: ${ROSTER_STATUSES.join(', ')}`);
-    sets.push('roster_status = ?'); values.push(body.rosterStatus);
-  }
-  if (body.notes !== undefined) { sets.push('notes = ?'); values.push(clean(body.notes, 4000)); }
-  if (!sets.length) throw new HttpError(400, 'Nothing to update.');
-  const result = await env.DB.prepare(`UPDATE creators SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`).bind(...values, now(), id).run();
+  const fields = creatorFields(await readJson(request));
+  if (!Object.keys(fields).length) throw new HttpError(400, 'Nothing to update.');
+  const existing = await env.DB.prepare('SELECT * FROM creators WHERE id = ?').bind(id).first();
+  if (!existing) throw new HttpError(404, 'Creator not found.');
+  applyFollowers(fields, existing);
+  fields.updated_at = now();
+  await env.DB.prepare(`UPDATE creators SET ${Object.keys(fields).map(k => `${k} = ?`).join(', ')} WHERE id = ?`).bind(...Object.values(fields), id).run();
+  return json({ ok: true, creator: await creatorWithNotes(env, id) }, 200, headers);
+}
+
+async function deleteCreator(request, env, headers, [id]) {
+  await requireUser(request, env);
+  const result = await env.DB.prepare('DELETE FROM creators WHERE id = ?').bind(id).run();
   if (!result.meta.changes) throw new HttpError(404, 'Creator not found.');
+  return json({ ok: true }, 200, headers);
+}
+
+async function addCreatorNote(request, env, headers, [id]) {
+  const user = await requireUser(request, env);
+  const body = clean((await readJson(request)).body, 4000);
+  if (!body) throw new HttpError(400, 'Write a note first.');
+  if (!await env.DB.prepare('SELECT 1 FROM creators WHERE id = ?').bind(id).first()) throw new HttpError(404, 'Creator not found.');
+  const note = { id: crypto.randomUUID(), body, author: user.name || user.email, created_at: now() };
+  await env.DB.prepare('INSERT INTO creator_notes (id, creator_id, body, user_id, author, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(note.id, id, body, user.id, note.author, note.created_at).run();
+  return json({ ok: true, note: mapNote(note) }, 201, headers);
+}
+
+async function deleteCreatorNote(request, env, headers, [id, noteId]) {
+  await requireUser(request, env);
+  const result = await env.DB.prepare('DELETE FROM creator_notes WHERE id = ? AND creator_id = ?').bind(noteId, id).run();
+  if (!result.meta.changes) throw new HttpError(404, 'Note not found.');
   return json({ ok: true }, 200, headers);
 }
 
@@ -419,7 +513,7 @@ async function matchCreators(request, env, headers, [id]) {
   const creators = await env.DB.prepare(
     `SELECT * FROM creators WHERE form_status = 'complete' AND consent = 1 AND roster_status <> 'declined'`
   ).all();
-  const matches = creators.results.map(mapCreator)
+  const matches = creators.results.map(c => mapCreator(c))
     .map(c => ({ creator: c, ...scoreCreator(sponsor, c) }))
     .filter(m => m.score > 0)
     .sort((a, b) => b.score - a.score || (b.creator.rosterStatus === 'approved') - (a.creator.rosterStatus === 'approved'))
@@ -464,5 +558,9 @@ export const intakeRoutes = {
   'POST /api/submissions/:lead/sketch': uploadSketch,
   'GET /api/sketches/:id': getSketch,
   'GET /api/creators': listCreators,
-  'PATCH /api/creators/:id': updateCreator
+  'POST /api/creators': createCreator,
+  'PATCH /api/creators/:id': updateCreator,
+  'DELETE /api/creators/:id': deleteCreator,
+  'POST /api/creators/:id/notes': addCreatorNote,
+  'DELETE /api/creators/:id/notes/:note': deleteCreatorNote
 };
