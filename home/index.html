@@ -453,15 +453,6 @@
   .op-crm { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--accent-bright); text-decoration: none; border: 1px solid var(--border); background: var(--surface2); border-radius: 8px; padding: 10px 12px; }
   .op-crm:hover { border-color: var(--accent); }
   .op-crm span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .op-metrics { display: flex; flex-direction: column; gap: 10px; }
-  .op-metric-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; margin-bottom: 5px; }
-  .op-metric-label { color: var(--text-dim); }
-  .op-metric-val { font-family: var(--mono); font-size: 11px; color: var(--text); white-space: nowrap; }
-  .op-metric-val em { font-style: normal; color: var(--text-muted); }
-  .op-bar { height: 5px; border-radius: 99px; background: var(--surface2); border: 1px solid var(--border); overflow: hidden; }
-  .op-bar i { display: block; height: 100%; background: var(--accent-bright); border-radius: 99px; }
-  .op-bar.done i { background: var(--green); }
-  .op-empty-metrics { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
   .op-foot { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 10px; margin-top: auto; }
 
   .ops-modal-bg { position: fixed; inset: 0; background: rgba(8,16,12,0.45); backdrop-filter: blur(3px); z-index: 400; display: flex; align-items: flex-start; justify-content: center; padding: 60px 16px; overflow-y: auto; }
@@ -482,15 +473,87 @@
   .ops-slug .c-input { border-radius: 7px 0 0 7px; }
   .ops-slug span { display: flex; align-items: center; font-family: var(--mono); font-size: 12px; color: var(--text-muted); background: var(--surface2); border: 1px solid var(--border); border-left: none; border-radius: 0 7px 7px 0; padding: 0 10px; white-space: nowrap; }
   .ops-hint { font-family: var(--mono); font-size: 10px; color: var(--text-muted); margin-top: 5px; }
-  .ops-metric-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr 0.6fr 28px; gap: 6px; align-items: center; margin-bottom: 6px; }
-  .ops-metric-grid .c-input { padding: 7px 8px; font-size: 12px; }
-  .ops-metric-grid.head span { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
-  .ops-metric-del { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; }
-  .ops-metric-del:hover { color: var(--red); }
-  .ops-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-  .ops-presets button { font-family: var(--mono); font-size: 10px; padding: 4px 10px; border-radius: 99px; border: 1px dashed var(--border-hi); background: none; color: var(--text-dim); cursor: pointer; }
-  .ops-presets button:hover { border-color: var(--accent); color: var(--accent-bright); }
-  @media (max-width: 700px) { .ops-type-picker, .ops-form-grid { grid-template-columns: 1fr; } .ops-metric-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr 28px; } .ops-metric-grid > :nth-child(5) { display: none; } }
+  .op-head-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+  .op-head-val { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; color: var(--accent-bright); margin-top: 2px; }
+
+  /* Operation detail */
+  main { min-width: 0; }
+  #ops-detail { min-width: 0; }
+  .opd-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; position: sticky; top: calc(var(--nav-h) + 8px); z-index: 20; background: var(--bg); padding: 6px 0; }
+  .opd-save-state { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+  .opd-save-state.dirty { color: var(--orange); }
+  .opd-save { width: auto; margin: 0; padding: 9px 18px; font-size: 13px; }
+  .opd-title h1 { font-size: 30px; font-weight: 600; letter-spacing: -0.03em; margin: 10px 0 2px; }
+  .opd-crm { display: inline-flex; margin-top: 10px; min-width: 320px; }
+  .opd-hero { background: #102019; color: #edf3ef; border-radius: 16px; padding: 26px 30px; margin: 20px 0 8px; }
+  .opd-hero-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #a4c9b6; }
+  .opd-hero-val { font-size: 52px; font-weight: 600; letter-spacing: -0.04em; margin: 6px 0 12px; line-height: 1; }
+  .opd-hero-how { font-size: 14px; color: #cfdcd5; line-height: 2.1; }
+  .opd-hero .opd-pill { background: rgba(255,255,255,0.1); color: #cfdcd5; }
+  .opd-hero .opd-pill b, .opd-hero .opd-sym { color: #fff; }
+  .opd-section-title { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin: 30px 0 10px; }
+  .opd-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+  .opd-card-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+  .opd-empty { padding: 20px; background: var(--surface); border: 1px dashed var(--border-hi); border-radius: 12px; margin-bottom: 10px; }
+  .opd-x { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 4px 8px; border-radius: 6px; }
+  .opd-x:hover { color: var(--red); background: rgba(165,62,62,0.08); }
+  .opd-add { display: flex; gap: 8px; margin-top: 10px; }
+  .opd-add .c-input { flex: 1; }
+  .opd-muted { color: var(--text-muted); font-family: var(--mono); font-size: 11px; }
+  .opd-pill { display: inline-block; background: var(--surface2); border-radius: 6px; padding: 1px 8px; white-space: nowrap; line-height: 1.8; }
+  .opd-pill.auto { background: var(--accent-glow); }
+  .opd-sym { margin: 0 2px; }
+  .opd-error { color: var(--red); font-family: var(--mono); font-size: 11px; }
+  .opd-money { font-family: var(--mono); font-weight: 600; color: var(--accent-bright) !important; white-space: nowrap; }
+
+  .opd-creator { display: flex; align-items: center; gap: 12px; }
+  .opd-creator a, .opd-video a { color: var(--accent-bright); font-size: 12px; text-decoration: none; }
+  .opd-creator-total { margin-left: auto; text-align: right; font-family: var(--mono); font-size: 10px; color: var(--text-muted); }
+  .opd-creator-total b { display: block; font-family: var(--sans); font-size: 20px; color: var(--text); }
+  .opd-video { display: flex; align-items: center; gap: 10px; padding: 8px 0 0; margin-top: 8px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); }
+  .opd-video a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+  .opd-video .c-input { width: 120px; text-align: right; padding: 6px 8px; }
+
+  .opd-funnel { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .opd-funnel > span { background: var(--surface); border: 1px solid var(--border); border-radius: 99px; padding: 6px 14px; font-size: 13px; }
+  .opd-funnel .opd-pct { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .opd-pct input { width: 64px; border: none; border-radius: 5px; padding: 3px 6px; font-weight: 600; text-align: right; font-family: var(--mono); }
+  .opd-people td { padding: 6px 8px; }
+  .opd-people .c-input { padding: 6px 8px; font-size: 12px; min-width: 110px; }
+  .opd-people .amount-prefix .c-input { min-width: 120px; }
+  .opd-people tfoot td { background: var(--surface2); font-weight: 600; border-bottom: none; }
+
+  .opd-inputs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .opd-input { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .opd-input.auto { background: var(--surface2); }
+  .opd-input label, .opd-input-label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
+  .opd-input-label { width: calc(100% - 22px); border: none; background: none; font-family: var(--sans); padding: 0; outline: none; }
+  .opd-input-label:focus { color: var(--text); }
+  .opd-input-val { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; padding: 3px 0; }
+  .opd-input-row { display: flex; align-items: baseline; gap: 4px; border-bottom: 2px solid var(--border); font-size: 22px; font-weight: 600; }
+  .opd-input-row:focus-within { border-color: var(--accent); }
+  .opd-input-row span { color: var(--text-muted); font-size: 18px; }
+  .opd-input-row input { flex: 1; min-width: 0; border: none; background: none; font: inherit; color: var(--text); padding: 3px 0; outline: none; }
+  .opd-input-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+  .opd-input-kind select { font-size: 11px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface2); color: var(--text-dim); padding: 1px 4px; }
+  .opd-track { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .opd-corner { position: absolute; top: 6px; right: 6px; }
+
+  .opd-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+  .opd-result { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .opd-result.headline { border-color: var(--accent); }
+  .opd-result-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; color: var(--text-dim); }
+  .opd-result-val { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: var(--accent-bright); margin: 4px 0 8px; }
+  .opd-how { font-size: 12px; color: var(--text-dim); line-height: 2; }
+  .opd-result details { margin-top: 10px; font-size: 12px; color: var(--text-muted); }
+  .opd-result summary { cursor: pointer; font-family: var(--mono); font-size: 11px; }
+  .opd-result details .c-input { margin-top: 8px; font-size: 12px; padding: 7px 9px; }
+  .opd-expr { font-family: var(--mono) !important; }
+  .opd-formula-row { display: flex; gap: 8px; align-items: center; }
+  .opd-formula-row .c-input { width: auto; flex: 1; }
+  .opd-formula-row .action-btn { margin-top: 8px; }
+  .ops-type:disabled { opacity: 0.35; cursor: not-allowed; }
+  @media (max-width: 700px) { .ops-type-picker, .ops-form-grid { grid-template-columns: 1fr; } .opd-bar { flex-wrap: wrap; } .opd-save-state { margin-left: 0; order: 5; width: 100%; } .opd-hero { padding: 20px; } .opd-hero-val { font-size: 38px; } .opd-pill { white-space: normal; } .opd-creator { flex-wrap: wrap; } .opd-crm { min-width: 0; } .opd-video { flex-wrap: wrap; } }
 </style>
 <link rel="stylesheet" href="admin-theme.css">
 </head>
@@ -736,6 +799,8 @@
 
     <!-- ══ OPERATIONS ══ -->
     <div class="page-view" id="page-operations">
+     <div id="ops-detail" hidden></div>
+     <div id="ops-browse">
       <div class="page-head ops-head">
         <div>
           <div class="page-title">Operations</div>
@@ -765,6 +830,7 @@
       <div class="ops-grid" id="ops-list">
         <div class="state-box" style="grid-column:1/-1;"><div class="state-icon">▣</div>Loading operations…</div>
       </div>
+     </div>
     </div>
 
     <!-- ══ MAIL ══ -->
@@ -1027,12 +1093,6 @@
           <label id="op-slug-label">Client CRM</label>
           <div class="ops-slug"><input class="c-input" id="op-slug" type="text" placeholder="acme" oninput="this.dataset.touched = '1'"><span id="op-slug-domain">.edgeform-media.com</span></div>
           <div class="ops-hint" id="op-slug-hint"></div>
-        </div>
-        <div class="c-field full" id="op-metrics-field">
-          <label id="op-metrics-label">Numbers &amp; Goals</label>
-          <div class="ops-metric-grid head"><span>Metric</span><span>Start</span><span>Current</span><span>Goal</span><span>Unit</span><span></span></div>
-          <div id="op-metrics"></div>
-          <div class="ops-presets" id="op-presets"></div>
         </div>
         <div class="c-field full"><label>Notes</label><textarea class="c-input" id="op-notes" style="min-height:90px;" placeholder="Scope, deliverables, access, anything the team should know…"></textarea></div>
       </div>
@@ -1567,18 +1627,29 @@ async function updateCreator(id, rosterStatus) {
 
 // ─── Operations ───────────────────────────────────────────────
 const OP_TYPES = {
-  marketing: { label: 'Marketing', chip: 'chip-blue', desc: 'Track views, followers, and the goals we set.',
-    presets: [['Views', ''], ['Followers', ''], ['Engagement', '%'], ['Leads', '/mo']] },
-  sales: { label: 'Sales', chip: 'chip-green', desc: 'We run their sales team out of a CRM we build them.', presets: [] },
-  systems: { label: 'Systems', chip: 'chip-purple', desc: 'Pipelines & CRM development to raise their numbers.',
-    presets: [['Leads', '/mo'], ['Booked calls', '/mo'], ['Close rate', '%'], ['Revenue', '$/mo']] }
+  marketing: { label: 'Marketing', chip: 'chip-blue', desc: 'Creators, video views, and what that earns the client.' },
+  sales: { label: 'Sales', chip: 'chip-green', desc: 'We run their sales team out of a CRM we build them.' },
+  systems: { label: 'Systems', chip: 'chip-purple', desc: 'Pipelines, CRM development, and recruiting to raise their numbers.' }
 };
 const OP_STATUS_CHIP = { planning: 'chip-orange', active: 'chip-green', paused: 'chip-muted', completed: 'chip-purple' };
+const OP_VAR_FORMATS = { number: 'Number', money: 'Dollars', percent: 'Percent' };
+const OP_FORMULA_FORMATS = { money: 'Dollars', number: 'Number', percent: 'Percent', multiple: 'Multiple (x)', months: 'Months' };
+// Filled in from creators and people; usable by name in any formula.
+const OP_AUTO = {
+  views: ['Views (all creator videos)', 'number'],
+  hires: ['People hired', 'number'],
+  hireRevenue: ['Hires bring in /mo', 'money'],
+  prospects: ['Prospects', 'number'],
+  prospectRevenue: ['Prospects could bring in /mo', 'money']
+};
+const OP_SYM = { '*': '×', '-': '−', '/': '÷', '+': '+' };
 let allOperations = [];
 let opsDomain = 'edgeform-media.com';
 let opsTab = '';
 let editingOp = null;
 let opType = 'marketing';
+let opDraft = null;   // the operation open in the detail view, with unsaved edits
+let opDirty = false;
 
 async function loadOperations() {
   try {
@@ -1587,22 +1658,71 @@ async function loadOperations() {
     allOperations = res.operations;
     opsDomain = res.domain;
     renderOperations();
+    if (opDraft && !opDirty) {
+      const fresh = allOperations.find(o => o.id === opDraft.id);
+      fresh ? openOpDetail(fresh.id) : closeOpDetail(true);
+    }
   } catch (err) {
     document.getElementById('ops-list').innerHTML = `<div class="state-box" style="grid-column:1/-1;">Failed to load operations: ${esc(err.message)}</div>`;
   }
 }
 
-const fmtNum = (v) => v === null || v === undefined ? '—' : Number(v).toLocaleString('en-US', { notation: Math.abs(v) >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 });
-const withUnit = (v, unit) => v === null || v === undefined ? '—' : unit.startsWith('$') ? `$${fmtNum(v)}${esc(unit.slice(1))}` : `${fmtNum(v)}${esc(unit)}`;
+// ── Math ──
+const opSum = (list, key) => list.reduce((n, x) => n + (Number(x[key]) || 0), 0);
+const opRecruits = (op) => op.type === 'sales' || op.type === 'systems';
 
-// Share of the way from the starting point to the goal.
-function metricProgress(m) {
-  if (m.goal === null || m.current === null) return null;
-  const start = m.baseline ?? 0;
-  if (m.goal === start) return m.current >= m.goal ? 1 : 0;
-  return Math.max(0, Math.min(1, (m.current - start) / (m.goal - start)));
+function opAutoValues(op) {
+  const hired = op.people.filter(p => p.stage === 'hired');
+  const prospects = op.people.filter(p => p.stage !== 'hired');
+  return {
+    views: opSum(op.creators.flatMap(c => c.videos), 'views'),
+    hires: hired.length, hireRevenue: opSum(hired, 'revenue'),
+    prospects: prospects.length, prospectRevenue: opSum(prospects, 'revenue')
+  };
 }
 
+// Only numbers, names, + - * / ( ) reach Function(), so a formula can't run other code.
+function opCalc(op, expr) {
+  const vals = { ...opAutoValues(op), ...Object.fromEntries(op.vars.map(v => [v.key, Number(v.value) || 0])) };
+  if (!/^[\w\s.+\-*/()]*$/.test(expr)) throw 'Use only numbers, names, + − × ÷ ( )';
+  if (!expr.trim()) throw 'Formula is empty';
+  const js = expr.replace(/\b[A-Za-z_]\w*/g, w => { if (!(w in vals)) throw `Unknown name "${w}"`; return `(${vals[w]})`; });
+  let n;
+  try { n = Function(`"use strict"; return (${js});`)(); } catch { throw 'Formula is incomplete'; }
+  if (!Number.isFinite(n)) throw 'Missing numbers (dividing by 0?)';
+  return n;
+}
+
+function opFmt(n, format) {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return '—';
+  n = Number(n);
+  const d = (max) => n.toLocaleString('en-US', { maximumFractionDigits: max });
+  switch (format) {
+    case 'money': return (n < 0 ? '−$' : '$') + Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: Math.abs(n) >= 100 ? 0 : 2 });
+    case 'percent': return d(1) + '%';
+    case 'multiple': return d(2) + 'x';
+    case 'months': return d(1) + ' mo';
+    default: return d(2);
+  }
+}
+
+function opResult(op, formula) {
+  try { return { text: opFmt(opCalc(op, formula.expr), formula.format) }; } catch (e) { return { text: '—', error: String(e) }; }
+}
+
+// "views / 1000 * x" → pills showing each name's label and current value.
+function opReadable(op, expr) {
+  const auto = opAutoValues(op);
+  return esc(expr).replace(/\b[A-Za-z_]\w*|[*\-/+]/g, t => {
+    if (OP_SYM[t]) return ` <b class="opd-sym">${OP_SYM[t]}</b> `;
+    const v = op.vars.find(v => v.key === t);
+    if (v) return `<span class="opd-pill">${esc(v.label)} <b>${opFmt(v.value, v.format)}</b></span>`;
+    if (t in auto) return `<span class="opd-pill auto">${OP_AUTO[t][0]} <b>${opFmt(auto[t], OP_AUTO[t][1])}</b></span>`;
+    return t;
+  });
+}
+
+// ── List ──
 function renderOperations() {
   const counts = { '': allOperations.length };
   for (const op of allOperations) counts[op.type] = (counts[op.type] || 0) + 1;
@@ -1611,17 +1731,15 @@ function renderOperations() {
 
   const open = allOperations.filter(o => o.status !== 'completed');
   const active = allOperations.filter(o => o.status === 'active');
-  const goalsHit = (type) => {
-    const metrics = allOperations.filter(o => o.type === type && o.status !== 'completed').flatMap(o => o.metrics).filter(m => metricProgress(m) !== null);
-    return metrics.length ? `${metrics.filter(m => metricProgress(m) >= 1).length} of ${metrics.length} goals hit` : 'No goals set yet';
-  };
+  const openOf = (type) => open.filter(o => o.type === type);
+  const recruiting = open.filter(opRecruits);
   document.getElementById('ops-kpi-active').textContent = active.length;
   document.getElementById('ops-kpi-active-sub').textContent = `${open.length - active.length} planning or paused`;
-  document.getElementById('ops-kpi-marketing').textContent = open.filter(o => o.type === 'marketing').length;
-  document.getElementById('ops-kpi-marketing-sub').textContent = goalsHit('marketing');
-  document.getElementById('ops-kpi-sales').textContent = open.filter(o => o.type === 'sales').length;
-  document.getElementById('ops-kpi-systems').textContent = open.filter(o => o.type === 'systems').length;
-  document.getElementById('ops-kpi-systems-sub').textContent = goalsHit('systems');
+  document.getElementById('ops-kpi-marketing').textContent = openOf('marketing').length;
+  document.getElementById('ops-kpi-marketing-sub').textContent = `${opFmt(openOf('marketing').reduce((n, o) => n + opAutoValues(o).views, 0), 'number')} creator views`;
+  document.getElementById('ops-kpi-sales').textContent = openOf('sales').length;
+  document.getElementById('ops-kpi-systems').textContent = openOf('systems').length;
+  document.getElementById('ops-kpi-systems-sub').textContent = `${recruiting.reduce((n, o) => n + opAutoValues(o).hires, 0)} hired · ${recruiting.reduce((n, o) => n + opAutoValues(o).prospects, 0)} prospects (sales + systems)`;
   for (const id of ['badge-operations', 'drawer-badge-operations']) document.getElementById(id).textContent = open.length;
 
   const q = document.getElementById('ops-search').value.toLowerCase();
@@ -1629,7 +1747,7 @@ function renderOperations() {
   const rows = allOperations.filter(o =>
     (!opsTab || o.type === opsTab) &&
     (!status || (status === 'open' ? o.status !== 'completed' : o.status === status)) &&
-    (!q || [o.name, o.client, o.contactName, o.contactEmail, o.slug, o.notes].join(' ').toLowerCase().includes(q)));
+    (!q || [o.name, o.client, o.contactName, o.contactEmail, o.slug, o.notes, ...o.people.map(p => p.name)].join(' ').toLowerCase().includes(q)));
 
   const list = document.getElementById('ops-list');
   if (!rows.length) {
@@ -1638,31 +1756,275 @@ function renderOperations() {
   }
   list.innerHTML = rows.map(o => {
     const type = OP_TYPES[o.type] || { label: o.type, chip: 'chip-muted' };
-    const crm = o.crmUrl ? `<a class="op-crm" href="${esc(o.crmUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span>${esc(o.slug)}.${esc(opsDomain)}</span>Open CRM ↗</a>` : '';
-    const metrics = o.metrics.slice(0, 4).map(m => {
-      const p = metricProgress(m);
-      return `<div>
-        <div class="op-metric-row"><span class="op-metric-label">${esc(m.label)}</span>
-          <span class="op-metric-val">${withUnit(m.current, m.unit)}${m.goal !== null ? ` <em>/ ${withUnit(m.goal, m.unit)}</em>` : ''}${p !== null ? ` <em>· ${Math.round(p * 100)}%</em>` : ''}</span></div>
-        ${p !== null ? `<div class="op-bar${p >= 1 ? ' done' : ''}"><i style="width:${(p * 100).toFixed(1)}%"></i></div>` : ''}
-      </div>`;
-    }).join('');
-    const body = o.type === 'sales' ? crm
-      : `${crm}${metrics ? `<div class="op-metrics">${metrics}</div>` : '<div class="op-empty-metrics">No numbers tracked yet · open to add goals</div>'}`;
-    return `<div class="op-card" role="button" tabindex="0" data-id="${esc(o.id)}" onclick="openOperation(this.dataset.id)" onkeydown="if (event.key === 'Enter') openOperation(this.dataset.id)">
+    const auto = opAutoValues(o);
+    const head = o.formulas[0];
+    const result = head ? opResult(o, head) : null;
+    const stats = o.type === 'marketing'
+      ? `${o.creators.length} creator${o.creators.length === 1 ? '' : 's'} · ${opFmt(auto.views, 'number')} views`
+      : `${auto.hires} hired · ${auto.prospects} prospect${auto.prospects === 1 ? '' : 's'}`;
+    return `<div class="op-card" role="button" tabindex="0" data-id="${esc(o.id)}" onclick="openOpDetail(this.dataset.id)" onkeydown="if (event.key === 'Enter') openOpDetail(this.dataset.id)">
       <div class="op-card-top"><span class="chip ${type.chip}">${esc(type.label)}</span><span class="chip ${OP_STATUS_CHIP[o.status] || 'chip-muted'}">${esc(o.status)}</span></div>
       <div><div class="op-name">${esc(o.name)}</div><div class="op-client">${esc([o.client, o.contactName].filter(Boolean).join(' · ') || 'No client details')}</div></div>
-      ${body}
-      <div class="op-foot"><span>${o.startDate ? 'Started ' + fmtDate(o.startDate + 'T12:00:00') : 'No start date'}</span><span>Updated ${fmtDate(o.updatedAt)}</span></div>
+      ${o.crmUrl ? `<a class="op-crm" href="${esc(o.crmUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span>${esc(o.slug)}.${esc(opsDomain)}</span>Open CRM ↗</a>` : ''}
+      ${head ? `<div><div class="op-head-label">${esc(head.label)}</div><div class="op-head-val">${result.text}</div></div>` : ''}
+      <div class="op-foot"><span>${stats}</span><span>Updated ${fmtDate(o.updatedAt)}</span></div>
     </div>`;
   }).join('');
 }
 
+// ── Detail ──
+function openOpDetail(id) {
+  if (opDraft && opDirty && opDraft.id !== id && !confirm('Discard unsaved changes?')) return;
+  const op = allOperations.find(o => o.id === id);
+  if (!op) return;
+  opDraft = JSON.parse(JSON.stringify(op));
+  opDirty = false;
+  document.getElementById('ops-browse').hidden = true;
+  document.getElementById('ops-detail').hidden = false;
+  renderOpDetail();
+  window.scrollTo(0, 0);
+}
+
+function closeOpDetail(force) {
+  if (!force && opDirty && !confirm('Discard unsaved changes?')) return;
+  opDraft = null;
+  opDirty = false;
+  document.getElementById('ops-detail').hidden = true;
+  document.getElementById('ops-browse').hidden = false;
+  renderOperations();
+}
+
+function opMarkDirty() {
+  opDirty = true;
+  const bar = document.getElementById('opd-save-state');
+  if (bar) { bar.textContent = 'Unsaved changes'; bar.className = 'opd-save-state dirty'; }
+}
+
+// Structural edits (add / remove / reorder) re-render; typing only refreshes the numbers.
+function opChange(mutate, rerender) {
+  mutate(opDraft);
+  opMarkDirty();
+  rerender ? renderOpDetail() : refreshOpNumbers();
+}
+
+function renderOpDetail() {
+  const op = opDraft;
+  const type = OP_TYPES[op.type];
+  const sections = [];
+  if (op.type === 'marketing') sections.push(['Creators & videos', opCreatorsHtml(op)]);
+  if (opRecruits(op)) sections.push(['Recruitment', opPeopleHtml(op)]);
+  sections.push(['Numbers you enter', opVarsHtml(op)], ['What we calculate', opFormulasHtml(op)]);
+
+  document.getElementById('ops-detail').innerHTML = `
+    <div class="opd-bar">
+      <button class="refresh-btn" onclick="closeOpDetail()">← Operations</button>
+      <span class="opd-save-state${opDirty ? ' dirty' : ''}" id="opd-save-state">${opDirty ? 'Unsaved changes' : 'All changes saved'}</span>
+      <button class="action-btn" onclick="openOperation(opDraft.id)">Edit details</button>
+      <button class="send-btn opd-save" id="opd-save" onclick="saveOpDetail()"><span class="btn-text">Save changes</span></button>
+    </div>
+    <div class="opd-title">
+      <span class="chip ${type.chip}">${type.label}</span> <span class="chip ${OP_STATUS_CHIP[op.status] || 'chip-muted'}">${esc(op.status)}</span>
+      <h1>${esc(op.name)}</h1>
+      <div class="op-client">${esc([op.client, op.contactName, op.contactEmail].filter(Boolean).join(' · ') || 'No client details')}</div>
+      ${op.crmUrl ? `<a class="op-crm opd-crm" href="${esc(op.crmUrl)}" target="_blank" rel="noopener"><span>🔗 ${esc(op.slug)}.${esc(opsDomain)}</span>Open CRM ↗</a>` : ''}
+    </div>
+    <div class="opd-hero" id="opd-hero"></div>
+    ${sections.map(([title, html], i) => `<div class="opd-section-title">${i + 1} · ${title}</div>${html}`).join('')}
+    ${op.notes ? `<div class="opd-section-title">Notes</div><div class="detail-summary">${esc(op.notes)}</div>` : ''}
+    <div class="email-msg" id="opd-msg"></div>`;
+  refreshOpNumbers();
+}
+
+function opCreatorsHtml(op) {
+  const handle = (link) => { try { const u = new URL(link); return u.pathname.split('/').filter(Boolean)[0]?.replace(/^@?/, '@') || u.hostname; } catch { return link; } };
+  const platform = (link) => /tiktok/i.test(link) ? 'TikTok' : /instagram/i.test(link) ? 'Instagram' : /youtube|youtu\.be/i.test(link) ? 'YouTube' : 'Profile';
+  return `${op.creators.map((c, ci) => `<div class="opd-card">
+      <div class="opd-creator">
+        <div class="submit-avi">${esc((handle(c.profileUrl)[1] || '?').toUpperCase())}</div>
+        <div><strong>${esc(handle(c.profileUrl))}</strong><br><a href="${safeUrl(c.profileUrl)}" target="_blank" rel="noopener">${platform(c.profileUrl)} profile ↗</a></div>
+        <div class="opd-creator-total"><b data-creator-views="${ci}"></b>views · ${c.videos.length} video${c.videos.length === 1 ? '' : 's'}</div>
+        <button class="opd-x" title="Remove creator" onclick="if (confirm('Remove this creator and their videos?')) opChange(o => o.creators.splice(${ci}, 1), true)">✕</button>
+      </div>
+      ${c.videos.map((v, vi) => `<div class="opd-video">
+        <span>🎬</span><a href="${safeUrl(v.url)}" target="_blank" rel="noopener">${esc(v.url)}</a>
+        ${v.viewsConfirmed ? '' : '<span class="chip chip-orange">needs views</span>'}
+        <input class="c-input" type="number" min="0" value="${Number(v.views) || 0}" oninput="opChange(o => { const x = o.creators[${ci}].videos[${vi}]; x.views = Number(this.value) || 0; x.viewsConfirmed = true; })"> views
+        <button class="opd-x" title="Remove video" onclick="opChange(o => o.creators[${ci}].videos.splice(${vi}, 1), true)">✕</button>
+      </div>`).join('')}
+      <div class="opd-add"><input class="c-input" id="opd-video-${ci}" placeholder="Paste a video link (Reel, TikTok, Short)…" onkeydown="if (event.key === 'Enter') opAddVideo(${ci})"><button class="action-btn" onclick="opAddVideo(${ci})">+ Video</button></div>
+    </div>`).join('') || '<div class="state-box opd-empty">No creators yet.</div>'}
+    <div class="opd-add"><input class="c-input" id="opd-creator" placeholder="Paste a creator profile link (instagram.com/… or tiktok.com/@…)" onkeydown="if (event.key === 'Enter') opAddCreator()"><button class="action-btn primary" onclick="opAddCreator()">+ Creator</button></div>
+    <div class="ops-hint">View counts are entered by hand for now. Instagram and TikTok don't let us read them without their API.</div>`;
+}
+
+const opLink = (value) => /^https?:\/\/\S+$/i.test(value) ? value : /^[\w.-]+\.[a-z]{2,}\/\S*$/i.test(value) ? 'https://' + value : '';
+
+function opAddCreator() {
+  const link = opLink(document.getElementById('opd-creator').value.trim());
+  if (!link) { alert('Paste the full profile link.'); return; }
+  opChange(o => o.creators.push({ profileUrl: link, videos: [] }), true);
+}
+
+function opAddVideo(ci) {
+  const link = opLink(document.getElementById('opd-video-' + ci).value.trim());
+  if (!link) { alert('Paste the full video link.'); return; }
+  opChange(o => o.creators[ci].videos.push({ url: link, views: 0, viewsConfirmed: false }), true);
+}
+
+function opPeopleHtml(op) {
+  const pct = op.vars.findIndex(v => v.key === 'myPercent');
+  const table = (title, stage) => {
+    const rows = op.people.map((p, pi) => [p, pi]).filter(([p]) => (p.stage === 'hired') === (stage === 'hired'));
+    return `<div class="opd-card" style="overflow-x:auto;">
+      <div class="opd-card-title">${title} (${rows.length})</div>
+      <table class="inv-table opd-people">
+        <thead><tr><th>Name</th><th>Role</th><th>Stage</th><th>${stage === 'hired' ? 'Started' : ''}</th><th>${stage === 'hired' ? 'Brings in' : 'Could bring in'} /mo</th>${pct >= 0 ? '<th>My cut /mo</th>' : ''}<th></th></tr></thead>
+        <tbody>
+        ${rows.map(([p, pi]) => `<tr>
+          <td><input class="c-input" value="${esc(p.name)}" oninput="opChange(o => o.people[${pi}].name = this.value)"></td>
+          <td><input class="c-input" value="${esc(p.role)}" oninput="opChange(o => o.people[${pi}].role = this.value)"></td>
+          <td><select class="c-input" onchange="opChange(o => { const x = o.people[${pi}]; x.stage = this.value; if (x.stage === 'hired' && !x.started) x.started = new Date().toLocaleDateString('en-CA'); }, true)">
+            <option value="prospect"${p.stage !== 'hired' ? ' selected' : ''}>Prospect</option><option value="hired"${p.stage === 'hired' ? ' selected' : ''}>Hired</option></select></td>
+          <td>${stage === 'hired' ? `<input class="c-input" type="date" value="${esc(p.started || '')}" oninput="opChange(o => o.people[${pi}].started = this.value)">` : ''}</td>
+          <td><div class="amount-prefix"><span class="dollar">$</span><input class="c-input" type="number" min="0" step="any" value="${Number(p.revenue) || 0}" oninput="opChange(o => o.people[${pi}].revenue = Number(this.value) || 0)"></div></td>
+          ${pct >= 0 ? `<td class="opd-money" data-cut="${pi}"></td>` : ''}
+          <td><button class="opd-x" title="Remove" onclick="opChange(o => o.people.splice(${pi}, 1), true)">✕</button></td>
+        </tr>`).join('') || `<tr><td colspan="7" class="opd-muted">Nobody here yet.</td></tr>`}
+        </tbody>
+        <tfoot><tr><td colspan="4"><b>Total</b></td><td class="opd-money" data-people-total="${stage}"></td>${pct >= 0 ? `<td class="opd-money" data-people-cut="${stage}"></td>` : ''}<td></td></tr></tfoot>
+      </table>
+    </div>`;
+  };
+  return `<div class="opd-funnel">
+      <span><b data-auto="hires"></b> Hired</span><span><b data-auto="prospects"></b> Prospects</span>
+      ${pct >= 0
+        ? `<span class="opd-pct">I get <input type="number" min="0" step="any" id="opd-pct" value="${Number(op.vars[pct].value) || 0}" oninput="opChange(o => o.vars[${pct}].value = Number(this.value) || 0)"> %</span>`
+        : `<button class="action-btn" onclick="opChange(o => o.vars.push({ key: 'myPercent', label: 'I get', value: 10, format: 'percent' }), true)">+ Set my %</button>`}
+    </div>
+    ${table('✅ Hired', 'hired')}
+    ${table('🕓 Prospects', 'prospect')}
+    <button class="action-btn primary" onclick="opChange(o => o.people.push({ name: '', role: '', stage: 'prospect', started: null, revenue: 0 }), true)">+ Add prospect</button>`;
+}
+
+function opVarsHtml(op) {
+  const autoKeys = op.type === 'marketing' ? ['views'] : opRecruits(op) ? ['hires', 'hireRevenue', 'prospects', 'prospectRevenue'] : [];
+  return `<div class="opd-inputs">
+    ${autoKeys.map(k => `<div class="opd-input auto">
+      <label>${OP_AUTO[k][0]}</label><div class="opd-input-val" data-auto="${k}"></div>
+      <div class="opd-input-kind">🔗 Automatic · <code>${k}</code></div></div>`).join('')}
+    ${op.vars.map((v, i) => `<div class="opd-input">
+      <button class="opd-x opd-corner" title="Remove" onclick="if (confirm('Remove this number? Formulas using ${v.key} will stop working.'))opChange(o => o.vars.splice(${i}, 1), true)">✕</button>
+      <input class="opd-input-label" value="${esc(v.label)}" oninput="opChange(o => o.vars[${i}].label = this.value)">
+      <div class="opd-input-row">${v.format === 'money' ? '<span>$</span>' : ''}<input type="number" step="any" ${v.key === 'myPercent' ? 'id="opd-var-pct"' : ''} value="${Number(v.value) || 0}" oninput="opChange(o => o.vars[${i}].value = Number(this.value) || 0)">${v.format === 'percent' ? '<span>%</span>' : ''}</div>
+      <div class="opd-input-kind"><code>${esc(v.key)}</code> ·
+        <select onchange="opChange(o => o.vars[${i}].format = this.value, true)">${Object.entries(OP_VAR_FORMATS).map(([k, l]) => `<option value="${k}"${v.format === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <label class="opd-track"><input type="checkbox"${v.tracked ? ' checked' : ''} onchange="opChange(o => o.vars[${i}].tracked = this.checked)"> Track history</label>
+      </div>
+    </div>`).join('')}
+  </div>
+  <div class="opd-add">
+    <input class="c-input" id="opd-new-var" placeholder="Add a number, e.g. Link clicks" onkeydown="if (event.key === 'Enter') opAddVar()">
+    <select class="c-input" id="opd-new-var-format" style="width:auto;">${Object.entries(OP_VAR_FORMATS).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+    <button class="action-btn primary" onclick="opAddVar()">+ Number</button>
+  </div>`;
+}
+
+function opAddVar() {
+  const label = document.getElementById('opd-new-var').value.trim();
+  if (!label) return;
+  let key = label.replace(/[^A-Za-z0-9 ]/g, ' ').trim().split(/\s+/)
+    .map((w, i) => i ? w[0].toUpperCase() + w.slice(1) : w.toLowerCase()).join('').replace(/^(\d)/, 'n$1') || 'number';
+  const taken = new Set([...Object.keys(OP_AUTO), ...opDraft.vars.map(v => v.key)]);
+  for (let n = 2, base = key; taken.has(key); n++) key = base + n;
+  opChange(o => o.vars.push({ key, label, value: 0, format: document.getElementById('opd-new-var-format').value, tracked: false }), true);
+}
+
+function opFormulasHtml(op) {
+  const names = [...(op.type === 'marketing' ? ['views'] : opRecruits(op) ? ['hires', 'hireRevenue', 'prospects', 'prospectRevenue'] : []), ...op.vars.map(v => v.key)];
+  return `<div class="opd-results">
+    ${op.formulas.map((f, i) => `<div class="opd-result${i === 0 ? ' headline' : ''}">
+      <div class="opd-result-top"><span>${esc(f.label)}</span>${i === 0 ? '<span class="chip chip-purple">Headline</span>' : `<button class="panel-link" onclick="opChange(o => o.formulas.unshift(...o.formulas.splice(${i}, 1)), true)">★ Make headline</button>`}</div>
+      <div class="opd-result-val" data-formula="${i}"></div>
+      <div class="opd-how" data-how="${i}"></div>
+      <details>
+        <summary>Edit formula</summary>
+        <input class="c-input" value="${esc(f.label)}" placeholder="Name" oninput="opChange(o => o.formulas[${i}].label = this.value)">
+        <input class="c-input opd-expr" value="${esc(f.expr)}" placeholder="views / 1000 * x" oninput="opChange(o => o.formulas[${i}].expr = this.value)">
+        <div class="opd-formula-row">
+          <select class="c-input" onchange="opChange(o => o.formulas[${i}].format = this.value)">${Object.entries(OP_FORMULA_FORMATS).map(([k, l]) => `<option value="${k}"${f.format === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+          <button class="action-btn" onclick="opChange(o => o.formulas.splice(${i}, 1), true)">Delete</button>
+        </div>
+        <div class="ops-hint">Names you can use: ${names.map(n => `<code>${esc(n)}</code>`).join(' ')} · and + − × ÷ ( ) with <code>+ - * /</code></div>
+      </details>
+    </div>`).join('') || '<div class="state-box opd-empty">No calculations yet.</div>'}
+  </div>
+  <button class="action-btn primary" style="margin-top:10px;" onclick="opChange(o => o.formulas.push({ label: 'New calculation', expr: '', format: 'money' }), true)">+ Calculation</button>`;
+}
+
+// Recomputes every number on the detail view without re-rendering inputs (keeps focus while typing).
+function refreshOpNumbers() {
+  const op = opDraft;
+  const root = document.getElementById('ops-detail');
+  const auto = opAutoValues(op);
+  root.querySelectorAll('[data-auto]').forEach(el => el.textContent = opFmt(auto[el.dataset.auto], OP_AUTO[el.dataset.auto][1]));
+  root.querySelectorAll('[data-creator-views]').forEach(el => el.textContent = opFmt(opSum(op.creators[el.dataset.creatorViews].videos, 'views'), 'number'));
+  const pct = Number(op.vars.find(v => v.key === 'myPercent')?.value) || 0;
+  const people = { hired: op.people.filter(p => p.stage === 'hired'), prospect: op.people.filter(p => p.stage !== 'hired') };
+  root.querySelectorAll('[data-cut]').forEach(el => el.textContent = opFmt(op.people[el.dataset.cut].revenue * pct / 100, 'money'));
+  root.querySelectorAll('[data-people-total]').forEach(el => el.textContent = opFmt(opSum(people[el.dataset.peopleTotal], 'revenue'), 'money'));
+  root.querySelectorAll('[data-people-cut]').forEach(el => el.textContent = opFmt(opSum(people[el.dataset.peopleCut], 'revenue') * pct / 100, 'money'));
+  // The % appears twice (recruitment and numbers); keep whichever isn't being typed in matching.
+  for (const id of ['opd-pct', 'opd-var-pct']) { const el = document.getElementById(id); if (el && el !== document.activeElement) el.value = pct; }
+
+  op.formulas.forEach((f, i) => {
+    const r = opResult(op, f);
+    const val = root.querySelector(`[data-formula="${i}"]`);
+    const how = root.querySelector(`[data-how="${i}"]`);
+    if (val) val.textContent = r.text;
+    if (how) how.innerHTML = r.error ? `<span class="opd-error">${esc(r.error)}</span>` : opReadable(op, f.expr);
+  });
+  const hero = document.getElementById('opd-hero');
+  const head = op.formulas[0];
+  if (hero) {
+    const r = head && opResult(op, head);
+    hero.innerHTML = head
+      ? `<div class="opd-hero-label">${esc(head.label)}</div><div class="opd-hero-val">${r.text}</div><div class="opd-hero-how">${r.error ? esc(r.error) : opReadable(op, head.expr)}</div>`
+      : '<div class="opd-hero-label">No headline yet</div><div class="opd-hero-how">Add a calculation below. The first one shows here.</div>';
+  }
+}
+
+async function saveOpDetail() {
+  const msg = document.getElementById('opd-msg');
+  const btn = document.getElementById('opd-save');
+  const op = opDraft;
+  btn.classList.add('loading'); btn.disabled = true;
+  msg.className = 'email-msg';
+  try {
+    const res = await api('/api/operations/' + encodeURIComponent(op.id), { method: 'PATCH', body: JSON.stringify({
+      vars: op.vars, formulas: op.formulas, people: op.people,
+      creators: op.creators.map(c => ({ id: c.id, profileUrl: c.profileUrl, videos: c.videos }))
+    }) });
+    if (!res.ok) throw new Error(res.error);
+    allOperations = [res.operation, ...allOperations.filter(o => o.id !== op.id)];
+    opDraft = JSON.parse(JSON.stringify(res.operation));
+    opDirty = false;
+    renderOpDetail();
+  } catch (err) {
+    msg.className = 'email-msg error show';
+    msg.textContent = 'Not saved: ' + err.message;
+    msg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  btn.classList.remove('loading'); btn.disabled = false;
+}
+
+window.addEventListener('beforeunload', (e) => { if (opDirty) e.preventDefault(); });
+
+// ── Create / edit details ──
 function openOperation(id) {
   editingOp = id ? allOperations.find(o => o.id === id) : null;
-  const o = editingOp || { type: opsTab || 'marketing', status: 'active', metrics: [] };
-  document.getElementById('ops-modal-title').textContent = editingOp ? editingOp.name : 'New Operation';
-  document.getElementById('op-save').querySelector('.btn-text').textContent = editingOp ? 'Save Changes' : 'Create Operation';
+  const o = editingOp || { type: opsTab || 'marketing', status: 'active' };
+  document.getElementById('ops-modal-title').textContent = editingOp ? 'Edit details' : 'New Operation';
+  document.getElementById('op-save').querySelector('.btn-text').textContent = editingOp ? 'Save Details' : 'Create Operation';
   document.getElementById('op-delete').hidden = !editingOp || !['admin', 'owner'].includes(currentUser.role);
   document.getElementById('op-name').value = o.name || '';
   document.getElementById('op-client').value = o.client || '';
@@ -1675,8 +2037,6 @@ function openOperation(id) {
   slug.value = o.slug || '';
   slug.dataset.touched = o.slug ? '1' : '';
   document.getElementById('op-slug-domain').textContent = '.' + opsDomain;
-  document.getElementById('op-metrics').innerHTML = '';
-  o.metrics.forEach(addMetricRow);
   document.getElementById('op-msg').className = 'email-msg';
   setOpType(o.type);
   document.getElementById('ops-modal').hidden = false;
@@ -1690,19 +2050,15 @@ function closeOperation() {
 
 function setOpType(type) {
   opType = type;
+  const locked = !!editingOp;
   document.getElementById('op-type-picker').innerHTML = Object.entries(OP_TYPES).map(([k, t]) =>
-    `<button type="button" class="ops-type${k === type ? ' active' : ''}" onclick="setOpType('${k}')"><b>${t.label}</b><small>${t.desc}</small></button>`).join('');
+    `<button type="button" class="ops-type${k === type ? ' active' : ''}" ${locked && k !== type ? 'disabled' : ''} onclick="setOpType('${k}')"><b>${t.label}</b><small>${t.desc}</small></button>`).join('');
   const sales = type === 'sales';
   document.getElementById('op-slug-field').hidden = type === 'marketing';
   document.getElementById('op-slug-label').textContent = sales ? 'Client CRM (required)' : 'Client CRM (optional)';
   document.getElementById('op-slug-hint').textContent = sales
     ? 'The sales CRM we build them lives here. Filled in from the operation name.'
     : 'Add one if this system includes a CRM we host for them.';
-  document.getElementById('op-metrics-field').hidden = sales;
-  document.getElementById('op-metrics-label').textContent = type === 'marketing' ? 'Numbers & Goals · views, followers, leads' : 'Numbers we are raising · where they started, where they are, the goal';
-  document.getElementById('op-presets').innerHTML = (OP_TYPES[type].presets || []).map(([label, unit]) =>
-    `<button type="button" data-label="${esc(label)}" data-unit="${esc(unit)}" onclick="addMetricRow({ label: this.dataset.label, unit: this.dataset.unit })">+ ${esc(label)}</button>`).join('') +
-    '<button type="button" onclick="addMetricRow({})">+ Custom</button>';
   suggestSlug();
 }
 
@@ -1712,44 +2068,37 @@ function suggestSlug() {
   slug.value = opType !== 'sales' ? '' : document.getElementById('op-name').value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 63);
 }
 
-function addMetricRow(m = {}) {
-  const row = document.createElement('div');
-  row.className = 'ops-metric-grid';
-  row.dataset.id = m.id || '';
-  const val = (v) => v === null || v === undefined ? '' : esc(v);
-  row.innerHTML = `<input class="c-input" data-k="label" placeholder="Views" value="${esc(m.label || '')}">
-    <input class="c-input" data-k="baseline" type="number" step="any" value="${val(m.baseline)}">
-    <input class="c-input" data-k="current" type="number" step="any" value="${val(m.current)}">
-    <input class="c-input" data-k="goal" type="number" step="any" value="${val(m.goal)}">
-    <input class="c-input" data-k="unit" value="${esc(m.unit || '')}">
-    <button type="button" class="ops-metric-del" title="Remove" onclick="this.parentElement.remove()">✕</button>`;
-  document.getElementById('op-metrics').appendChild(row);
-  if (!m.label) row.querySelector('input').focus();
-}
-
 async function saveOperation() {
   const msg = document.getElementById('op-msg');
   const field = (id) => document.getElementById(id).value.trim();
   const payload = {
     type: opType, name: field('op-name'), client: field('op-client'), contactName: field('op-contact-name'),
     contactEmail: field('op-contact-email'), status: field('op-status'), startDate: field('op-start'),
-    slug: opType === 'marketing' ? '' : field('op-slug'), notes: field('op-notes'),
-    metrics: opType === 'sales' ? undefined : [...document.querySelectorAll('#op-metrics .ops-metric-grid')].map(row => ({
-      id: row.dataset.id, ...Object.fromEntries([...row.querySelectorAll('input')].map(i => [i.dataset.k, i.value.trim()]))
-    })).filter(m => m.label)
+    slug: opType === 'marketing' ? '' : field('op-slug'), notes: field('op-notes')
   };
   msg.className = 'email-msg';
   if (!payload.name) { msg.className = 'email-msg error show'; msg.textContent = 'Give the operation a name.'; return; }
   const btn = document.getElementById('op-save');
   btn.classList.add('loading'); btn.disabled = true;
   try {
-    const res = editingOp
-      ? await api('/api/operations/' + encodeURIComponent(editingOp.id), { method: 'PATCH', body: JSON.stringify(payload) })
+    const editing = editingOp;
+    const res = editing
+      ? await api('/api/operations/' + encodeURIComponent(editing.id), { method: 'PATCH', body: JSON.stringify(payload) })
       : await api('/api/operations', { method: 'POST', body: JSON.stringify(payload) });
     if (!res.ok) throw new Error(res.error);
-    allOperations = [res.operation, ...allOperations.filter(o => o.id !== res.operation.id)];
+    const saved = res.operation;
     closeOperation();
-    renderOperations();
+    if (editing && opDraft?.id === saved.id) {
+      // Keep unsaved numbers / people in the open detail view; only the details changed.
+      const stored = allOperations.find(o => o.id === saved.id);
+      allOperations = [{ ...saved, vars: stored.vars, formulas: stored.formulas, creators: stored.creators, people: stored.people }, ...allOperations.filter(o => o.id !== saved.id)];
+      Object.assign(opDraft, { ...saved, vars: opDraft.vars, formulas: opDraft.formulas, creators: opDraft.creators, people: opDraft.people });
+      renderOpDetail();
+    } else {
+      allOperations = [saved, ...allOperations.filter(o => o.id !== saved.id)];
+      renderOperations();
+      if (!editing) openOpDetail(saved.id);
+    }
   } catch (err) {
     msg.className = 'email-msg error show';
     msg.textContent = err.message;
@@ -1758,12 +2107,13 @@ async function saveOperation() {
 }
 
 async function deleteOperation() {
-  if (!editingOp || !confirm(`Delete "${editingOp.name}"? Its numbers and history are removed too. This can't be undone.`)) return;
+  if (!editingOp || !confirm(`Delete "${editingOp.name}"? Its numbers, creators, people, and history are removed too. This can't be undone.`)) return;
   const res = await api('/api/operations/' + encodeURIComponent(editingOp.id), { method: 'DELETE' });
   if (!res.ok) { alert(res.error); return; }
   allOperations = allOperations.filter(o => o.id !== editingOp.id);
+  const wasOpen = opDraft?.id === editingOp.id;
   closeOperation();
-  renderOperations();
+  wasOpen ? closeOpDetail(true) : renderOperations();
 }
 
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('ops-modal').hidden) closeOperation(); });
