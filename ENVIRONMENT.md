@@ -18,6 +18,10 @@ npx wrangler secret put OPENAI_API_KEY
 
 For local development, both secrets can be placed in the ignored `.dev.vars` file. `OPENAI_MODEL` is a non-secret Worker variable in `wrangler.jsonc` and defaults to `gpt-5.6-terra`. `OPENAI_API_URL` may optionally be set server-side to change the compatible provider base URL; it defaults to `https://api.openai.com/v1`.
 
+**Find Influencers** uses the Responses API web-search tool to locate public Instagram profiles. A user supplies a plain-language brief, a creator limit from 1–50, and an estimated spend limit from $0.05–$25. The Worker constrains search calls and output tokens and may reduce the effective creator limit to fit its conservative estimate. This is not an OpenAI account-level billing cap; the result reports actual API token usage, search calls, and an estimated cost.
+
+Discovery pricing assumptions are configured as non-secret Worker variables: `OPENAI_DISCOVERY_INPUT_USD_PER_MTOK`, `OPENAI_DISCOVERY_OUTPUT_USD_PER_MTOK`, `OPENAI_WEB_SEARCH_USD_PER_CALL`, and `OPENAI_SEARCH_INPUT_TOKENS_ESTIMATE`. Update these when provider pricing changes.
+
 Apply the D1 migration before using the page:
 
 ```sh

@@ -8,6 +8,7 @@ const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
 const MAX_IMPORT_ROWS = 500;
 const MAX_BATCH = 20;
 const RECENT_ANALYSIS_MS = 7 * 86400000;
+const MAX_DISCOVERY_CREATORS = 50;
 
 const LEAD_FIELDS = {
   handle: 'handle', profileUrl: 'profile_url', name: 'name', email: 'email', niche: 'niche', location: 'location',
@@ -33,6 +34,26 @@ const ANALYSIS_SCHEMA = {
     missing_information: { type: 'array', items: { type: 'string' } }
   },
   required: ['fit_score', 'confidence', 'recommendation', 'strengths', 'concerns', 'concise_reason', 'missing_information']
+};
+
+const DISCOVERY_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    search_summary: { type: 'string' },
+    creators: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          handle: { type: 'string' }, profile_url: { type: 'string' }, name: { type: 'string' }, niche: { type: 'string' },
+          location: { type: 'string' }, follower_count: { type: ['integer', 'null'] }, average_views: { type: ['integer', 'null'] },
+          engagement_rate: { type: ['number', 'null'] }, bio: { type: 'string' }, source_notes: { type: 'string' }
+        },
+        required: ['handle', 'profile_url', 'name', 'niche', 'location', 'follower_count', 'average_views', 'engagement_rate', 'bio', 'source_notes']
+      }
+    }
+  },
+  required: ['search_summary', 'creators']
 };
 
 function parseJson(value, fallback) {
@@ -76,6 +97,21 @@ function rateOrNull(value) {
   const number = Number(String(value).replace('%', '').trim());
   if (!Number.isFinite(number) || number < 0 || number > 100) throw new HttpError(400, 'Engagement rate must be between 0 and 100.');
   return number;
+}
+
+export function planDiscoveryBudget({ count, budgetUsd, inputRate = 2, outputRate = 12, searchCallRate = 0.01, searchInputTokens = 12000 }) {
+  const requestedCount = Number(count);
+  const budget = Number(budgetUsd);
+  if (!Number.isInteger(requestedCount) || requestedCount < 1 || requestedCount > MAX_DISCOVERY_CREATORS) throw new HttpError(400, `Creator limit must be between 1 and ${MAX_DISCOVERY_CREATORS}.`);
+  if (!Number.isFinite(budget) || budget < 0.05 || budget > 25) throw new HttpError(400, 'Estimated spend limit must be between $0.05 and $25.');
+  const baseInputCost = 2000 / 1e6 * inputRate;
+  for (let effectiveCount = requestedCount; effectiveCount >= 1; effectiveCount--) {
+    const maxToolCalls = Math.min(5, Math.ceil(effectiveCount / 10));
+    const maxOutputTokens = 600 + effectiveCount * 160;
+    const estimatedMaxCost = baseInputCost + maxToolCalls * (searchCallRate + searchInputTokens / 1e6 * inputRate) + maxOutputTokens / 1e6 * outputRate;
+    if (estimatedMaxCost <= budget) return { requestedCount, effectiveCount, maxToolCalls, maxOutputTokens, estimatedMaxCost: Number(estimatedMaxCost.toFixed(4)) };
+  }
+  throw new HttpError(400, 'That spend limit is too low for a discovery search. Increase it to at least $0.05.');
 }
 
 function normalizeHandle(value) {
@@ -369,6 +405,105 @@ async function openAiApiKey(env) {
   return env.OPENAI_API_KEY || '';
 }
 
+function responseOutputText(data) {
+  return data.output_text || data.output?.flatMap(item => item.content || []).find(item => item.type === 'output_text')?.text || '';
+}
+
+function discoveryPricing(env) {
+  const number = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return {
+    inputRate: number(env.OPENAI_DISCOVERY_INPUT_USD_PER_MTOK, 2),
+    outputRate: number(env.OPENAI_DISCOVERY_OUTPUT_USD_PER_MTOK, 12),
+    searchCallRate: number(env.OPENAI_WEB_SEARCH_USD_PER_CALL, 0.01),
+    searchInputTokens: number(env.OPENAI_SEARCH_INPUT_TOKENS_ESTIMATE, 12000)
+  };
+}
+
+function validateDiscoveredCreator(value) {
+  if (!value || typeof value !== 'object') throw new HttpError(502, 'Discovery returned an invalid creator.');
+  const profileUrl = clean(value.profile_url, 500);
+  const suppliedHandle = normalizeHandle(value.handle);
+  const urlHandle = normalizeHandle(profileUrl);
+  if (suppliedHandle && urlHandle && suppliedHandle !== urlHandle) throw new HttpError(502, 'Discovery returned a mismatched Instagram handle and profile URL.');
+  const handle = suppliedHandle || urlHandle;
+  const normalizedUrl = normalizeProfileUrl(profileUrl, handle);
+  if (!handle || !normalizedUrl) throw new HttpError(502, 'Discovery result did not include a valid Instagram profile.');
+  const numberOrNull = (input, label) => input === null ? null : intOrNull(input, label);
+  return {
+    handle, profileUrl: normalizedUrl, name: clean(value.name, 160), niche: clean(value.niche, 160), location: clean(value.location, 160),
+    followerCount: numberOrNull(value.follower_count, 'Follower count'), averageViews: numberOrNull(value.average_views, 'Average views'),
+    engagementRate: value.engagement_rate === null ? null : rateOrNull(value.engagement_rate), bio: clean(value.bio, 3000),
+    recentPostNotes: clean(value.source_notes, 3000), source: 'OpenAI web discovery', tags: ['AI discovered'], status: 'Ready to Review', notes: ''
+  };
+}
+
+async function discoverInfluencers(request, env, headers) {
+  const user = await requireUser(request, env);
+  const body = await readJson(request);
+  const query = clean(body.query, 1000);
+  if (!query) throw new HttpError(400, 'Describe the influencers you want to find.');
+  const criteria = {
+    niche: clean(body.niche, 160), location: clean(body.location, 160), followerMin: intOrNull(body.followerMin, 'Minimum followers'),
+    followerMax: intOrNull(body.followerMax, 'Maximum followers'), exclusions: clean(body.exclusions, 1000)
+  };
+  if (criteria.followerMin !== null && criteria.followerMax !== null && criteria.followerMin > criteria.followerMax) throw new HttpError(400, 'Minimum followers cannot exceed maximum followers.');
+  const pricing = discoveryPricing(env);
+  const plan = planDiscoveryBudget({ count: body.count, budgetUsd: body.budgetUsd, ...pricing });
+  const apiKey = await openAiApiKey(env);
+  if (!apiKey) throw new HttpError(503, 'Add an OpenAI API key in Find Creators → Settings first.');
+  const model = clean(env.OPENAI_DISCOVERY_MODEL || env.OPENAI_MODEL || 'gpt-5.6-terra', 100);
+  const endpoint = `${String(env.OPENAI_API_URL || 'https://api.openai.com/v1').replace(/\/$/, '')}/responses`;
+  const runId = crypto.randomUUID();
+  const startedAt = now();
+  let data = {}, response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        reasoning: { effort: 'low' },
+        tools: [{ type: 'web_search', search_context_size: 'medium', filters: { allowed_domains: ['instagram.com'] } }],
+        tool_choice: 'required',
+        max_tool_calls: plan.maxToolCalls,
+        max_output_tokens: plan.maxOutputTokens,
+        include: ['web_search_call.action.sources'],
+        instructions: `Find up to ${plan.effectiveCount} real public Instagram creator profiles matching the request. Every returned creator must be supported by a direct instagram.com profile URL found in web search. Never invent a handle, URL, follower count, views, engagement, location, biography, or identity. Use an empty string or null for anything not explicitly supported by the public result. Exclude brands, stores, publications, private/nonexistent accounts, and duplicate profiles. Do not perform or suggest follows, likes, messages, logins, or scraping.`,
+        input: JSON.stringify({ request: query, ...criteria, creator_limit: plan.effectiveCount }),
+        text: { format: { type: 'json_schema', name: 'influencer_discovery', strict: true, schema: DISCOVERY_SCHEMA } }
+      })
+    });
+    data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new HttpError(502, clean(data?.error?.message || `OpenAI discovery failed (${response.status}).`, 500));
+    const outputText = responseOutputText(data);
+    if (!outputText) throw new HttpError(502, data.incomplete_details?.reason === 'max_output_tokens' ? 'Discovery reached the spend/output cap before it could finish. Increase the limit or request fewer creators.' : 'OpenAI returned no discovery results.');
+    let parsed;
+    try { parsed = JSON.parse(outputText); } catch { throw new HttpError(502, 'OpenAI returned malformed discovery results.'); }
+    if (!parsed || !Array.isArray(parsed.creators)) throw new HttpError(502, 'OpenAI returned an invalid discovery result.');
+    const candidates = parsed.creators.slice(0, plan.effectiveCount);
+    const summary = { found: candidates.length, imported: 0, duplicates: 0, failed: 0, errors: [] };
+    for (const candidate of candidates) {
+      try { await insertLead(env, user, validateDiscoveredCreator(candidate)); summary.imported++; }
+      catch (error) {
+        if (error instanceof HttpError && error.status === 409) summary.duplicates++;
+        else { summary.failed++; if (summary.errors.length < 10) summary.errors.push(error.message || 'Invalid discovery result.'); }
+      }
+    }
+    const inputTokens = Number(data.usage?.input_tokens || 0), outputTokens = Number(data.usage?.output_tokens || 0);
+    const webSearchCalls = (data.output || []).filter(item => item.type === 'web_search_call').length;
+    const estimatedCostUsd = Number((inputTokens / 1e6 * pricing.inputRate + outputTokens / 1e6 * pricing.outputRate + webSearchCalls * pricing.searchCallRate).toFixed(4));
+    await env.DB.prepare(`INSERT INTO influencer_discovery_runs (id,user_id,created_at,query,criteria,requested_count,budget_usd,found_count,imported_count,duplicate_count,failed_count,input_tokens,output_tokens,web_search_calls,estimated_cost_usd,model,status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(runId, user.id, startedAt, query, JSON.stringify(criteria), plan.requestedCount, Number(body.budgetUsd), summary.found, summary.imported, summary.duplicates, summary.failed, inputTokens, outputTokens, webSearchCalls, estimatedCostUsd, model, 'complete').run();
+    return json({ ok: true, summary, searchSummary: clean(parsed.search_summary, 1000), usage: { inputTokens, outputTokens, webSearchCalls, estimatedCostUsd, budgetUsd: Number(body.budgetUsd), model }, plan }, 200, headers);
+  } catch (error) {
+    try {
+      await env.DB.prepare(`INSERT INTO influencer_discovery_runs (id,user_id,created_at,query,criteria,requested_count,budget_usd,model,status,error) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+        .bind(runId, user.id, startedAt, query, JSON.stringify(criteria), plan.requestedCount, Number(body.budgetUsd), model, 'failed', clean(error.message, 500)).run();
+    } catch {}
+    throw error;
+  }
+}
+
 function analysisPayload(lead, profile) {
   return {
     ideal_creator_profile: mapProfile(profile),
@@ -399,7 +534,7 @@ async function callOpenAI(env, payload) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new HttpError(502, clean(data?.error?.message || `OpenAI request failed (${response.status}).`, 500));
-  const outputText = data.output_text || data.output?.flatMap(item => item.content || []).find(item => item.type === 'output_text')?.text;
+  const outputText = responseOutputText(data);
   if (!outputText) throw new HttpError(502, 'OpenAI returned no structured output.');
   try { return { result: validateAnalysis(JSON.parse(outputText)), model }; }
   catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(502, 'OpenAI returned malformed structured output.'); }
@@ -462,6 +597,7 @@ export const influencerLeadRoutes = {
   'POST /api/influencer-leads': createLead,
   'POST /api/influencer-leads/import': importLeads,
   'POST /api/influencer-leads/analyze-batch': analyzeBatch,
+  'POST /api/influencer-leads/discover': discoverInfluencers,
   'GET /api/influencer-leads/profile': getProfile,
   'PATCH /api/influencer-leads/profile': saveProfile,
   'GET /api/influencer-leads/settings': getAiSettings,

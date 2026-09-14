@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { decryptSecret, encryptSecret, leadIdentity, parseCsv, validateAnalysis } from '../worker/influencer-leads.js';
+import { decryptSecret, encryptSecret, leadIdentity, parseCsv, planDiscoveryBudget, validateAnalysis } from '../worker/influencer-leads.js';
 
 test('CSV parser accepts quoted commas, escaped quotes, and multiline notes', () => {
   const rows = parseCsv('handle,name,notes\r\n@jane,"Jane, Doe","Said ""hello""\nFollow up"\r\n');
@@ -37,6 +37,18 @@ test('saved API keys are encrypted with authenticated encryption', async () => {
   await assert.rejects(() => decryptSecret(encrypted.ciphertext, encrypted.iv, 'wrong-secret'), /could not be decrypted/);
 });
 
+test('discovery planner honors creator and conservative spend limits', () => {
+  const standard = planDiscoveryBudget({ count: 50, budgetUsd: 5 });
+  assert.equal(standard.effectiveCount, 50);
+  assert.equal(standard.maxToolCalls, 5);
+  assert.ok(standard.estimatedMaxCost <= 5);
+
+  const constrained = planDiscoveryBudget({ count: 50, budgetUsd: 0.1 });
+  assert.ok(constrained.effectiveCount < 50);
+  assert.ok(constrained.estimatedMaxCost <= 0.1);
+  assert.throws(() => planDiscoveryBudget({ count: 51, budgetUsd: 5 }), /between 1 and 50/);
+});
+
 test('Find Creators is nested after Creators and before Operations in both navigations', async () => {
   const html = await readFile(new URL('../home/index.html', import.meta.url), 'utf8');
   for (const prefix of ['drawer-nav-', 'nav-']) {
@@ -50,4 +62,8 @@ test('Find Creators is nested after Creators and before Operations in both navig
   assert.match(html, /Beauty &amp; Skincare/);
   assert.match(html, /Find Creators Settings/);
   assert.match(html, /type="password"[^>]+autocomplete="off"/);
+  assert.match(html, /id="ifl-discovery-modal"/);
+  assert.match(html, /id="ifl-d-count"[^>]+max="50"/);
+  assert.match(html, /id="ifl-d-budgetUsd"[^>]+value="5"/);
+  assert.match(html, /conservative request estimate, not an OpenAI account billing lock/);
 });

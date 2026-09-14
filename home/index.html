@@ -845,12 +845,13 @@
         <div class="ifl-head-actions">
           <button class="action-btn" onclick="openIflProfile()">⚙ Settings</button>
           <button class="action-btn" onclick="document.getElementById('ifl-csv-input').click()">Import CSV</button>
-          <button class="action-btn primary" onclick="openIflLeadForm()">+ Add lead</button>
+          <button class="action-btn" onclick="openIflLeadForm()">+ Add lead</button>
+          <button class="action-btn primary" onclick="openIflDiscovery()">⌕ Find Influencers</button>
           <input id="ifl-csv-input" type="file" accept=".csv,text/csv" hidden onchange="importIflCsv(this)">
         </div>
       </div>
       <div class="ifl-flow" aria-label="Influencer lead workflow">
-        <span><b>1</b> Import or add creator leads</span><i>→</i><span><b>2</b> Review and rank with AI</span><i>→</i><span><b>3</b> Manually contact finalists</span>
+        <span><b>1</b> Find, import, or add creator leads</span><i>→</i><span><b>2</b> Review and rank with AI</span><i>→</i><span><b>3</b> Manually contact finalists</span>
       </div>
       <div class="ifl-cost-note">AI analysis uses your server-side OpenAI API key and may incur API usage costs. No Instagram actions are automated.</div>
       <div class="ifl-toolbar">
@@ -1268,6 +1269,29 @@
 <datalist id="ifl-niche-options">
   <option value="Beauty &amp; Skincare"><option value="Fashion"><option value="Fitness &amp; Wellness"><option value="Food &amp; Drink"><option value="Travel"><option value="Lifestyle"><option value="Parenting &amp; Family"><option value="Tech"><option value="Gaming"><option value="Business &amp; Finance"><option value="Automotive"><option value="Home &amp; DIY"><option value="Local / City"><option value="Entertainment"><option value="Education">
 </datalist>
+
+<div class="ops-modal-bg" id="ifl-discovery-modal" hidden onclick="if (event.target === this) closeIflDiscovery()">
+  <div class="ops-modal ifl-modal" role="dialog" aria-labelledby="ifl-discovery-title">
+    <div class="ops-modal-head"><span class="compose-title" id="ifl-discovery-title">Find Influencers</span><button class="drawer-close" onclick="closeIflDiscovery()" aria-label="Close">✕</button></div>
+    <div class="ops-modal-body">
+      <p class="ifl-profile-help">Search public web results for real Instagram creator profiles. Results are added as Ready to Review; nothing is messaged or followed automatically.</p>
+      <div class="ops-form-grid">
+        <div class="c-field full"><label>What kind of influencers?</label><textarea class="c-input" id="ifl-d-query" placeholder="Beauty creators who make authentic skincare tutorials for women ages 25–40"></textarea></div>
+        <div class="c-field"><label>Niche</label><input class="c-input" id="ifl-d-niche" list="ifl-niche-options" placeholder="Beauty &amp; Skincare"></div>
+        <div class="c-field"><label>Location</label><input class="c-input" id="ifl-d-location" placeholder="Miami, FL or United States"></div>
+        <div class="c-field"><label>Minimum followers</label><input class="c-input" id="ifl-d-followerMin" type="number" min="0" placeholder="10000"></div>
+        <div class="c-field"><label>Maximum followers</label><input class="c-input" id="ifl-d-followerMax" type="number" min="0" placeholder="100000"></div>
+        <div class="c-field"><label>Creator limit</label><input class="c-input" id="ifl-d-count" type="number" min="1" max="50" value="25"></div>
+        <div class="c-field"><label>Estimated spend limit</label><div class="ifl-dollar"><span>$</span><input class="c-input" id="ifl-d-budgetUsd" type="number" min="0.05" max="25" step="0.05" value="5"></div></div>
+        <div class="c-field full"><label>Exclusions / red flags</label><textarea class="c-input" id="ifl-d-exclusions" placeholder="No brand accounts, repost pages, or creators focused on cosmetic procedures"></textarea></div>
+      </div>
+      <div class="ifl-budget-note">The spend limit is a conservative request estimate, not an OpenAI account billing lock. Results show reported tokens, search calls, and estimated cost.</div>
+      <div class="email-msg" id="ifl-discovery-msg"></div>
+      <div id="ifl-discovery-results" hidden></div>
+    </div>
+    <div class="ops-modal-foot"><button class="action-btn" onclick="closeIflDiscovery()">Close</button><button class="send-btn" id="ifl-discovery-run" onclick="runIflDiscovery()"><span class="btn-text">⌕ Find Influencers</span></button></div>
+  </div>
+</div>
 
 <div class="ops-modal-bg" id="ifl-profile-modal" hidden onclick="if (event.target === this) closeIflProfile()">
   <div class="ops-modal ifl-modal" role="dialog" aria-labelledby="ifl-profile-title">

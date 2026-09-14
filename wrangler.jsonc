@@ -8,6 +8,11 @@
   "vars": {
     // Non-secret AI configuration. Override without changing browser code.
     "OPENAI_MODEL": "gpt-5.6-terra",
+    "OPENAI_DISCOVERY_MODEL": "gpt-5.6-terra",
+    "OPENAI_DISCOVERY_INPUT_USD_PER_MTOK": "2",
+    "OPENAI_DISCOVERY_OUTPUT_USD_PER_MTOK": "12",
+    "OPENAI_WEB_SEARCH_USD_PER_CALL": "0.01",
+    "OPENAI_SEARCH_INPUT_TOKENS_ESTIMATE": "12000",
     "MAIL_FROM": "Edgeform CRM <noreply@edgeformmarketing.com>",
     "MAIL_DOMAIN": "edgeformmarketing.com",
     // Used only until RESEND_API_KEY is set.

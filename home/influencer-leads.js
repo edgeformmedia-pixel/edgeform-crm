@@ -105,7 +105,7 @@ function renderIflLeads() {
   document.getElementById('ifl-select-all').checked = rows.length > 0 && rows.every(l => iflSelected.has(l.id));
   document.querySelectorAll('[data-sort]').forEach(el => { el.textContent = el.dataset.sort === iflSort.key ? (iflSort.direction > 0 ? '↑' : '↓') : ''; });
   if (!rows.length) {
-    document.getElementById('ifl-tbody').innerHTML = `<tr><td colspan="11"><div class="ifl-empty"><div class="state-icon">⌕</div><strong>${iflLeads.length ? 'No leads match these filters' : 'Build your creator shortlist'}</strong><p>${iflLeads.length ? 'Adjust the filters or search to see more creator leads.' : 'Import or add creator leads → review and rank them with AI → manually contact the finalists. Nothing is sent to Instagram automatically.'}</p>${iflLeads.length ? '' : '<button class="action-btn primary" onclick="openIflLeadForm()">+ Add your first lead</button>'}</div></td></tr>`;
+    document.getElementById('ifl-tbody').innerHTML = `<tr><td colspan="11"><div class="ifl-empty"><div class="state-icon">⌕</div><strong>${iflLeads.length ? 'No leads match these filters' : 'Build your creator shortlist'}</strong><p>${iflLeads.length ? 'Adjust the filters or search to see more creator leads.' : 'Find, import, or add creator leads → review and rank them with AI → manually contact the finalists. Nothing is sent to Instagram automatically.'}</p>${iflLeads.length ? '' : '<button class="action-btn primary" onclick="openIflDiscovery()">⌕ Find Influencers</button>'}</div></td></tr>`;
     return;
   }
   document.getElementById('ifl-tbody').innerHTML = rows.map(lead => iflRowHtml(lead)).join('');
@@ -220,6 +220,106 @@ async function importIflCsv(input) {
 }
 
 function closeIflImport() { document.getElementById('ifl-import-modal').hidden = true; }
+
+async function openIflDiscovery() {
+  const modal = document.getElementById('ifl-discovery-modal');
+  const msg = document.getElementById('ifl-discovery-msg');
+  msg.textContent = '';
+  msg.className = 'email-msg';
+  document.getElementById('ifl-discovery-results').hidden = true;
+  modal.hidden = false;
+  try {
+    const { profile } = await iflRequest('/profile');
+    const defaults = {
+      niche: profile.desiredNiches,
+      location: profile.desiredLocations,
+      followerMin: profile.followerMin,
+      followerMax: profile.followerMax,
+      exclusions: profile.exclusions
+    };
+    Object.entries(defaults).forEach(([field, value]) => {
+      const input = document.getElementById('ifl-d-' + field);
+      if (!input.value && value !== null && value !== undefined) input.value = value;
+    });
+  } catch (error) {
+    msg.textContent = `Could not load saved creator preferences: ${error.message}`;
+    msg.className = 'email-msg error show';
+  }
+  document.getElementById('ifl-d-query').focus();
+}
+
+function closeIflDiscovery() { document.getElementById('ifl-discovery-modal').hidden = true; }
+
+function iflDiscoveryNumber(id) {
+  const value = document.getElementById(id).value.trim();
+  return value === '' ? null : Number(value);
+}
+
+async function runIflDiscovery() {
+  const query = document.getElementById('ifl-d-query').value.trim();
+  const count = iflDiscoveryNumber('ifl-d-count');
+  const budgetUsd = iflDiscoveryNumber('ifl-d-budgetUsd');
+  const followerMin = iflDiscoveryNumber('ifl-d-followerMin');
+  const followerMax = iflDiscoveryNumber('ifl-d-followerMax');
+  const msg = document.getElementById('ifl-discovery-msg');
+  const results = document.getElementById('ifl-discovery-results');
+  const button = document.getElementById('ifl-discovery-run');
+  msg.className = 'email-msg';
+  results.hidden = true;
+  if (!query) {
+    msg.textContent = 'Describe the influencers you want to find.';
+    msg.className = 'email-msg error show';
+    return document.getElementById('ifl-d-query').focus();
+  }
+  if (!Number.isInteger(count) || count < 1 || count > 50) {
+    msg.textContent = 'Creator limit must be between 1 and 50.';
+    msg.className = 'email-msg error show';
+    return;
+  }
+  if (!Number.isFinite(budgetUsd) || budgetUsd < 0.05 || budgetUsd > 25) {
+    msg.textContent = 'Estimated spend limit must be between $0.05 and $25.';
+    msg.className = 'email-msg error show';
+    return;
+  }
+  if (followerMin !== null && followerMax !== null && followerMin > followerMax) {
+    msg.textContent = 'Minimum followers cannot exceed maximum followers.';
+    msg.className = 'email-msg error show';
+    return;
+  }
+  button.disabled = true;
+  button.classList.add('loading');
+  button.querySelector('.btn-text').textContent = 'Searching…';
+  msg.textContent = 'Searching public Instagram results and verifying profile links. This can take a minute…';
+  msg.className = 'email-msg show';
+  try {
+    const response = await iflRequest('/discover', {
+      method: 'POST',
+      body: JSON.stringify({
+        query, count, budgetUsd, followerMin, followerMax,
+        niche: document.getElementById('ifl-d-niche').value.trim(),
+        location: document.getElementById('ifl-d-location').value.trim(),
+        exclusions: document.getElementById('ifl-d-exclusions').value.trim()
+      })
+    });
+    const { summary, usage, plan } = response;
+    const reduced = plan.effectiveCount < plan.requestedCount ? `<div class="ifl-budget-note">Your budget allowed a search for up to ${plan.effectiveCount} of the ${plan.requestedCount} requested creators.</div>` : '';
+    results.innerHTML = `<div class="ifl-discovery-summary"><strong>${summary.imported} new creator${summary.imported === 1 ? '' : 's'} added</strong><span>${summary.found} found · ${summary.duplicates} already in CRM · ${summary.failed} skipped</span></div>
+      ${response.searchSummary ? `<p class="ifl-copy">${esc(response.searchSummary)}</p>` : ''}
+      <div class="ifl-discovery-usage"><span>${usage.webSearchCalls} web search call${usage.webSearchCalls === 1 ? '' : 's'}</span><span>${usage.inputTokens.toLocaleString()} input tokens</span><span>${usage.outputTokens.toLocaleString()} output tokens</span><span>≈ $${Number(usage.estimatedCostUsd).toFixed(4)}</span></div>
+      ${summary.errors?.length ? `<div class="ifl-import-errors">${summary.errors.map(esc).join('<br>')}</div>` : ''}${reduced}`;
+    results.hidden = false;
+    msg.textContent = summary.imported ? 'Discovery complete. The new profiles are ready to review below.' : 'Discovery completed, but no new profiles were added.';
+    msg.className = 'email-msg success show';
+    await loadIflLeads();
+  } catch (error) {
+    msg.textContent = error.message;
+    msg.className = 'email-msg error show';
+  } finally {
+    button.disabled = false;
+    button.classList.remove('loading');
+    button.querySelector('.btn-text').textContent = '⌕ Find Influencers';
+  }
+}
 
 async function openIflProfile() {
   document.getElementById('ifl-profile-msg').className = 'email-msg';
