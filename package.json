@@ -1,0 +1,9 @@
+{
+  "name": "edgeform-crm",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check worker/index.js && node --check worker/influencer-leads.js && node --check home/influencer-leads.js"
+  }
+}

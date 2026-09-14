@@ -581,6 +581,7 @@
   @media (max-width: 700px) { .ops-type-picker, .ops-form-grid { grid-template-columns: 1fr; } .opd-bar { flex-wrap: wrap; } .opd-save-state { margin-left: 0; order: 5; width: 100%; } .opd-hero { padding: 20px; } .opd-hero-val { font-size: 38px; } .opd-pill { white-space: normal; } .opd-creator { flex-wrap: wrap; } .opd-crm { min-width: 0; } .opd-video { flex-wrap: wrap; } }
 </style>
 <link rel="stylesheet" href="admin-theme.css">
+<link rel="stylesheet" href="influencer-leads.css">
 </head>
 <body>
 
@@ -640,6 +641,9 @@
       <span class="drawer-item-icon">★</span> Creators
       <span class="drawer-item-badge" id="drawer-badge-creators">—</span>
     </a>
+    <a class="drawer-item drawer-child" id="drawer-nav-influencer-leads-page" href="#" onclick="drawerNav('influencer-leads')">
+      <span class="drawer-item-icon">⌕</span> Find Creators
+    </a>
     <a class="drawer-item" id="drawer-nav-operations-page" href="#" onclick="drawerNav('operations')">
       <span class="drawer-item-icon">▣</span> Operations
       <span class="drawer-item-badge" id="drawer-badge-operations">—</span>
@@ -682,6 +686,9 @@
       <a class="side-item" id="nav-creators-page" href="#" onclick="showPage('creators');return false;">
         <span class="side-icon">★</span> Creators
         <span class="side-badge" id="badge-creators">—</span>
+      </a>
+      <a class="side-item side-child" id="nav-influencer-leads-page" href="#" onclick="showPage('influencer-leads');return false;">
+        <span class="side-icon">⌕</span> Find Creators
       </a>
       <a class="side-item" id="nav-operations-page" href="#" onclick="showPage('operations');return false;">
         <span class="side-icon">▣</span> Operations
@@ -824,6 +831,64 @@
       </div>
       <div id="creator-list" class="submit-list">
         <div class="state-box"><div class="state-icon">★</div>Loading creators…</div>
+      </div>
+    </div>
+
+    <!-- ══ FIND CREATORS / INFLUENCER LEADS ══ -->
+    <div class="page-view" id="page-influencer-leads">
+      <div class="ifl-head">
+        <div>
+          <div class="ifl-kicker">Creators / Influencer Leads</div>
+          <div class="page-title">Find Creators</div>
+          <div class="page-sub">Research, rank, and manage creator prospects before you reach out personally.</div>
+        </div>
+        <div class="ifl-head-actions">
+          <button class="action-btn" onclick="openIflProfile()">Ideal Creator Profile</button>
+          <button class="action-btn" onclick="document.getElementById('ifl-csv-input').click()">Import CSV</button>
+          <button class="action-btn primary" onclick="openIflLeadForm()">+ Add lead</button>
+          <input id="ifl-csv-input" type="file" accept=".csv,text/csv" hidden onchange="importIflCsv(this)">
+        </div>
+      </div>
+      <div class="ifl-flow" aria-label="Influencer lead workflow">
+        <span><b>1</b> Import or add creator leads</span><i>→</i><span><b>2</b> Review and rank with AI</span><i>→</i><span><b>3</b> Manually contact finalists</span>
+      </div>
+      <div class="ifl-cost-note">AI analysis uses your server-side OpenAI API key and may incur API usage costs. No Instagram actions are automated.</div>
+      <div class="ifl-toolbar">
+        <input class="search-box" id="ifl-search" type="search" placeholder="Search creator, handle, niche, location, notes…" oninput="renderIflLeads()">
+        <select class="filter-select" id="ifl-status" onchange="renderIflLeads()"><option value="">All statuses</option></select>
+        <select class="filter-select" id="ifl-niche" onchange="renderIflLeads()"><option value="">All niches</option></select>
+        <select class="filter-select" id="ifl-location" onchange="renderIflLeads()"><option value="">All locations</option></select>
+        <select class="filter-select" id="ifl-source" onchange="renderIflLeads()"><option value="">All sources</option></select>
+        <input class="filter-number" id="ifl-followers-min" type="number" min="0" placeholder="Min followers" oninput="renderIflLeads()">
+        <input class="filter-number" id="ifl-followers-max" type="number" min="0" placeholder="Max followers" oninput="renderIflLeads()">
+        <input class="filter-number" id="ifl-score-min" type="number" min="0" max="100" placeholder="Min score" oninput="renderIflLeads()">
+        <input class="filter-number" id="ifl-score-max" type="number" min="0" max="100" placeholder="Max score" oninput="renderIflLeads()">
+        <input class="filter-number" id="ifl-tag" type="text" placeholder="Tag" oninput="renderIflLeads()">
+      </div>
+      <div class="ifl-batchbar">
+        <span id="ifl-count">0 leads</span>
+        <span id="ifl-selected-count">0 selected</span>
+        <button class="action-btn primary" id="ifl-analyze-selected" onclick="analyzeSelectedIfl()" disabled>Analyze selected</button>
+        <button class="action-btn" onclick="exportIflCsv()">Export filtered CSV</button>
+        <button class="action-btn" onclick="loadIflLeads()">↻ Refresh</button>
+      </div>
+      <div class="ifl-table-wrap">
+        <table class="ifl-table">
+          <thead><tr>
+            <th><input id="ifl-select-all" type="checkbox" onchange="toggleAllIfl(this.checked)" aria-label="Select filtered leads"></th>
+            <th><button onclick="sortIfl('name')">Creator / Handle <span data-sort="name"></span></button></th>
+            <th>Instagram</th>
+            <th><button onclick="sortIfl('niche')">Niche <span data-sort="niche"></span></button></th>
+            <th><button onclick="sortIfl('location')">Location <span data-sort="location"></span></button></th>
+            <th class="num"><button onclick="sortIfl('followerCount')">Followers <span data-sort="followerCount"></span></button></th>
+            <th class="num"><button onclick="sortIfl('averageViews')">Avg. views <span data-sort="averageViews"></span></button></th>
+            <th class="num"><button onclick="sortIfl('aiFitScore')">AI fit <span data-sort="aiFitScore"></span></button></th>
+            <th><button onclick="sortIfl('status')">Status <span data-sort="status"></span></button></th>
+            <th><button onclick="sortIfl('createdAt')">Date added <span data-sort="createdAt"></span></button></th>
+            <th><button onclick="sortIfl('lastReviewedAt')">Last reviewed <span data-sort="lastReviewedAt"></span></button></th>
+          </tr></thead>
+          <tbody id="ifl-tbody"><tr><td colspan="11"><div class="state-box"><div class="state-icon">⌕</div>Open Find Creators to load leads.</div></td></tr></tbody>
+        </table>
       </div>
     </div>
 
@@ -1174,6 +1239,59 @@
       <button class="action-btn" onclick="closeCreatorForm()">Cancel</button>
       <button class="send-btn" id="cf-save" onclick="saveNewCreator()"><span class="btn-text">Add creator</span></button>
     </div>
+  </div>
+</div>
+
+<div class="ops-modal-bg" id="ifl-lead-modal" hidden onclick="if (event.target === this) closeIflLeadForm()">
+  <div class="ops-modal ifl-modal" role="dialog" aria-labelledby="ifl-lead-modal-title">
+    <div class="ops-modal-head"><span class="compose-title" id="ifl-lead-modal-title">Add creator lead</span><button class="drawer-close" onclick="closeIflLeadForm()" aria-label="Close">✕</button></div>
+    <div class="ops-modal-body"><div class="ops-form-grid" id="ifl-lead-fields">
+      <div class="c-field"><label>Instagram handle *</label><input class="c-input" id="ifl-f-handle" placeholder="@creator"></div>
+      <div class="c-field"><label>Instagram profile URL</label><input class="c-input" id="ifl-f-profileUrl" placeholder="https://instagram.com/creator"></div>
+      <div class="c-field"><label>Name</label><input class="c-input" id="ifl-f-name"></div>
+      <div class="c-field"><label>Email</label><input class="c-input" id="ifl-f-email" type="email"></div>
+      <div class="c-field"><label>Niche</label><input class="c-input" id="ifl-f-niche" list="ifl-niche-options" placeholder="Beauty &amp; Skincare"></div>
+      <div class="c-field"><label>Location</label><input class="c-input" id="ifl-f-location" placeholder="Miami, FL"></div>
+      <div class="c-field"><label>Follower count</label><input class="c-input" id="ifl-f-followerCount" type="number" min="0"></div>
+      <div class="c-field"><label>Average views</label><input class="c-input" id="ifl-f-averageViews" type="number" min="0"></div>
+      <div class="c-field"><label>Engagement rate (%)</label><input class="c-input" id="ifl-f-engagementRate" type="number" min="0" max="100" step="0.01"></div>
+      <div class="c-field"><label>Source</label><input class="c-input" id="ifl-f-source" placeholder="Referral, search, event…"></div>
+      <div class="c-field full"><label>Tags</label><input class="c-input" id="ifl-f-tags" placeholder="ugc; local; skincare"></div>
+      <div class="c-field full"><label>Bio</label><textarea class="c-input" id="ifl-f-bio"></textarea></div>
+      <div class="c-field full"><label>Recent post notes</label><textarea class="c-input" id="ifl-f-recentPostNotes" placeholder="Notes from your manual review"></textarea></div>
+      <div class="c-field full"><label>Notes</label><textarea class="c-input" id="ifl-f-notes"></textarea></div>
+    </div><div class="email-msg" id="ifl-lead-msg"></div></div>
+    <div class="ops-modal-foot"><button class="action-btn" id="ifl-delete" onclick="deleteIflLead()" hidden>Delete</button><button class="action-btn" onclick="closeIflLeadForm()">Cancel</button><button class="send-btn" id="ifl-save" onclick="saveIflLead()"><span class="btn-text">Add lead</span></button></div>
+  </div>
+</div>
+
+<datalist id="ifl-niche-options">
+  <option value="Beauty &amp; Skincare"><option value="Fashion"><option value="Fitness &amp; Wellness"><option value="Food &amp; Drink"><option value="Travel"><option value="Lifestyle"><option value="Parenting &amp; Family"><option value="Tech"><option value="Gaming"><option value="Business &amp; Finance"><option value="Automotive"><option value="Home &amp; DIY"><option value="Local / City"><option value="Entertainment"><option value="Education">
+</datalist>
+
+<div class="ops-modal-bg" id="ifl-profile-modal" hidden onclick="if (event.target === this) closeIflProfile()">
+  <div class="ops-modal ifl-modal" role="dialog" aria-labelledby="ifl-profile-title">
+    <div class="ops-modal-head"><span class="compose-title" id="ifl-profile-title">Ideal Creator Profile</span><button class="drawer-close" onclick="closeIflProfile()" aria-label="Close">✕</button></div>
+    <div class="ops-modal-body"><p class="ifl-profile-help">This profile is compared with the user-provided data on each lead. Be specific; unknown lead information stays unknown.</p><div class="ops-form-grid">
+      <div class="c-field full"><label>Brand / product</label><textarea class="c-input" id="ifl-p-brandProduct"></textarea></div>
+      <div class="c-field full"><label>Target customer</label><textarea class="c-input" id="ifl-p-targetCustomer"></textarea></div>
+      <div class="c-field"><label>Desired niches</label><textarea class="c-input" id="ifl-p-desiredNiches"></textarea></div>
+      <div class="c-field"><label>Desired locations</label><textarea class="c-input" id="ifl-p-desiredLocations"></textarea></div>
+      <div class="c-field"><label>Minimum followers</label><input class="c-input" id="ifl-p-followerMin" type="number" min="0"></div>
+      <div class="c-field"><label>Maximum followers</label><input class="c-input" id="ifl-p-followerMax" type="number" min="0"></div>
+      <div class="c-field"><label>Content style</label><textarea class="c-input" id="ifl-p-contentStyle"></textarea></div>
+      <div class="c-field"><label>Deal type</label><textarea class="c-input" id="ifl-p-dealType"></textarea></div>
+      <div class="c-field full"><label>Exclusions / red flags</label><textarea class="c-input" id="ifl-p-exclusions"></textarea></div>
+    </div><div class="email-msg" id="ifl-profile-msg"></div></div>
+    <div class="ops-modal-foot"><button class="action-btn" onclick="closeIflProfile()">Cancel</button><button class="send-btn" id="ifl-profile-save" onclick="saveIflProfile()"><span class="btn-text">Save profile</span></button></div>
+  </div>
+</div>
+
+<div class="ops-modal-bg" id="ifl-import-modal" hidden onclick="if (event.target === this) closeIflImport()">
+  <div class="ops-modal ifl-modal" role="dialog" aria-labelledby="ifl-import-title">
+    <div class="ops-modal-head"><span class="compose-title" id="ifl-import-title">CSV import results</span><button class="drawer-close" onclick="closeIflImport()" aria-label="Close">✕</button></div>
+    <div class="ops-modal-body" id="ifl-import-results"></div>
+    <div class="ops-modal-foot"><button class="send-btn" onclick="closeIflImport()"><span class="btn-text">Done</span></button></div>
   </div>
 </div>
 
@@ -2820,5 +2938,6 @@ function setBillBtnLoading(id, loading) {
 }
 </script>
 <script src="admin-motion.js"></script>
+<script src="influencer-leads.js"></script>
 </body>
 </html>

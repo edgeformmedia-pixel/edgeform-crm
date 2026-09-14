@@ -5,6 +5,7 @@ import { intakeRoutes } from './intake.js';
 import { dialerRoutes } from './dialer.js';
 import { mailRoutes, mailCron } from './mail.js';
 import { operationRoutes } from './operations.js';
+import { influencerLeadRoutes } from './influencer-leads.js';
 
 function cors(request, env) {
   const origin = request.headers.get('origin') || '';
@@ -37,7 +38,8 @@ const routes = {
   ...userRoutes,
   ...dialerRoutes,
   ...mailRoutes,
-  ...operationRoutes
+  ...operationRoutes,
+  ...influencerLeadRoutes
 };
 
 const compiled = Object.entries(routes).map(([key, handler]) => {

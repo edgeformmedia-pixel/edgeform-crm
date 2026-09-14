@@ -4,8 +4,10 @@
   "main": "worker/index.js",
   "compatibility_date": "2026-09-12",
   "observability": { "enabled": true },
-  // Secrets (set with `wrangler secret put`): RESEND_API_KEY, RESEND_WEBHOOK_SECRET (optional)
+  // Secrets (set with `wrangler secret put`): OPENAI_API_KEY, RESEND_API_KEY, RESEND_WEBHOOK_SECRET (optional)
   "vars": {
+    // Non-secret AI configuration. Override without changing browser code.
+    "OPENAI_MODEL": "gpt-5.6-terra",
     "MAIL_FROM": "Edgeform CRM <noreply@edgeformmarketing.com>",
     "MAIL_DOMAIN": "edgeformmarketing.com",
     // Used only until RESEND_API_KEY is set.
