@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { leadIdentity, parseCsv, validateAnalysis } from '../worker/influencer-leads.js';
+import { decryptSecret, encryptSecret, leadIdentity, parseCsv, validateAnalysis } from '../worker/influencer-leads.js';
 
 test('CSV parser accepts quoted commas, escaped quotes, and multiline notes', () => {
   const rows = parseCsv('handle,name,notes\r\n@jane,"Jane, Doe","Said ""hello""\nFollow up"\r\n');
@@ -30,6 +30,13 @@ test('strict AI result validation accepts valid values and rejects invented shap
   assert.throws(() => validateAnalysis({ ...valid, strengths: 'Good' }), /invalid structured result/);
 });
 
+test('saved API keys are encrypted with authenticated encryption', async () => {
+  const encrypted = await encryptSecret('sk-test-secret-value-123456789', 'wrapping-secret-for-tests');
+  assert.doesNotMatch(encrypted.ciphertext, /sk-test/);
+  assert.equal(await decryptSecret(encrypted.ciphertext, encrypted.iv, 'wrapping-secret-for-tests'), 'sk-test-secret-value-123456789');
+  await assert.rejects(() => decryptSecret(encrypted.ciphertext, encrypted.iv, 'wrong-secret'), /could not be decrypted/);
+});
+
 test('Find Creators is nested after Creators and before Operations in both navigations', async () => {
   const html = await readFile(new URL('../home/index.html', import.meta.url), 'utf8');
   for (const prefix of ['drawer-nav-', 'nav-']) {
@@ -41,4 +48,6 @@ test('Find Creators is nested after Creators and before Operations in both navig
   assert.match(html, /id="ifl-analyze-selected"[^>]+disabled/);
   assert.match(html, /Manually contact finalists/);
   assert.match(html, /Beauty &amp; Skincare/);
+  assert.match(html, /Find Creators Settings/);
+  assert.match(html, /type="password"[^>]+autocomplete="off"/);
 });

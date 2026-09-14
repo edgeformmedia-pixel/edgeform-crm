@@ -223,19 +223,51 @@ function closeIflImport() { document.getElementById('ifl-import-modal').hidden =
 
 async function openIflProfile() {
   document.getElementById('ifl-profile-msg').className = 'email-msg';
+  document.getElementById('ifl-api-key').value = '';
+  document.getElementById('ifl-api-key').type = 'password';
   document.getElementById('ifl-profile-modal').hidden = false;
-  try { const { profile } = await iflRequest('/profile'); IFL_PROFILE_FIELDS.forEach(field => { document.getElementById('ifl-p-' + field).value = profile[field] ?? ''; }); }
+  try {
+    const [{ profile }, { settings }] = await Promise.all([iflRequest('/profile'), iflRequest('/settings')]);
+    IFL_PROFILE_FIELDS.forEach(field => { document.getElementById('ifl-p-' + field).value = profile[field] ?? ''; });
+    renderIflKeyStatus(settings);
+  }
   catch (error) { const msg = document.getElementById('ifl-profile-msg'); msg.textContent = error.message; msg.className = 'email-msg error show'; }
 }
 
 function closeIflProfile() { document.getElementById('ifl-profile-modal').hidden = true; }
 
+function renderIflKeyStatus(settings) {
+  const status = document.getElementById('ifl-key-status');
+  const input = document.getElementById('ifl-api-key');
+  status.textContent = settings.configured ? `Configured ${settings.hint ? '· ' + settings.hint : ''}${settings.source === 'environment' ? ' · Worker secret' : ''}` : 'Not configured';
+  status.classList.toggle('configured', settings.configured);
+  input.disabled = !settings.canEdit;
+  input.placeholder = settings.canEdit ? (settings.configured ? 'Paste a new key to replace it' : 'sk-…') : 'Only an admin can change the key';
+  document.getElementById('ifl-key-remove').hidden = !settings.canEdit || settings.source !== 'settings';
+}
+
+function toggleIflKeyVisibility() {
+  const input = document.getElementById('ifl-api-key');
+  input.type = input.type === 'password' ? 'text' : 'password';
+}
+
 async function saveIflProfile() {
   const body = Object.fromEntries(IFL_PROFILE_FIELDS.map(field => [field, document.getElementById('ifl-p-' + field).value.trim()]));
+  const apiKey = document.getElementById('ifl-api-key').value.trim();
   const msg = document.getElementById('ifl-profile-msg'), button = document.getElementById('ifl-profile-save'); button.disabled = true;
-  try { await iflRequest('/profile', { method: 'PATCH', body: JSON.stringify(body) }); closeIflProfile(); }
+  try {
+    if (apiKey) await iflRequest('/settings', { method: 'PATCH', body: JSON.stringify({ apiKey }) });
+    await iflRequest('/profile', { method: 'PATCH', body: JSON.stringify(body) });
+    closeIflProfile();
+  }
   catch (error) { msg.textContent = error.message; msg.className = 'email-msg error show'; }
   finally { button.disabled = false; }
+}
+
+async function removeIflApiKey() {
+  if (!confirm('Remove the API key saved in Find Creators settings?')) return;
+  try { const { settings } = await iflRequest('/settings', { method: 'DELETE' }); document.getElementById('ifl-api-key').value = ''; renderIflKeyStatus(settings); }
+  catch (error) { const msg = document.getElementById('ifl-profile-msg'); msg.textContent = error.message; msg.className = 'email-msg error show'; }
 }
 
 async function analyzeIfl(id) {

@@ -1,5 +1,5 @@
 import { json, HttpError, clean, now, readJson, sha256, isEmail } from './lib.js';
-import { requireUser } from './auth.js';
+import { requireUser, requireAdmin } from './auth.js';
 
 const STATUSES = new Set(['New', 'Ready to Review', 'Shortlisted', 'Contacted', 'Replied', 'Not a Fit', 'Archived']);
 const CONFIDENCE = new Set(['low', 'medium', 'high']);
@@ -37,6 +37,31 @@ const ANALYSIS_SCHEMA = {
 
 function parseJson(value, fallback) {
   try { return JSON.parse(value); } catch { return fallback; }
+}
+
+const bytesToBase64 = (bytes) => btoa(String.fromCharCode(...bytes));
+const base64ToBytes = (value) => Uint8Array.from(atob(value), char => char.charCodeAt(0));
+
+async function wrappingKey(secret) {
+  if (!secret) throw new HttpError(503, 'AI settings encryption is not configured.');
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret));
+  return crypto.subtle.importKey('raw', digest, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+export async function encryptSecret(value, wrappingSecret) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await wrappingKey(wrappingSecret), new TextEncoder().encode(value));
+  return { ciphertext: bytesToBase64(new Uint8Array(ciphertext)), iv: bytesToBase64(iv) };
+}
+
+export async function decryptSecret(ciphertext, iv, wrappingSecret) {
+  try {
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: base64ToBytes(iv) }, await wrappingKey(wrappingSecret), base64ToBytes(ciphertext));
+    return new TextDecoder().decode(plaintext);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(503, 'The saved OpenAI key could not be decrypted. Save it again in Find Creators settings.');
+  }
 }
 
 function intOrNull(value, label) {
@@ -300,6 +325,50 @@ async function saveProfile(request, env, headers) {
   return json({ ok: true, profile }, 200, headers);
 }
 
+async function readAiSettings(env) {
+  return env.DB.prepare("SELECT * FROM influencer_ai_settings WHERE id = 'default'").first();
+}
+
+async function getAiSettings(request, env, headers) {
+  const user = await requireUser(request, env);
+  const row = await readAiSettings(env);
+  const saved = !!(row?.api_key_ciphertext && row?.api_key_iv);
+  const environment = !!env.OPENAI_API_KEY;
+  return json({
+    ok: true,
+    settings: {
+      configured: saved || environment,
+      source: saved ? 'settings' : environment ? 'environment' : 'none',
+      hint: saved ? row.api_key_hint : environment ? 'Worker secret' : '',
+      updatedAt: saved ? row.updated_at : null,
+      canEdit: user.role === 'admin' || user.role === 'owner'
+    }
+  }, 200, headers);
+}
+
+async function saveAiSettings(request, env, headers) {
+  const user = await requireAdmin(request, env);
+  const apiKey = clean((await readJson(request)).apiKey, 500);
+  if (apiKey.length < 20 || !apiKey.startsWith('sk-')) throw new HttpError(400, 'Enter a valid OpenAI API key beginning with sk-.');
+  const encrypted = await encryptSecret(apiKey, env.AI_SETTINGS_ENCRYPTION_KEY);
+  const hint = `••••${apiKey.slice(-4)}`;
+  await env.DB.prepare(`UPDATE influencer_ai_settings SET api_key_ciphertext = ?, api_key_iv = ?, api_key_hint = ?, updated_by_user_id = ?, updated_at = ? WHERE id = 'default'`)
+    .bind(encrypted.ciphertext, encrypted.iv, hint, user.id, now()).run();
+  return json({ ok: true, settings: { configured: true, source: 'settings', hint, updatedAt: now(), canEdit: true } }, 200, headers);
+}
+
+async function deleteAiSettings(request, env, headers) {
+  await requireAdmin(request, env);
+  await env.DB.prepare("UPDATE influencer_ai_settings SET api_key_ciphertext = '', api_key_iv = '', api_key_hint = '', updated_by_user_id = NULL, updated_at = NULL WHERE id = 'default'").run();
+  return json({ ok: true, settings: { configured: !!env.OPENAI_API_KEY, source: env.OPENAI_API_KEY ? 'environment' : 'none', hint: env.OPENAI_API_KEY ? 'Worker secret' : '', updatedAt: null, canEdit: true } }, 200, headers);
+}
+
+async function openAiApiKey(env) {
+  const row = await readAiSettings(env);
+  if (row?.api_key_ciphertext && row?.api_key_iv) return decryptSecret(row.api_key_ciphertext, row.api_key_iv, env.AI_SETTINGS_ENCRYPTION_KEY);
+  return env.OPENAI_API_KEY || '';
+}
+
 function analysisPayload(lead, profile) {
   return {
     ideal_creator_profile: mapProfile(profile),
@@ -314,12 +383,13 @@ function analysisPayload(lead, profile) {
 }
 
 async function callOpenAI(env, payload) {
-  if (!env.OPENAI_API_KEY) throw new HttpError(503, 'OPENAI_API_KEY is not configured on the Worker.');
+  const apiKey = await openAiApiKey(env);
+  if (!apiKey) throw new HttpError(503, 'Add an OpenAI API key in Find Creators → Settings.');
   const model = clean(env.OPENAI_MODEL || 'gpt-5.6-terra', 100);
   const endpoint = `${String(env.OPENAI_API_URL || 'https://api.openai.com/v1').replace(/\/$/, '')}/responses`;
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { authorization: `Bearer ${env.OPENAI_API_KEY}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       model,
       instructions: 'Rank this creator lead against the ideal profile using only the supplied data. Never infer or invent metrics, demographics, identity, audience facts, or recent activity. Treat missing fields as unknown and list decision-relevant unknowns in missing_information. Keep the reason concise.',
@@ -394,6 +464,9 @@ export const influencerLeadRoutes = {
   'POST /api/influencer-leads/analyze-batch': analyzeBatch,
   'GET /api/influencer-leads/profile': getProfile,
   'PATCH /api/influencer-leads/profile': saveProfile,
+  'GET /api/influencer-leads/settings': getAiSettings,
+  'PATCH /api/influencer-leads/settings': saveAiSettings,
+  'DELETE /api/influencer-leads/settings': deleteAiSettings,
   'PATCH /api/influencer-leads/:id': updateLead,
   'DELETE /api/influencer-leads/:id': deleteLead,
   'POST /api/influencer-leads/:id/notes': addNote,

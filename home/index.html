@@ -843,7 +843,7 @@
           <div class="page-sub">Research, rank, and manage creator prospects before you reach out personally.</div>
         </div>
         <div class="ifl-head-actions">
-          <button class="action-btn" onclick="openIflProfile()">Ideal Creator Profile</button>
+          <button class="action-btn" onclick="openIflProfile()">⚙ Settings</button>
           <button class="action-btn" onclick="document.getElementById('ifl-csv-input').click()">Import CSV</button>
           <button class="action-btn primary" onclick="openIflLeadForm()">+ Add lead</button>
           <input id="ifl-csv-input" type="file" accept=".csv,text/csv" hidden onchange="importIflCsv(this)">
@@ -1271,8 +1271,15 @@
 
 <div class="ops-modal-bg" id="ifl-profile-modal" hidden onclick="if (event.target === this) closeIflProfile()">
   <div class="ops-modal ifl-modal" role="dialog" aria-labelledby="ifl-profile-title">
-    <div class="ops-modal-head"><span class="compose-title" id="ifl-profile-title">Ideal Creator Profile</span><button class="drawer-close" onclick="closeIflProfile()" aria-label="Close">✕</button></div>
-    <div class="ops-modal-body"><p class="ifl-profile-help">This profile is compared with the user-provided data on each lead. Be specific; unknown lead information stays unknown.</p><div class="ops-form-grid">
+    <div class="ops-modal-head"><span class="compose-title" id="ifl-profile-title">Find Creators Settings</span><button class="drawer-close" onclick="closeIflProfile()" aria-label="Close">✕</button></div>
+    <div class="ops-modal-body">
+      <section class="ifl-api-settings">
+        <div class="ifl-settings-row"><div><div class="ifl-detail-title">OpenAI API key</div><div id="ifl-key-status" class="ifl-key-status">Checking configuration…</div></div><button class="action-btn" id="ifl-key-remove" onclick="removeIflApiKey()" hidden>Remove saved key</button></div>
+        <div class="ifl-key-entry"><input class="c-input" id="ifl-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"><button class="action-btn" type="button" onclick="toggleIflKeyVisibility()">Show</button></div>
+        <p class="ifl-profile-help">Paste a key to replace the current one. It is encrypted by the Worker before database storage and is never shown again.</p>
+      </section>
+      <div class="ifl-settings-divider"><span>Ideal Creator Profile</span></div>
+      <p class="ifl-profile-help">This profile is compared with the user-provided data on each lead. Be specific; unknown lead information stays unknown.</p><div class="ops-form-grid">
       <div class="c-field full"><label>Brand / product</label><textarea class="c-input" id="ifl-p-brandProduct"></textarea></div>
       <div class="c-field full"><label>Target customer</label><textarea class="c-input" id="ifl-p-targetCustomer"></textarea></div>
       <div class="c-field"><label>Desired niches</label><textarea class="c-input" id="ifl-p-desiredNiches"></textarea></div>
@@ -1283,7 +1290,7 @@
       <div class="c-field"><label>Deal type</label><textarea class="c-input" id="ifl-p-dealType"></textarea></div>
       <div class="c-field full"><label>Exclusions / red flags</label><textarea class="c-input" id="ifl-p-exclusions"></textarea></div>
     </div><div class="email-msg" id="ifl-profile-msg"></div></div>
-    <div class="ops-modal-foot"><button class="action-btn" onclick="closeIflProfile()">Cancel</button><button class="send-btn" id="ifl-profile-save" onclick="saveIflProfile()"><span class="btn-text">Save profile</span></button></div>
+    <div class="ops-modal-foot"><button class="action-btn" onclick="closeIflProfile()">Cancel</button><button class="send-btn" id="ifl-profile-save" onclick="saveIflProfile()"><span class="btn-text">Save settings</span></button></div>
   </div>
 </div>
 
