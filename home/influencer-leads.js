@@ -221,6 +221,11 @@ async function importIflCsv(input) {
 
 function closeIflImport() { document.getElementById('ifl-import-modal').hidden = true; }
 
+let iflDiscoveryRunId = null;
+let iflDiscoveryTimer = null;
+const IFL_DISCOVERY_POLL_MS = 4000;
+const IFL_RECENT_RESULT_MS = 30 * 60000;
+
 async function openIflDiscovery() {
   const modal = document.getElementById('ifl-discovery-modal');
   const msg = document.getElementById('ifl-discovery-msg');
@@ -228,6 +233,7 @@ async function openIflDiscovery() {
   msg.className = 'email-msg';
   document.getElementById('ifl-discovery-results').hidden = true;
   modal.hidden = false;
+  iflCheckDiscoveryRuns({ showRecent: true });
   try {
     const { profile } = await iflRequest('/profile');
     const defaults = {
@@ -248,6 +254,7 @@ async function openIflDiscovery() {
   document.getElementById('ifl-d-query').focus();
 }
 
+// Closing only hides the window; a running search continues on the server.
 function closeIflDiscovery() { document.getElementById('ifl-discovery-modal').hidden = true; }
 
 function iflDiscoveryNumber(id) {
@@ -266,6 +273,115 @@ function iflDiscoveryDiagnostics(d, summary) {
     ${domains ? `<div>Top sources: ${domains}</div>` : ''}
     ${unconfirmed ? `<div>Not confirmed:</div><ul>${unconfirmed}</ul>` : ''}
     <div class="ifl-ai-meta">Run ${esc(d.runId)}</div></details>`;
+}
+
+function iflElapsed(since) {
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(since).getTime()) / 1000));
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
+}
+
+function iflDiscoveryResultHtml(run) {
+  const { summary, usage, plan } = run.result || {};
+  if (!summary || !usage) return '';
+  const reduced = plan && plan.effectiveCount < plan.requestedCount ? `<div class="ifl-budget-note">Your budget allowed a search for up to ${plan.effectiveCount} of the ${plan.requestedCount} requested creators.</div>` : '';
+  return `<div class="ifl-discovery-summary"><strong>${summary.imported} new creator${summary.imported === 1 ? '' : 's'} added</strong><span>${summary.found} found · ${summary.duplicates} already in CRM · ${summary.failed} skipped</span></div>
+    ${run.result.searchSummary ? `<p class="ifl-copy">${esc(run.result.searchSummary)}</p>` : ''}
+    <div class="ifl-discovery-usage"><span>${usage.webSearchCalls} web search call${usage.webSearchCalls === 1 ? '' : 's'}</span><span>${usage.inputTokens.toLocaleString()} input tokens</span><span>${usage.outputTokens.toLocaleString()} output tokens</span><span>≈ $${Number(usage.estimatedCostUsd).toFixed(4)}</span></div>
+    ${summary.errors?.length ? `<div class="ifl-import-errors">${summary.errors.map(esc).join('<br>')}</div>` : ''}${reduced}${iflDiscoveryDiagnostics(run.result.diagnostics, summary)}`;
+}
+
+function iflSetDiscoveryBadges(active) {
+  ['badge-ifl-discovery', 'drawer-badge-ifl-discovery'].forEach(id => { const badge = document.getElementById(id); if (badge) badge.hidden = !active; });
+}
+
+function iflRenderDiscoveryRun(run, { label = '' } = {}) {
+  const msg = document.getElementById('ifl-discovery-msg');
+  const results = document.getElementById('ifl-discovery-results');
+  const button = document.getElementById('ifl-discovery-run');
+  const cancel = document.getElementById('ifl-discovery-cancel');
+  iflSetDiscoveryBadges(run.active);
+  button.disabled = run.active;
+  button.classList.toggle('loading', run.active);
+  button.querySelector('.btn-text').textContent = run.active ? 'Searching…' : '⌕ Find Influencers';
+  cancel.hidden = !(run.status === 'starting' || run.status === 'running');
+  if (run.active) {
+    results.hidden = true;
+    msg.textContent = run.status === 'importing'
+      ? 'Search finished. Checking sources and adding creators…'
+      : `Searching public web sources and confirming Instagram handles (${iflElapsed(run.createdAt)}). You can close this window or leave the page; the search keeps running and new creators will appear in Find Creators.`;
+    msg.className = 'email-msg show';
+    return;
+  }
+  results.innerHTML = iflDiscoveryResultHtml(run);
+  results.hidden = !results.innerHTML;
+  const prefix = label ? `${label}: ` : '';
+  if (run.status === 'complete') {
+    const imported = run.result?.summary?.imported || 0;
+    msg.textContent = prefix + (imported ? 'Discovery complete. The new profiles are ready to review.' : 'Discovery completed, but no new profiles were added.');
+    msg.className = 'email-msg success show';
+  } else {
+    msg.textContent = prefix + (run.error || (run.status === 'cancelled' ? 'Discovery was cancelled.' : 'Discovery failed.'));
+    msg.className = `email-msg ${run.status === 'cancelled' ? '' : 'error '}show`;
+  }
+}
+
+function iflDiscoveryToast(run) {
+  let toast = document.getElementById('ifl-toast');
+  if (!toast) {
+    toast = document.createElement('button');
+    toast.id = 'ifl-toast';
+    toast.className = 'ifl-toast';
+    toast.type = 'button';
+    toast.onclick = () => { toast.hidden = true; showPage('influencer-leads'); openIflDiscovery(); };
+    document.body.appendChild(toast);
+  }
+  const imported = run.result?.summary?.imported || 0;
+  toast.textContent = run.status === 'complete'
+    ? `⌕ Creator search finished: ${imported} new creator${imported === 1 ? '' : 's'} added. View results`
+    : `⌕ Creator search ${run.status === 'cancelled' ? 'was cancelled' : 'failed'}. View details`;
+  toast.classList.toggle('error', run.status === 'failed');
+  toast.hidden = false;
+  clearTimeout(toast.hideTimer);
+  toast.hideTimer = setTimeout(() => { toast.hidden = true; }, 15000);
+}
+
+function iflWatchDiscoveryRun(run) {
+  clearTimeout(iflDiscoveryTimer);
+  iflDiscoveryRunId = run.id;
+  iflRenderDiscoveryRun(run);
+  if (run.active) iflDiscoveryTimer = setTimeout(() => iflPollDiscoveryRun(run.id), IFL_DISCOVERY_POLL_MS);
+}
+
+async function iflPollDiscoveryRun(runId) {
+  if (runId !== iflDiscoveryRunId) return;
+  try {
+    const { run } = await iflRequest(`/discover/runs/${encodeURIComponent(runId)}`);
+    if (runId !== iflDiscoveryRunId) return;
+    if (run.active) return iflWatchDiscoveryRun(run);
+    iflDiscoveryRunId = null;
+    iflRenderDiscoveryRun(run);
+    if (iflLoaded) await loadIflLeads();
+    if (document.getElementById('ifl-discovery-modal').hidden) iflDiscoveryToast(run);
+  } catch {
+    if (runId === iflDiscoveryRunId) iflDiscoveryTimer = setTimeout(() => iflPollDiscoveryRun(runId), IFL_DISCOVERY_POLL_MS * 3);
+  }
+}
+
+// Picks up a search that is still running (after a reload or from another tab), or shows the latest result.
+async function iflCheckDiscoveryRuns({ showRecent = false } = {}) {
+  try {
+    const { active, recent } = await iflRequest('/discover/runs');
+    if (active) {
+      if (active.id !== iflDiscoveryRunId) iflWatchDiscoveryRun(active);
+      else iflRenderDiscoveryRun(active);
+      return;
+    }
+    iflSetDiscoveryBadges(false);
+    const latest = recent?.[0];
+    if (showRecent && !iflDiscoveryRunId && latest?.completedAt && Date.now() - new Date(latest.completedAt).getTime() < IFL_RECENT_RESULT_MS) {
+      iflRenderDiscoveryRun(latest, { label: `Last search (${iflElapsed(latest.completedAt)} ago)` });
+    }
+  } catch {}
 }
 
 async function runIflDiscovery() {
@@ -301,11 +417,11 @@ async function runIflDiscovery() {
   }
   button.disabled = true;
   button.classList.add('loading');
-  button.querySelector('.btn-text').textContent = 'Searching…';
-  msg.textContent = 'Searching public web sources and confirming Instagram handles. This can take a few minutes…';
+  button.querySelector('.btn-text').textContent = 'Starting…';
+  msg.textContent = 'Starting the search…';
   msg.className = 'email-msg show';
   try {
-    const response = await iflRequest('/discover', {
+    const { run } = await iflRequest('/discover', {
       method: 'POST',
       body: JSON.stringify({
         query, count, budgetUsd, followerMin, followerMax,
@@ -314,25 +430,38 @@ async function runIflDiscovery() {
         exclusions: document.getElementById('ifl-d-exclusions').value.trim()
       })
     });
-    const { summary, usage, plan } = response;
-    const reduced = plan.effectiveCount < plan.requestedCount ? `<div class="ifl-budget-note">Your budget allowed a search for up to ${plan.effectiveCount} of the ${plan.requestedCount} requested creators.</div>` : '';
-    results.innerHTML = `<div class="ifl-discovery-summary"><strong>${summary.imported} new creator${summary.imported === 1 ? '' : 's'} added</strong><span>${summary.found} found · ${summary.duplicates} already in CRM · ${summary.failed} skipped</span></div>
-      ${response.searchSummary ? `<p class="ifl-copy">${esc(response.searchSummary)}</p>` : ''}
-      <div class="ifl-discovery-usage"><span>${usage.webSearchCalls} web search call${usage.webSearchCalls === 1 ? '' : 's'}</span><span>${usage.inputTokens.toLocaleString()} input tokens</span><span>${usage.outputTokens.toLocaleString()} output tokens</span><span>≈ $${Number(usage.estimatedCostUsd).toFixed(4)}</span></div>
-      ${summary.errors?.length ? `<div class="ifl-import-errors">${summary.errors.map(esc).join('<br>')}</div>` : ''}${reduced}${iflDiscoveryDiagnostics(response.diagnostics, summary)}`;
-    results.hidden = false;
-    msg.textContent = summary.imported ? 'Discovery complete. The new profiles are ready to review below.' : 'Discovery completed, but no new profiles were added.';
-    msg.className = 'email-msg success show';
-    await loadIflLeads();
+    if (run.active) iflWatchDiscoveryRun(run);
+    else { iflRenderDiscoveryRun(run); if (iflLoaded) await loadIflLeads(); }
   } catch (error) {
-    msg.textContent = error.message;
-    msg.className = 'email-msg error show';
-  } finally {
     button.disabled = false;
     button.classList.remove('loading');
     button.querySelector('.btn-text').textContent = '⌕ Find Influencers';
+    msg.textContent = error.message;
+    msg.className = 'email-msg error show';
+    if (/already have a discovery search running/i.test(error.message)) iflCheckDiscoveryRuns();
   }
 }
+
+async function cancelIflDiscovery() {
+  const runId = iflDiscoveryRunId;
+  if (!runId || !confirm('Cancel this creator search? Searches already made may still be billed by OpenAI.')) return;
+  const cancel = document.getElementById('ifl-discovery-cancel');
+  cancel.disabled = true;
+  try {
+    const { run } = await iflRequest(`/discover/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' });
+    clearTimeout(iflDiscoveryTimer);
+    iflDiscoveryRunId = run.active ? run.id : null;
+    iflRenderDiscoveryRun(run);
+    if (run.active) iflWatchDiscoveryRun(run);
+    else if (iflLoaded && run.status === 'complete') await loadIflLeads();
+  } catch (error) {
+    const msg = document.getElementById('ifl-discovery-msg');
+    msg.textContent = error.message;
+    msg.className = 'email-msg error show';
+  } finally { cancel.disabled = false; }
+}
+
+if (typeof getSession === 'function' && getSession()?.token) iflCheckDiscoveryRuns();
 
 async function openIflProfile() {
   document.getElementById('ifl-profile-msg').className = 'email-msg';

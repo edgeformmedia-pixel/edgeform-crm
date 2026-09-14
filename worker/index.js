@@ -5,7 +5,7 @@ import { intakeRoutes } from './intake.js';
 import { dialerRoutes } from './dialer.js';
 import { mailRoutes, mailCron } from './mail.js';
 import { operationRoutes } from './operations.js';
-import { influencerLeadRoutes } from './influencer-leads.js';
+import { influencerLeadRoutes, discoveryCron } from './influencer-leads.js';
 
 function cors(request, env) {
   const origin = request.headers.get('origin') || '';
@@ -66,8 +66,9 @@ export default {
     }
   },
 
-  // Every minute: scheduled sends, inbound mail sync, trash cleanup.
+  // Every minute: scheduled sends, inbound mail sync, trash cleanup, and background creator discovery runs.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(mailCron(env));
+    ctx.waitUntil(discoveryCron(env).catch(error => console.error('discovery cron failed', error?.message)));
   }
 };

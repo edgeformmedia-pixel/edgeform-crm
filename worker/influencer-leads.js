@@ -554,18 +554,243 @@ export function verifyDiscoveredCreator(value, consulted, criteria = {}) {
   };
 }
 
+const ACTIVE_RUN_STATUSES = ['starting', 'running', 'importing'];
+const OPENAI_PENDING = new Set(['queued', 'in_progress']);
+const BROWSER_POLL_INTERVAL_MS = 3000;
+const CRON_POLL_INTERVAL_MS = 20000;
+const DISCOVERY_TIMEOUT_MS = 20 * 60000;
+const STALE_START_MS = 2 * 60000;
+const STALE_IMPORT_MS = 5 * 60000;
+const ACTIVE_RUNS_SQL = `status IN (${ACTIVE_RUN_STATUSES.map(s => `'${s}'`).join(',')})`;
+
 function openAiErrorDetails(status, data) {
   const error = data?.error || {};
   return { httpStatus: status, type: clean(error.type, 100), code: clean(error.code, 100), param: clean(error.param, 100), message: clean(redactSecrets(error.message), 500) };
 }
 
-async function recordDiscoveryRun(env, run) {
-  const columns = Object.keys(run);
+async function openAiResponses(env, apiKey, path = '', { method = 'GET', body } = {}) {
+  let response;
   try {
-    await env.DB.prepare(`INSERT INTO influencer_discovery_runs (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`).bind(...Object.values(run)).run();
+    response = await fetch(`${String(env.OPENAI_API_URL || 'https://api.openai.com/v1').replace(/\/$/, '')}/responses${path}`, {
+      method,
+      headers: { authorization: `Bearer ${apiKey}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined
+    });
   } catch (error) {
-    console.error('discovery audit insert failed', redactSecrets(error?.message));
+    throw Object.assign(new HttpError(502, 'Could not reach OpenAI for discovery. Try again shortly.'), {
+      apiError: { httpStatus: 0, type: 'network_error', code: '', param: '', message: clean(redactSecrets(error?.message), 500) }
+    });
   }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const apiError = openAiErrorDetails(response.status, data);
+    throw Object.assign(new HttpError(502, apiError.message || `OpenAI discovery request failed (${response.status}).`), { apiError });
+  }
+  return data;
+}
+
+// Background mode: OpenAI keeps working after this Worker request ends, and the run is collected by polling.
+export function buildDiscoveryRequest({ model, plan, query, criteria }) {
+  return {
+    model,
+    background: true,
+    store: true,
+    reasoning: { effort: 'low' },
+    // Open web: Instagram profile pages are sparsely indexed, so a domain filter starves the search.
+    tools: [{ type: 'web_search', search_context_size: 'medium' }],
+    tool_choice: 'required',
+    max_tool_calls: plan.maxToolCalls,
+    max_output_tokens: plan.maxOutputTokens,
+    include: ['web_search_call.action.sources'],
+    instructions: DISCOVERY_INSTRUCTIONS(plan.effectiveCount),
+    input: JSON.stringify({ request: query, ...criteria, creator_limit: plan.effectiveCount }),
+    text: { format: { type: 'json_schema', name: 'influencer_discovery', strict: true, schema: DISCOVERY_SCHEMA } }
+  };
+}
+
+// Decides what an active run needs next, from its row alone.
+export function nextDiscoveryAction(row, nowMs = Date.now(), minPollMs = BROWSER_POLL_INTERVAL_MS) {
+  const since = (value) => value ? nowMs - Date.parse(value) : Infinity;
+  if (row.status === 'starting') return since(row.updated_at || row.created_at) > STALE_START_MS ? 'fail_stale_start' : 'wait';
+  if (row.status === 'importing') return since(row.claimed_at) > STALE_IMPORT_MS ? 'release_import' : 'wait';
+  if (row.status !== 'running') return 'none';
+  if (since(row.created_at) > DISCOVERY_TIMEOUT_MS) return 'timeout';
+  return since(row.polled_at) >= minPollMs ? 'poll' : 'wait';
+}
+
+export function serializeDiscoveryRun(row) {
+  if (!row) return null;
+  return {
+    id: row.id, status: row.status, active: ACTIVE_RUN_STATUSES.includes(row.status), createdAt: row.created_at,
+    updatedAt: row.updated_at || null, completedAt: row.completed_at || null, query: row.query, requestedCount: row.requested_count,
+    effectiveCount: row.effective_count, budgetUsd: row.budget_usd, responseStatus: row.response_status || '', error: row.error || '',
+    result: parseJson(row.result, null)
+  };
+}
+
+const emptyOutcome = () => ({ parsed: null, consulted: collectConsultedSources({}), summary: { found: 0, imported: 0, duplicates: 0, failed: 0, errors: [] }, rejections: [] });
+
+async function importDiscoveryResponse(env, row, data) {
+  const outcome = { ...emptyOutcome(), consulted: collectConsultedSources(data) };
+  const outputText = responseOutputText(data);
+  try { outcome.parsed = outputText ? JSON.parse(outputText) : null; } catch { outcome.parsed = null; }
+  if (!outcome.parsed || !Array.isArray(outcome.parsed.creators)) {
+    outcome.message = data.incomplete_details?.reason === 'max_output_tokens'
+      ? 'Discovery reached the spend/output cap before it could finish. Increase the limit or request fewer creators.'
+      : outputText ? 'OpenAI returned malformed discovery results.' : 'OpenAI returned no discovery results.';
+    outcome.parsed = null;
+    return outcome;
+  }
+  const criteria = parseJson(row.criteria, {});
+  const { summary, rejections } = outcome;
+  const candidates = outcome.parsed.creators.slice(0, row.effective_count || MAX_DISCOVERY_CREATORS);
+  summary.found = candidates.length;
+  const seen = new Set();
+  for (const candidate of candidates) {
+    try {
+      const { lead } = verifyDiscoveredCreator(candidate, outcome.consulted, criteria);
+      if (seen.has(lead.handle)) { summary.duplicates++; continue; }
+      seen.add(lead.handle);
+      await insertLead(env, { id: row.user_id }, lead);
+      summary.imported++;
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 409) { summary.duplicates++; continue; }
+      summary.failed++;
+      const reason = error instanceof DiscoveryRejection ? error.reason : 'invalid_lead';
+      rejections.push({ handle: clean(candidate?.handle, 60), name: clean(candidate?.name, 120), reason, detail: clean(redactSecrets(error.message), 300) });
+      if (summary.errors.length < 10) summary.errors.push(error.message || 'Invalid discovery result.');
+    }
+  }
+  return outcome;
+}
+
+// Writes the final state of a run. With expectStatus, the write only lands if the run is still in that state.
+async function writeDiscoveryOutcome(env, row, data, outcome, status, { error = '', apiError = null, expectStatus = null } = {}) {
+  const pricing = discoveryPricing(env);
+  const inputTokens = Number(data.usage?.input_tokens || 0), outputTokens = Number(data.usage?.output_tokens || 0);
+  const webSearchCalls = (Array.isArray(data.output) ? data.output : []).filter(item => item?.type === 'web_search_call').length;
+  const usage = {
+    inputTokens, outputTokens, reasoningTokens: Number(data.usage?.output_tokens_details?.reasoning_tokens || 0), webSearchCalls,
+    estimatedCostUsd: Number((inputTokens / 1e6 * pricing.inputRate + outputTokens / 1e6 * pricing.outputRate + webSearchCalls * pricing.searchCallRate).toFixed(4))
+  };
+  const { parsed, consulted, summary, rejections } = outcome;
+  const diagnostics = {
+    runId: row.id, responseStatus: clean(data.status, 40), incompleteReason: clean(data.incomplete_details?.reason, 100),
+    candidateCount: summary.found, rejectedCount: rejections.length, rejections: rejections.slice(0, 50),
+    unconfirmed: (Array.isArray(parsed?.unconfirmed) ? parsed.unconfirmed : []).slice(0, 30).map(item => ({ name: clean(item?.name, 120), reason: clean(item?.reason, 300) })),
+    searchQueries: consulted.queries.slice(0, 30), sourceCount: consulted.urls.length,
+    sourceDomains: Object.fromEntries(Object.entries(consulted.domains).sort((a, b) => b[1] - a[1]).slice(0, 40)),
+    searchActions: consulted.searchActions, pageActions: consulted.pageActions
+  };
+  const plan = { requestedCount: row.requested_count, effectiveCount: row.effective_count, maxToolCalls: row.max_tool_calls, maxOutputTokens: row.max_output_tokens };
+  const result = { summary, searchSummary: clean(parsed?.search_summary, 1000), usage: { ...usage, budgetUsd: row.budget_usd, model: row.model }, plan, diagnostics };
+  const at = now();
+  const fields = {
+    status, error: clean(redactSecrets(error), 500), api_error: apiError ? JSON.stringify(apiError) : '',
+    response_status: diagnostics.responseStatus || row.response_status || '', incomplete_reason: diagnostics.incompleteReason,
+    search_summary: clean(parsed?.search_summary, 2000), found_count: summary.found, imported_count: summary.imported,
+    duplicate_count: summary.duplicates, failed_count: summary.failed, candidate_count: summary.found, rejected_count: rejections.length,
+    rejections: JSON.stringify(diagnostics.rejections), unconfirmed: JSON.stringify(diagnostics.unconfirmed),
+    search_queries: JSON.stringify(diagnostics.searchQueries), source_count: diagnostics.sourceCount,
+    source_domains: JSON.stringify(diagnostics.sourceDomains), source_urls: JSON.stringify(consulted.urls.slice(0, 100)),
+    input_tokens: inputTokens, output_tokens: outputTokens, reasoning_tokens: usage.reasoningTokens, web_search_calls: webSearchCalls,
+    estimated_cost_usd: usage.estimatedCostUsd, duration_ms: Math.max(0, Date.parse(at) - Date.parse(row.created_at)),
+    result: JSON.stringify(result), completed_at: at, updated_at: at
+  };
+  const where = expectStatus ? 'WHERE id = ? AND status = ?' : 'WHERE id = ?';
+  const write = await env.DB.prepare(`UPDATE influencer_discovery_runs SET ${Object.keys(fields).map(key => `${key} = ?`).join(',')} ${where}`)
+    .bind(...Object.values(fields), row.id, ...(expectStatus ? [expectStatus] : [])).run();
+  return write.meta.changes > 0;
+}
+
+// Claims a running run so exactly one invocation imports it, then records the outcome.
+async function finalizeDiscoveryRun(env, row, data, { endedReason = '' } = {}) {
+  const claimedAt = now();
+  const claim = await env.DB.prepare("UPDATE influencer_discovery_runs SET status = 'importing', claimed_at = ?, updated_at = ? WHERE id = ? AND status = 'running'")
+    .bind(claimedAt, claimedAt, row.id).run();
+  if (!claim.meta.changes) return false;
+  const claimed = { ...row, status: 'importing' };
+  if (data.status === 'completed' || data.status === 'incomplete') {
+    const outcome = await importDiscoveryResponse(env, claimed, data);
+    await writeDiscoveryOutcome(env, claimed, data, outcome, outcome.message ? 'failed' : 'complete', { error: outcome.message || '', expectStatus: 'importing' });
+  } else if (data.status === 'cancelled') {
+    await writeDiscoveryOutcome(env, claimed, data, { ...emptyOutcome(), consulted: collectConsultedSources(data) }, endedReason === 'timeout' ? 'failed' : 'cancelled', {
+      error: endedReason === 'timeout' ? 'Discovery timed out after 20 minutes and was cancelled.' : 'Discovery was cancelled.', expectStatus: 'importing'
+    });
+  } else {
+    const apiError = data.error ? { httpStatus: 200, type: 'response_failed', code: clean(data.error.code, 100), param: '', message: clean(redactSecrets(data.error.message), 500) } : null;
+    await writeDiscoveryOutcome(env, claimed, data, { ...emptyOutcome(), consulted: collectConsultedSources(data) }, 'failed', {
+      error: apiError?.message || `Discovery ended with status "${clean(data.status, 40) || 'unknown'}".`, apiError, expectStatus: 'importing'
+    });
+  }
+  return true;
+}
+
+const readRun = (env, id) => env.DB.prepare('SELECT * FROM influencer_discovery_runs WHERE id = ?').bind(id).first();
+
+async function cancelOpenAiRun(env, row, apiKey, endedReason) {
+  try {
+    const data = await openAiResponses(env, apiKey, `/${encodeURIComponent(row.response_id)}/cancel`, { method: 'POST' });
+    return finalizeDiscoveryRun(env, row, OPENAI_PENDING.has(data.status) ? { ...data, status: 'cancelled' } : data, { endedReason });
+  } catch (error) {
+    if (error.apiError?.httpStatus !== 404) throw error;
+    const status = endedReason === 'timeout' ? 'failed' : 'cancelled';
+    return writeDiscoveryOutcome(env, row, {}, emptyOutcome(), status, { error: 'OpenAI no longer has this discovery response.', apiError: error.apiError, expectStatus: 'running' });
+  }
+}
+
+// Moves one active run forward: polls OpenAI, imports finished results, or cleans up stuck and expired runs.
+async function advanceDiscoveryRun(env, row, apiKey, minPollMs = BROWSER_POLL_INTERVAL_MS) {
+  const action = nextDiscoveryAction(row, Date.now(), minPollMs);
+  if (action === 'fail_stale_start') {
+    return writeDiscoveryOutcome(env, row, {}, emptyOutcome(), 'failed', { error: 'Discovery did not start. Try again.', expectStatus: 'starting' });
+  }
+  if (action === 'release_import') {
+    // The importing invocation died. Hand the run back so it is re-imported; existing leads count as duplicates.
+    return env.DB.prepare("UPDATE influencer_discovery_runs SET status = 'running', polled_at = '', updated_at = ? WHERE id = ? AND status = 'importing' AND claimed_at = ?")
+      .bind(now(), row.id, row.claimed_at).run();
+  }
+  if (action !== 'poll' && action !== 'timeout') return;
+  if (!apiKey) {
+    if (action !== 'timeout') return;
+    return writeDiscoveryOutcome(env, row, {}, emptyOutcome(), 'failed', { error: 'Discovery timed out and no OpenAI key was available to cancel it.', expectStatus: 'running' });
+  }
+  if (action === 'timeout') return cancelOpenAiRun(env, row, apiKey, 'timeout');
+  const polledAt = now();
+  const mark = await env.DB.prepare("UPDATE influencer_discovery_runs SET polled_at = ? WHERE id = ? AND status = 'running' AND polled_at = ?")
+    .bind(polledAt, row.id, row.polled_at || '').run();
+  if (!mark.meta.changes) return;
+  let data;
+  try {
+    data = await openAiResponses(env, apiKey, `/${encodeURIComponent(row.response_id)}?include[]=web_search_call.action.sources`);
+  } catch (error) {
+    if (error.apiError?.httpStatus === 404 || error.apiError?.httpStatus === 401) {
+      return writeDiscoveryOutcome(env, row, {}, emptyOutcome(), 'failed', { error: error.message, apiError: error.apiError, expectStatus: 'running' });
+    }
+    console.error('discovery poll failed', row.id, redactSecrets(error?.message));
+    return;
+  }
+  if (OPENAI_PENDING.has(data.status)) {
+    return env.DB.prepare("UPDATE influencer_discovery_runs SET response_status = ?, updated_at = ? WHERE id = ? AND status = 'running'")
+      .bind(clean(data.status, 40), now(), row.id).run();
+  }
+  return finalizeDiscoveryRun(env, row, data);
+}
+
+async function advanceActiveRuns(env, rows, minPollMs) {
+  if (!rows.length) return;
+  let apiKey = '';
+  try { apiKey = await openAiApiKey(env); } catch (error) { console.error('discovery key unavailable', redactSecrets(error?.message)); }
+  for (const row of rows) {
+    try { await advanceDiscoveryRun(env, row, apiKey, minPollMs); }
+    catch (error) { console.error('discovery run update failed', row.id, redactSecrets(error?.message)); }
+  }
+}
+
+// Every minute: collect finished background runs even when nobody has the CRM open.
+export async function discoveryCron(env) {
+  const { results } = await env.DB.prepare(`SELECT * FROM influencer_discovery_runs WHERE ${ACTIVE_RUNS_SQL} ORDER BY created_at LIMIT 10`).all();
+  await advanceActiveRuns(env, results || [], CRON_POLL_INTERVAL_MS);
 }
 
 async function discoverInfluencers(request, env, headers) {
@@ -578,112 +803,78 @@ async function discoverInfluencers(request, env, headers) {
     followerMax: intOrNull(body.followerMax, 'Maximum followers'), exclusions: clean(body.exclusions, 1000)
   };
   if (criteria.followerMin !== null && criteria.followerMax !== null && criteria.followerMin > criteria.followerMax) throw new HttpError(400, 'Minimum followers cannot exceed maximum followers.');
-  const pricing = discoveryPricing(env);
-  const plan = planDiscoveryBudget({ count: body.count, budgetUsd: body.budgetUsd, ...pricing });
+  const plan = planDiscoveryBudget({ count: body.count, budgetUsd: body.budgetUsd, ...discoveryPricing(env) });
   const apiKey = await openAiApiKey(env);
   if (!apiKey) throw new HttpError(503, 'Add an OpenAI API key in Find Creators → Settings first.');
+  // Clear out this user's stuck or finished runs before enforcing one active run per user.
+  const { results: existing } = await env.DB.prepare(`SELECT * FROM influencer_discovery_runs WHERE user_id = ? AND ${ACTIVE_RUNS_SQL}`).bind(user.id).all();
+  await advanceActiveRuns(env, existing || [], BROWSER_POLL_INTERVAL_MS);
   const model = clean(env.OPENAI_DISCOVERY_MODEL || env.OPENAI_MODEL || 'gpt-5.6-terra', 100);
-  const endpoint = `${String(env.OPENAI_API_URL || 'https://api.openai.com/v1').replace(/\/$/, '')}/responses`;
-  const started = Date.now();
+  const at = now();
   const run = {
-    id: crypto.randomUUID(), user_id: user.id, created_at: now(), query, criteria: JSON.stringify(criteria), requested_count: plan.requestedCount,
-    budget_usd: Number(body.budgetUsd), effective_count: plan.effectiveCount, max_tool_calls: plan.maxToolCalls, max_output_tokens: plan.maxOutputTokens, model
+    id: crypto.randomUUID(), user_id: user.id, created_at: at, updated_at: at, query, criteria: JSON.stringify(criteria),
+    requested_count: plan.requestedCount, budget_usd: Number(body.budgetUsd), effective_count: plan.effectiveCount,
+    max_tool_calls: plan.maxToolCalls, max_output_tokens: plan.maxOutputTokens, model, status: 'starting'
   };
-  const summary = { found: 0, imported: 0, duplicates: 0, failed: 0, errors: [] };
-  const rejections = [];
-  let data = {}, parsed = null, consulted = collectConsultedSources({});
-  const usageOf = () => {
-    const inputTokens = Number(data.usage?.input_tokens || 0), outputTokens = Number(data.usage?.output_tokens || 0);
-    const webSearchCalls = (Array.isArray(data.output) ? data.output : []).filter(item => item?.type === 'web_search_call').length;
-    const estimatedCostUsd = Number((inputTokens / 1e6 * pricing.inputRate + outputTokens / 1e6 * pricing.outputRate + webSearchCalls * pricing.searchCallRate).toFixed(4));
-    return { inputTokens, outputTokens, reasoningTokens: Number(data.usage?.output_tokens_details?.reasoning_tokens || 0), webSearchCalls, estimatedCostUsd };
-  };
-  const diagnosticsOf = () => ({
-    runId: run.id, responseStatus: clean(data.status, 40), incompleteReason: clean(data.incomplete_details?.reason, 100),
-    candidateCount: summary.found, rejectedCount: rejections.length, rejections: rejections.slice(0, 50),
-    unconfirmed: (Array.isArray(parsed?.unconfirmed) ? parsed.unconfirmed : []).slice(0, 30).map(item => ({ name: clean(item?.name, 120), reason: clean(item?.reason, 300) })),
-    searchQueries: consulted.queries.slice(0, 30), sourceCount: consulted.urls.length,
-    sourceDomains: Object.fromEntries(Object.entries(consulted.domains).sort((a, b) => b[1] - a[1]).slice(0, 40)),
-    searchActions: consulted.searchActions, pageActions: consulted.pageActions
-  });
-  const auditColumns = (status, errorMessage = '', apiError = null) => {
-    const usage = usageOf(), diagnostics = diagnosticsOf();
-    return {
-      ...run, status, error: clean(redactSecrets(errorMessage), 500), api_error: apiError ? JSON.stringify(apiError) : '',
-      response_id: clean(data.id, 100), response_status: diagnostics.responseStatus, incomplete_reason: diagnostics.incompleteReason,
-      search_summary: clean(parsed?.search_summary, 2000), found_count: summary.found, imported_count: summary.imported,
-      duplicate_count: summary.duplicates, failed_count: summary.failed, candidate_count: summary.found, rejected_count: rejections.length,
-      rejections: JSON.stringify(diagnostics.rejections), unconfirmed: JSON.stringify(diagnostics.unconfirmed),
-      search_queries: JSON.stringify(diagnostics.searchQueries), source_count: diagnostics.sourceCount,
-      source_domains: JSON.stringify(diagnostics.sourceDomains), source_urls: JSON.stringify(consulted.urls.slice(0, 100)),
-      input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, reasoning_tokens: usage.reasoningTokens,
-      web_search_calls: usage.webSearchCalls, estimated_cost_usd: usage.estimatedCostUsd, duration_ms: Date.now() - started
-    };
-  };
-  let apiError = null;
+  const columns = Object.keys(run);
+  const inserted = await env.DB.prepare(`INSERT INTO influencer_discovery_runs (${columns.join(',')}) SELECT ${columns.map(() => '?').join(',')}
+    WHERE NOT EXISTS (SELECT 1 FROM influencer_discovery_runs WHERE user_id = ? AND ${ACTIVE_RUNS_SQL})`).bind(...Object.values(run), user.id).run();
+  if (!inserted.meta.changes) throw new HttpError(409, 'You already have a discovery search running. Wait for it to finish or cancel it.');
+  let data;
   try {
-    let response;
-    try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          reasoning: { effort: 'low' },
-          // Open web: Instagram profile pages are sparsely indexed, so a domain filter starves the search.
-          tools: [{ type: 'web_search', search_context_size: 'medium' }],
-          tool_choice: 'required',
-          max_tool_calls: plan.maxToolCalls,
-          max_output_tokens: plan.maxOutputTokens,
-          include: ['web_search_call.action.sources'],
-          instructions: DISCOVERY_INSTRUCTIONS(plan.effectiveCount),
-          input: JSON.stringify({ request: query, ...criteria, creator_limit: plan.effectiveCount }),
-          text: { format: { type: 'json_schema', name: 'influencer_discovery', strict: true, schema: DISCOVERY_SCHEMA } }
-        })
-      });
-    } catch (error) {
-      apiError = { httpStatus: 0, type: 'network_error', code: '', param: '', message: clean(redactSecrets(error?.message), 500) };
-      throw new HttpError(502, 'Could not reach OpenAI for discovery. Try again shortly.');
-    }
-    data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      apiError = openAiErrorDetails(response.status, data);
-      throw new HttpError(502, apiError.message || `OpenAI discovery failed (${response.status}).`);
-    }
-    consulted = collectConsultedSources(data);
-    const outputText = responseOutputText(data);
-    try { parsed = outputText ? JSON.parse(outputText) : null; } catch { parsed = null; }
-    if (!parsed || !Array.isArray(parsed.creators)) {
-      if (data.incomplete_details?.reason === 'max_output_tokens') throw new HttpError(502, 'Discovery reached the spend/output cap before it could finish. Increase the limit or request fewer creators.');
-      throw new HttpError(502, outputText ? 'OpenAI returned malformed discovery results.' : 'OpenAI returned no discovery results.');
-    }
-    const candidates = parsed.creators.slice(0, plan.effectiveCount);
-    summary.found = candidates.length;
-    const seen = new Set();
-    for (const candidate of candidates) {
-      try {
-        const { lead } = verifyDiscoveredCreator(candidate, consulted, criteria);
-        if (seen.has(lead.handle)) { summary.duplicates++; continue; }
-        seen.add(lead.handle);
-        await insertLead(env, user, lead);
-        summary.imported++;
-      } catch (error) {
-        if (error instanceof HttpError && error.status === 409) { summary.duplicates++; continue; }
-        summary.failed++;
-        const reason = error instanceof DiscoveryRejection ? error.reason : 'invalid_lead';
-        rejections.push({ handle: clean(candidate?.handle, 60), name: clean(candidate?.name, 120), reason, detail: clean(redactSecrets(error.message), 300) });
-        if (summary.errors.length < 10) summary.errors.push(error.message || 'Invalid discovery result.');
-      }
-    }
-    await recordDiscoveryRun(env, auditColumns('complete'));
-    return json({
-      ok: true, summary, searchSummary: clean(parsed.search_summary, 1000),
-      usage: { ...usageOf(), budgetUsd: Number(body.budgetUsd), model }, plan, diagnostics: diagnosticsOf()
-    }, 200, headers);
+    data = await openAiResponses(env, apiKey, '', { method: 'POST', body: buildDiscoveryRequest({ model, plan, query, criteria }) });
+    if (!data.id) throw new HttpError(502, 'OpenAI did not return a discovery response ID.');
   } catch (error) {
-    await recordDiscoveryRun(env, auditColumns('failed', error.message, apiError));
+    await writeDiscoveryOutcome(env, run, {}, emptyOutcome(), 'failed', { error: error.message, apiError: error.apiError || null, expectStatus: 'starting' });
     throw error;
   }
+  const started = await env.DB.prepare("UPDATE influencer_discovery_runs SET status = 'running', response_id = ?, response_status = ?, polled_at = ?, updated_at = ? WHERE id = ? AND status = 'starting'")
+    .bind(clean(data.id, 100), clean(data.status, 40), now(), now(), run.id).run();
+  if (!started.meta.changes) {
+    // Cancelled while OpenAI was accepting the request.
+    if (OPENAI_PENDING.has(data.status)) await openAiResponses(env, apiKey, `/${encodeURIComponent(data.id)}/cancel`, { method: 'POST' }).catch(() => {});
+  } else if (!OPENAI_PENDING.has(data.status)) {
+    await finalizeDiscoveryRun(env, { ...run, status: 'running', response_id: data.id }, data);
+  }
+  return json({ ok: true, run: serializeDiscoveryRun(await readRun(env, run.id)), plan }, 202, headers);
+}
+
+async function ownedRun(request, env, id) {
+  const user = await requireUser(request, env);
+  const row = await readRun(env, clean(id, 64));
+  if (!row || (row.user_id !== user.id && user.role !== 'admin' && user.role !== 'owner')) throw new HttpError(404, 'Discovery run not found.');
+  return row;
+}
+
+async function listDiscoveryRuns(request, env, headers) {
+  const user = await requireUser(request, env);
+  const activeSql = `SELECT * FROM influencer_discovery_runs WHERE user_id = ? AND ${ACTIVE_RUNS_SQL}`;
+  const { results: active } = await env.DB.prepare(activeSql).bind(user.id).all();
+  await advanceActiveRuns(env, active || [], BROWSER_POLL_INTERVAL_MS);
+  const [current, recent] = await env.DB.batch([
+    env.DB.prepare(`${activeSql} ORDER BY created_at DESC LIMIT 1`).bind(user.id),
+    env.DB.prepare('SELECT * FROM influencer_discovery_runs WHERE user_id = ? ORDER BY created_at DESC LIMIT 5').bind(user.id)
+  ]);
+  return json({ ok: true, active: serializeDiscoveryRun(current.results[0]), recent: recent.results.map(serializeDiscoveryRun) }, 200, headers);
+}
+
+async function getDiscoveryRun(request, env, headers, [id]) {
+  const row = await ownedRun(request, env, id);
+  if (ACTIVE_RUN_STATUSES.includes(row.status)) await advanceActiveRuns(env, [row], BROWSER_POLL_INTERVAL_MS);
+  return json({ ok: true, run: serializeDiscoveryRun(await readRun(env, row.id)) }, 200, headers);
+}
+
+async function cancelDiscoveryRun(request, env, headers, [id]) {
+  const row = await ownedRun(request, env, id);
+  if (row.status === 'importing') throw new HttpError(409, 'This search already finished and its results are being added.');
+  if (row.status === 'starting') {
+    await writeDiscoveryOutcome(env, row, {}, emptyOutcome(), 'cancelled', { error: 'Discovery was cancelled.', expectStatus: 'starting' });
+  } else if (row.status === 'running') {
+    const apiKey = await openAiApiKey(env);
+    if (!apiKey) throw new HttpError(503, 'Add an OpenAI API key in Find Creators → Settings to cancel this search.');
+    await cancelOpenAiRun(env, row, apiKey, 'user');
+  }
+  return json({ ok: true, run: serializeDiscoveryRun(await readRun(env, row.id)) }, 200, headers);
 }
 
 function analysisPayload(lead, profile) {
@@ -780,6 +971,9 @@ export const influencerLeadRoutes = {
   'POST /api/influencer-leads/import': importLeads,
   'POST /api/influencer-leads/analyze-batch': analyzeBatch,
   'POST /api/influencer-leads/discover': discoverInfluencers,
+  'GET /api/influencer-leads/discover/runs': listDiscoveryRuns,
+  'GET /api/influencer-leads/discover/runs/:id': getDiscoveryRun,
+  'POST /api/influencer-leads/discover/runs/:id/cancel': cancelDiscoveryRun,
   'GET /api/influencer-leads/profile': getProfile,
   'PATCH /api/influencer-leads/profile': saveProfile,
   'GET /api/influencer-leads/settings': getAiSettings,

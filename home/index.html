@@ -643,6 +643,7 @@
     </a>
     <a class="drawer-item drawer-child" id="drawer-nav-influencer-leads-page" href="#" onclick="drawerNav('influencer-leads')">
       <span class="drawer-item-icon">⌕</span> Find Creators
+      <span class="drawer-item-badge ifl-discovery-badge" id="drawer-badge-ifl-discovery" hidden>Searching…</span>
     </a>
     <a class="drawer-item" id="drawer-nav-operations-page" href="#" onclick="drawerNav('operations')">
       <span class="drawer-item-icon">▣</span> Operations
@@ -689,6 +690,7 @@
       </a>
       <a class="side-item side-child" id="nav-influencer-leads-page" href="#" onclick="showPage('influencer-leads');return false;">
         <span class="side-icon">⌕</span> Find Creators
+        <span class="side-badge live ifl-discovery-badge" id="badge-ifl-discovery" hidden>Searching…</span>
       </a>
       <a class="side-item" id="nav-operations-page" href="#" onclick="showPage('operations');return false;">
         <span class="side-icon">▣</span> Operations
@@ -1274,7 +1276,7 @@
   <div class="ops-modal ifl-modal" role="dialog" aria-labelledby="ifl-discovery-title">
     <div class="ops-modal-head"><span class="compose-title" id="ifl-discovery-title">Find Influencers</span><button class="drawer-close" onclick="closeIflDiscovery()" aria-label="Close">✕</button></div>
     <div class="ops-modal-body">
-      <p class="ifl-profile-help">Searches public web sources (articles, creator pages, link-in-bio pages) for real creators and adds them as Ready to Review only when their Instagram handle is confirmed by a source. Nothing is messaged, followed, or scraped.</p>
+      <p class="ifl-profile-help">Searches public web sources (articles, creator pages, link-in-bio pages) for real creators and adds them as Ready to Review only when their Instagram handle is confirmed by a source. Nothing is messaged, followed, or scraped. Searches run in the background, so you can close this window while one runs.</p>
       <div class="ops-form-grid">
         <div class="c-field full"><label>What kind of influencers?</label><textarea class="c-input" id="ifl-d-query" placeholder="Beauty creators who make authentic skincare tutorials for women ages 25–40"></textarea></div>
         <div class="c-field"><label>Niche</label><input class="c-input" id="ifl-d-niche" list="ifl-niche-options" placeholder="Beauty &amp; Skincare"></div>
@@ -1289,7 +1291,7 @@
       <div class="email-msg" id="ifl-discovery-msg"></div>
       <div id="ifl-discovery-results" hidden></div>
     </div>
-    <div class="ops-modal-foot"><button class="action-btn" onclick="closeIflDiscovery()">Close</button><button class="send-btn" id="ifl-discovery-run" onclick="runIflDiscovery()"><span class="btn-text">⌕ Find Influencers</span></button></div>
+    <div class="ops-modal-foot"><button class="action-btn" onclick="closeIflDiscovery()">Close</button><button class="action-btn" id="ifl-discovery-cancel" onclick="cancelIflDiscovery()" hidden>Cancel search</button><button class="send-btn" id="ifl-discovery-run" onclick="runIflDiscovery()"><span class="btn-text">⌕ Find Influencers</span></button></div>
   </div>
 </div>
 
