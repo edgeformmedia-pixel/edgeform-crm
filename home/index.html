@@ -436,6 +436,61 @@
   .bill-msg.show    { display: block; }
   .bill-msg.success { color: var(--green); border-color: rgba(61,255,160,0.3); background: rgba(61,255,160,0.06); }
   .bill-msg.error   { color: var(--red);   border-color: rgba(255,92,92,0.3);   background: rgba(255,92,92,0.07); }
+
+  /* ════ OPERATIONS ════ */
+  .ops-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .ops-new { width: auto; margin: 0; padding: 10px 18px; font-size: 13px; }
+  .ops-tabs { margin-bottom: 0; }
+  .ops-tab-count { margin-left: 6px; opacity: 0.6; }
+  .ops-toolbar { display: flex; align-items: center; gap: 10px; margin: 18px 0 16px; flex-wrap: wrap; }
+  .ops-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .op-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; cursor: pointer; transition: border-color 0.15s, transform 0.15s; text-align: left; font: inherit; color: inherit; }
+  .op-card:hover { border-color: var(--border-hi); transform: translateY(-1px); }
+  .op-card-top { display: flex; align-items: center; gap: 6px; }
+  .op-card-top .chip:last-child { margin-left: auto; }
+  .op-name { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
+  .op-client { font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .op-crm { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--accent-bright); text-decoration: none; border: 1px solid var(--border); background: var(--surface2); border-radius: 8px; padding: 10px 12px; }
+  .op-crm:hover { border-color: var(--accent); }
+  .op-crm span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .op-metrics { display: flex; flex-direction: column; gap: 10px; }
+  .op-metric-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; margin-bottom: 5px; }
+  .op-metric-label { color: var(--text-dim); }
+  .op-metric-val { font-family: var(--mono); font-size: 11px; color: var(--text); white-space: nowrap; }
+  .op-metric-val em { font-style: normal; color: var(--text-muted); }
+  .op-bar { height: 5px; border-radius: 99px; background: var(--surface2); border: 1px solid var(--border); overflow: hidden; }
+  .op-bar i { display: block; height: 100%; background: var(--accent-bright); border-radius: 99px; }
+  .op-bar.done i { background: var(--green); }
+  .op-empty-metrics { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+  .op-foot { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 10px; margin-top: auto; }
+
+  .ops-modal-bg { position: fixed; inset: 0; background: rgba(8,16,12,0.45); backdrop-filter: blur(3px); z-index: 400; display: flex; align-items: flex-start; justify-content: center; padding: 60px 16px; overflow-y: auto; }
+  .ops-modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; width: 100%; max-width: 680px; box-shadow: 0 30px 80px rgba(0,0,0,0.25); animation: fadeUp 0.2s ease both; }
+  .ops-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 22px; border-bottom: 1px solid var(--border); }
+  .ops-modal-body { padding: 22px; }
+  .ops-modal-foot { display: flex; align-items: center; gap: 8px; padding: 14px 22px; border-top: 1px solid var(--border); }
+  .ops-modal-foot .send-btn { width: auto; margin: 0 0 0 auto; padding: 10px 22px; font-size: 13px; }
+  .ops-type-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }
+  .ops-type { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: none; cursor: pointer; text-align: left; font: inherit; color: var(--text-dim); transition: all 0.15s; }
+  .ops-type:hover { border-color: var(--border-hi); }
+  .ops-type.active { border-color: var(--accent); background: var(--accent-glow); color: var(--text); }
+  .ops-type b { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+  .ops-type small { font-size: 11px; line-height: 1.45; display: block; }
+  .ops-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  .ops-form-grid .full { grid-column: 1 / -1; }
+  .ops-slug { display: flex; align-items: stretch; }
+  .ops-slug .c-input { border-radius: 7px 0 0 7px; }
+  .ops-slug span { display: flex; align-items: center; font-family: var(--mono); font-size: 12px; color: var(--text-muted); background: var(--surface2); border: 1px solid var(--border); border-left: none; border-radius: 0 7px 7px 0; padding: 0 10px; white-space: nowrap; }
+  .ops-hint { font-family: var(--mono); font-size: 10px; color: var(--text-muted); margin-top: 5px; }
+  .ops-metric-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr 0.6fr 28px; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .ops-metric-grid .c-input { padding: 7px 8px; font-size: 12px; }
+  .ops-metric-grid.head span { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+  .ops-metric-del { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; }
+  .ops-metric-del:hover { color: var(--red); }
+  .ops-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .ops-presets button { font-family: var(--mono); font-size: 10px; padding: 4px 10px; border-radius: 99px; border: 1px dashed var(--border-hi); background: none; color: var(--text-dim); cursor: pointer; }
+  .ops-presets button:hover { border-color: var(--accent); color: var(--accent-bright); }
+  @media (max-width: 700px) { .ops-type-picker, .ops-form-grid { grid-template-columns: 1fr; } .ops-metric-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr 28px; } .ops-metric-grid > :nth-child(5) { display: none; } }
 </style>
 <link rel="stylesheet" href="admin-theme.css">
 </head>
@@ -497,6 +552,10 @@
       <span class="drawer-item-icon">★</span> Creators
       <span class="drawer-item-badge" id="drawer-badge-creators">—</span>
     </a>
+    <a class="drawer-item" id="drawer-nav-operations-page" href="#" onclick="drawerNav('operations')">
+      <span class="drawer-item-icon">▣</span> Operations
+      <span class="drawer-item-badge" id="drawer-badge-operations">—</span>
+    </a>
     <a class="drawer-item" id="drawer-nav-mail-page" href="#" onclick="drawerNav('mail')">
       <span class="drawer-item-icon">✉</span> Mail
       <span class="drawer-item-badge" id="drawer-badge-mail" hidden>0</span>
@@ -535,6 +594,10 @@
       <a class="side-item" id="nav-creators-page" href="#" onclick="showPage('creators');return false;">
         <span class="side-icon">★</span> Creators
         <span class="side-badge" id="badge-creators">—</span>
+      </a>
+      <a class="side-item" id="nav-operations-page" href="#" onclick="showPage('operations');return false;">
+        <span class="side-icon">▣</span> Operations
+        <span class="side-badge" id="badge-operations">—</span>
       </a>
       <a class="side-item" id="nav-mail-page" href="#" onclick="showPage('mail');return false;">
         <span class="side-icon">✉</span> Mail
@@ -668,6 +731,39 @@
       </div>
       <div id="creator-list" class="submit-list">
         <div class="state-box"><div class="state-icon">★</div>Loading creators…</div>
+      </div>
+    </div>
+
+    <!-- ══ OPERATIONS ══ -->
+    <div class="page-view" id="page-operations">
+      <div class="page-head ops-head">
+        <div>
+          <div class="page-title">Operations</div>
+          <div class="page-sub">Client work we've taken on · marketing campaigns, sales CRMs, and systems we build</div>
+        </div>
+        <button class="send-btn ops-new" onclick="openOperation()"><span class="btn-text">+ New Operation</span></button>
+      </div>
+      <div class="kpi-row">
+        <div class="kpi"><div class="kpi-bg-icon">▣</div><div class="kpi-label">Active operations</div><div class="kpi-val" id="ops-kpi-active">—</div><div class="kpi-delta neutral" id="ops-kpi-active-sub">—</div></div>
+        <div class="kpi"><div class="kpi-bg-icon">◎</div><div class="kpi-label">Marketing</div><div class="kpi-val" id="ops-kpi-marketing">—</div><div class="kpi-delta neutral" id="ops-kpi-marketing-sub">—</div></div>
+        <div class="kpi"><div class="kpi-bg-icon">$</div><div class="kpi-label">Sales CRMs</div><div class="kpi-val" id="ops-kpi-sales">—</div><div class="kpi-delta neutral">Each runs on its own subdomain</div></div>
+        <div class="kpi"><div class="kpi-bg-icon">⚙</div><div class="kpi-label">Systems builds</div><div class="kpi-val" id="ops-kpi-systems">—</div><div class="kpi-delta neutral" id="ops-kpi-systems-sub">—</div></div>
+      </div>
+      <div class="billing-tabs ops-tabs" id="ops-tabs"></div>
+      <div class="ops-toolbar">
+        <input class="search-box" id="ops-search" type="text" placeholder="Search operation, client, contact…" oninput="renderOperations()">
+        <select class="filter-select" id="ops-status" onchange="renderOperations()">
+          <option value="open">Planning, active &amp; paused</option>
+          <option value="">All statuses</option>
+          <option value="planning">Planning</option>
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="completed">Completed</option>
+        </select>
+        <button class="refresh-btn" onclick="loadOperations()">↻ Refresh</button>
+      </div>
+      <div class="ops-grid" id="ops-list">
+        <div class="state-box" style="grid-column:1/-1;"><div class="state-icon">▣</div>Loading operations…</div>
       </div>
     </div>
 
@@ -908,6 +1004,48 @@
 </div>
 
 
+<div class="ops-modal-bg" id="ops-modal" hidden onclick="if (event.target === this) closeOperation()">
+  <div class="ops-modal" role="dialog" aria-labelledby="ops-modal-title">
+    <div class="ops-modal-head">
+      <span class="compose-title" id="ops-modal-title">New Operation</span>
+      <button class="drawer-close" onclick="closeOperation()" aria-label="Close">✕</button>
+    </div>
+    <div class="ops-modal-body">
+      <div class="ops-type-picker" id="op-type-picker"></div>
+      <div class="ops-form-grid">
+        <div class="c-field"><label>Operation Name</label><input class="c-input" id="op-name" type="text" placeholder="Acme Roofing" oninput="suggestSlug()"></div>
+        <div class="c-field"><label>Client / Company</label><input class="c-input" id="op-client" type="text" placeholder="Acme Roofing LLC"></div>
+        <div class="c-field"><label>Contact Name</label><input class="c-input" id="op-contact-name" type="text"></div>
+        <div class="c-field"><label>Contact Email</label><input class="c-input" id="op-contact-email" type="email" placeholder="owner@client.com"></div>
+        <div class="c-field"><label>Status</label>
+          <select class="c-input" id="op-status">
+            <option value="planning">Planning</option><option value="active">Active</option><option value="paused">Paused</option><option value="completed">Completed</option>
+          </select>
+        </div>
+        <div class="c-field"><label>Start Date</label><input class="c-input" id="op-start" type="date"></div>
+        <div class="c-field full" id="op-slug-field">
+          <label id="op-slug-label">Client CRM</label>
+          <div class="ops-slug"><input class="c-input" id="op-slug" type="text" placeholder="acme" oninput="this.dataset.touched = '1'"><span id="op-slug-domain">.edgeform-media.com</span></div>
+          <div class="ops-hint" id="op-slug-hint"></div>
+        </div>
+        <div class="c-field full" id="op-metrics-field">
+          <label id="op-metrics-label">Numbers &amp; Goals</label>
+          <div class="ops-metric-grid head"><span>Metric</span><span>Start</span><span>Current</span><span>Goal</span><span>Unit</span><span></span></div>
+          <div id="op-metrics"></div>
+          <div class="ops-presets" id="op-presets"></div>
+        </div>
+        <div class="c-field full"><label>Notes</label><textarea class="c-input" id="op-notes" style="min-height:90px;" placeholder="Scope, deliverables, access, anything the team should know…"></textarea></div>
+      </div>
+      <div class="email-msg" id="op-msg"></div>
+    </div>
+    <div class="ops-modal-foot">
+      <button class="action-btn" id="op-delete" onclick="deleteOperation()" hidden>Delete</button>
+      <button class="action-btn" onclick="closeOperation()">Cancel</button>
+      <button class="send-btn" id="op-save" onclick="saveOperation()"><span class="btn-text">Create Operation</span></button>
+    </div>
+  </div>
+</div>
+
 <div class="status-bar">
   <div class="sb-item"><div class="sb-dot" style="background:var(--green)"></div>ONLINE</div>
   <div class="sb-item"><div class="sb-dot" style="background:var(--accent)"></div><span id="sb-user">—</span></div>
@@ -1007,7 +1145,7 @@ function initApp(session) {
   document.getElementById('auth-guard').style.display = 'none';
   document.body.classList.add('ready');
   loadSubmits();
-
+  loadOperations();
 }
 
 // ─── Page nav ─────────────────────────────────────────────────
@@ -1426,6 +1564,209 @@ async function updateCreator(id, rosterStatus) {
     alert('Not saved: ' + err.message);
   }
 }
+
+// ─── Operations ───────────────────────────────────────────────
+const OP_TYPES = {
+  marketing: { label: 'Marketing', chip: 'chip-blue', desc: 'Track views, followers, and the goals we set.',
+    presets: [['Views', ''], ['Followers', ''], ['Engagement', '%'], ['Leads', '/mo']] },
+  sales: { label: 'Sales', chip: 'chip-green', desc: 'We run their sales team out of a CRM we build them.', presets: [] },
+  systems: { label: 'Systems', chip: 'chip-purple', desc: 'Pipelines & CRM development to raise their numbers.',
+    presets: [['Leads', '/mo'], ['Booked calls', '/mo'], ['Close rate', '%'], ['Revenue', '$/mo']] }
+};
+const OP_STATUS_CHIP = { planning: 'chip-orange', active: 'chip-green', paused: 'chip-muted', completed: 'chip-purple' };
+let allOperations = [];
+let opsDomain = 'edgeform-media.com';
+let opsTab = '';
+let editingOp = null;
+let opType = 'marketing';
+
+async function loadOperations() {
+  try {
+    const res = await api('/api/operations');
+    if (!res.ok) throw new Error(res.error);
+    allOperations = res.operations;
+    opsDomain = res.domain;
+    renderOperations();
+  } catch (err) {
+    document.getElementById('ops-list').innerHTML = `<div class="state-box" style="grid-column:1/-1;">Failed to load operations: ${esc(err.message)}</div>`;
+  }
+}
+
+const fmtNum = (v) => v === null || v === undefined ? '—' : Number(v).toLocaleString('en-US', { notation: Math.abs(v) >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 });
+const withUnit = (v, unit) => v === null || v === undefined ? '—' : unit.startsWith('$') ? `$${fmtNum(v)}${esc(unit.slice(1))}` : `${fmtNum(v)}${esc(unit)}`;
+
+// Share of the way from the starting point to the goal.
+function metricProgress(m) {
+  if (m.goal === null || m.current === null) return null;
+  const start = m.baseline ?? 0;
+  if (m.goal === start) return m.current >= m.goal ? 1 : 0;
+  return Math.max(0, Math.min(1, (m.current - start) / (m.goal - start)));
+}
+
+function renderOperations() {
+  const counts = { '': allOperations.length };
+  for (const op of allOperations) counts[op.type] = (counts[op.type] || 0) + 1;
+  document.getElementById('ops-tabs').innerHTML = [['', 'All'], ...Object.entries(OP_TYPES).map(([k, t]) => [k, t.label])]
+    .map(([k, label]) => `<button class="billing-tab${opsTab === k ? ' active' : ''}" onclick="opsTab='${k}';renderOperations()">${label}<span class="ops-tab-count">${counts[k] || 0}</span></button>`).join('');
+
+  const open = allOperations.filter(o => o.status !== 'completed');
+  const active = allOperations.filter(o => o.status === 'active');
+  const goalsHit = (type) => {
+    const metrics = allOperations.filter(o => o.type === type && o.status !== 'completed').flatMap(o => o.metrics).filter(m => metricProgress(m) !== null);
+    return metrics.length ? `${metrics.filter(m => metricProgress(m) >= 1).length} of ${metrics.length} goals hit` : 'No goals set yet';
+  };
+  document.getElementById('ops-kpi-active').textContent = active.length;
+  document.getElementById('ops-kpi-active-sub').textContent = `${open.length - active.length} planning or paused`;
+  document.getElementById('ops-kpi-marketing').textContent = open.filter(o => o.type === 'marketing').length;
+  document.getElementById('ops-kpi-marketing-sub').textContent = goalsHit('marketing');
+  document.getElementById('ops-kpi-sales').textContent = open.filter(o => o.type === 'sales').length;
+  document.getElementById('ops-kpi-systems').textContent = open.filter(o => o.type === 'systems').length;
+  document.getElementById('ops-kpi-systems-sub').textContent = goalsHit('systems');
+  for (const id of ['badge-operations', 'drawer-badge-operations']) document.getElementById(id).textContent = open.length;
+
+  const q = document.getElementById('ops-search').value.toLowerCase();
+  const status = document.getElementById('ops-status').value;
+  const rows = allOperations.filter(o =>
+    (!opsTab || o.type === opsTab) &&
+    (!status || (status === 'open' ? o.status !== 'completed' : o.status === status)) &&
+    (!q || [o.name, o.client, o.contactName, o.contactEmail, o.slug, o.notes].join(' ').toLowerCase().includes(q)));
+
+  const list = document.getElementById('ops-list');
+  if (!rows.length) {
+    list.innerHTML = `<div class="state-box" style="grid-column:1/-1;"><div class="state-icon">▣</div>${allOperations.length ? 'No operations match these filters.' : 'No operations yet. Create the first one to start tracking client work.'}</div>`;
+    return;
+  }
+  list.innerHTML = rows.map(o => {
+    const type = OP_TYPES[o.type] || { label: o.type, chip: 'chip-muted' };
+    const crm = o.crmUrl ? `<a class="op-crm" href="${esc(o.crmUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span>${esc(o.slug)}.${esc(opsDomain)}</span>Open CRM ↗</a>` : '';
+    const metrics = o.metrics.slice(0, 4).map(m => {
+      const p = metricProgress(m);
+      return `<div>
+        <div class="op-metric-row"><span class="op-metric-label">${esc(m.label)}</span>
+          <span class="op-metric-val">${withUnit(m.current, m.unit)}${m.goal !== null ? ` <em>/ ${withUnit(m.goal, m.unit)}</em>` : ''}${p !== null ? ` <em>· ${Math.round(p * 100)}%</em>` : ''}</span></div>
+        ${p !== null ? `<div class="op-bar${p >= 1 ? ' done' : ''}"><i style="width:${(p * 100).toFixed(1)}%"></i></div>` : ''}
+      </div>`;
+    }).join('');
+    const body = o.type === 'sales' ? crm
+      : `${crm}${metrics ? `<div class="op-metrics">${metrics}</div>` : '<div class="op-empty-metrics">No numbers tracked yet · open to add goals</div>'}`;
+    return `<div class="op-card" role="button" tabindex="0" data-id="${esc(o.id)}" onclick="openOperation(this.dataset.id)" onkeydown="if (event.key === 'Enter') openOperation(this.dataset.id)">
+      <div class="op-card-top"><span class="chip ${type.chip}">${esc(type.label)}</span><span class="chip ${OP_STATUS_CHIP[o.status] || 'chip-muted'}">${esc(o.status)}</span></div>
+      <div><div class="op-name">${esc(o.name)}</div><div class="op-client">${esc([o.client, o.contactName].filter(Boolean).join(' · ') || 'No client details')}</div></div>
+      ${body}
+      <div class="op-foot"><span>${o.startDate ? 'Started ' + fmtDate(o.startDate + 'T12:00:00') : 'No start date'}</span><span>Updated ${fmtDate(o.updatedAt)}</span></div>
+    </div>`;
+  }).join('');
+}
+
+function openOperation(id) {
+  editingOp = id ? allOperations.find(o => o.id === id) : null;
+  const o = editingOp || { type: opsTab || 'marketing', status: 'active', metrics: [] };
+  document.getElementById('ops-modal-title').textContent = editingOp ? editingOp.name : 'New Operation';
+  document.getElementById('op-save').querySelector('.btn-text').textContent = editingOp ? 'Save Changes' : 'Create Operation';
+  document.getElementById('op-delete').hidden = !editingOp || !['admin', 'owner'].includes(currentUser.role);
+  document.getElementById('op-name').value = o.name || '';
+  document.getElementById('op-client').value = o.client || '';
+  document.getElementById('op-contact-name').value = o.contactName || '';
+  document.getElementById('op-contact-email').value = o.contactEmail || '';
+  document.getElementById('op-status').value = o.status;
+  document.getElementById('op-start').value = o.startDate || (editingOp ? '' : new Date().toLocaleDateString('en-CA'));
+  document.getElementById('op-notes').value = o.notes || '';
+  const slug = document.getElementById('op-slug');
+  slug.value = o.slug || '';
+  slug.dataset.touched = o.slug ? '1' : '';
+  document.getElementById('op-slug-domain').textContent = '.' + opsDomain;
+  document.getElementById('op-metrics').innerHTML = '';
+  o.metrics.forEach(addMetricRow);
+  document.getElementById('op-msg').className = 'email-msg';
+  setOpType(o.type);
+  document.getElementById('ops-modal').hidden = false;
+  document.getElementById('op-name').focus();
+}
+
+function closeOperation() {
+  document.getElementById('ops-modal').hidden = true;
+  editingOp = null;
+}
+
+function setOpType(type) {
+  opType = type;
+  document.getElementById('op-type-picker').innerHTML = Object.entries(OP_TYPES).map(([k, t]) =>
+    `<button type="button" class="ops-type${k === type ? ' active' : ''}" onclick="setOpType('${k}')"><b>${t.label}</b><small>${t.desc}</small></button>`).join('');
+  const sales = type === 'sales';
+  document.getElementById('op-slug-field').hidden = type === 'marketing';
+  document.getElementById('op-slug-label').textContent = sales ? 'Client CRM (required)' : 'Client CRM (optional)';
+  document.getElementById('op-slug-hint').textContent = sales
+    ? 'The sales CRM we build them lives here. Filled in from the operation name.'
+    : 'Add one if this system includes a CRM we host for them.';
+  document.getElementById('op-metrics-field').hidden = sales;
+  document.getElementById('op-metrics-label').textContent = type === 'marketing' ? 'Numbers & Goals · views, followers, leads' : 'Numbers we are raising · where they started, where they are, the goal';
+  document.getElementById('op-presets').innerHTML = (OP_TYPES[type].presets || []).map(([label, unit]) =>
+    `<button type="button" data-label="${esc(label)}" data-unit="${esc(unit)}" onclick="addMetricRow({ label: this.dataset.label, unit: this.dataset.unit })">+ ${esc(label)}</button>`).join('') +
+    '<button type="button" onclick="addMetricRow({})">+ Custom</button>';
+  suggestSlug();
+}
+
+function suggestSlug() {
+  const slug = document.getElementById('op-slug');
+  if (slug.dataset.touched) return;
+  slug.value = opType !== 'sales' ? '' : document.getElementById('op-name').value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 63);
+}
+
+function addMetricRow(m = {}) {
+  const row = document.createElement('div');
+  row.className = 'ops-metric-grid';
+  row.dataset.id = m.id || '';
+  const val = (v) => v === null || v === undefined ? '' : esc(v);
+  row.innerHTML = `<input class="c-input" data-k="label" placeholder="Views" value="${esc(m.label || '')}">
+    <input class="c-input" data-k="baseline" type="number" step="any" value="${val(m.baseline)}">
+    <input class="c-input" data-k="current" type="number" step="any" value="${val(m.current)}">
+    <input class="c-input" data-k="goal" type="number" step="any" value="${val(m.goal)}">
+    <input class="c-input" data-k="unit" value="${esc(m.unit || '')}">
+    <button type="button" class="ops-metric-del" title="Remove" onclick="this.parentElement.remove()">✕</button>`;
+  document.getElementById('op-metrics').appendChild(row);
+  if (!m.label) row.querySelector('input').focus();
+}
+
+async function saveOperation() {
+  const msg = document.getElementById('op-msg');
+  const field = (id) => document.getElementById(id).value.trim();
+  const payload = {
+    type: opType, name: field('op-name'), client: field('op-client'), contactName: field('op-contact-name'),
+    contactEmail: field('op-contact-email'), status: field('op-status'), startDate: field('op-start'),
+    slug: opType === 'marketing' ? '' : field('op-slug'), notes: field('op-notes'),
+    metrics: opType === 'sales' ? undefined : [...document.querySelectorAll('#op-metrics .ops-metric-grid')].map(row => ({
+      id: row.dataset.id, ...Object.fromEntries([...row.querySelectorAll('input')].map(i => [i.dataset.k, i.value.trim()]))
+    })).filter(m => m.label)
+  };
+  msg.className = 'email-msg';
+  if (!payload.name) { msg.className = 'email-msg error show'; msg.textContent = 'Give the operation a name.'; return; }
+  const btn = document.getElementById('op-save');
+  btn.classList.add('loading'); btn.disabled = true;
+  try {
+    const res = editingOp
+      ? await api('/api/operations/' + encodeURIComponent(editingOp.id), { method: 'PATCH', body: JSON.stringify(payload) })
+      : await api('/api/operations', { method: 'POST', body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error(res.error);
+    allOperations = [res.operation, ...allOperations.filter(o => o.id !== res.operation.id)];
+    closeOperation();
+    renderOperations();
+  } catch (err) {
+    msg.className = 'email-msg error show';
+    msg.textContent = err.message;
+  }
+  btn.classList.remove('loading'); btn.disabled = false;
+}
+
+async function deleteOperation() {
+  if (!editingOp || !confirm(`Delete "${editingOp.name}"? Its numbers and history are removed too. This can't be undone.`)) return;
+  const res = await api('/api/operations/' + encodeURIComponent(editingOp.id), { method: 'DELETE' });
+  if (!res.ok) { alert(res.error); return; }
+  allOperations = allOperations.filter(o => o.id !== editingOp.id);
+  closeOperation();
+  renderOperations();
+}
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('ops-modal').hidden) closeOperation(); });
 
 // ─── Dashboard ────────────────────────────────────────────────
 function updateDashboard(rows) {
