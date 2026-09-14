@@ -85,6 +85,7 @@ const DISCOVERY_INSTRUCTIONS = (limit) => `You build a shortlist of real, indivi
 7. When follower_max is set, favor early-stage creators documenting their own journey over widely known personalities, and skip anyone a source shows well above the range.
 8. List candidates you considered but could not confirm in unconfirmed with a short reason. Do not include guessed handles there.
 9. Exclude brands, stores, publications, meme or repost pages, and duplicates. Honor the exclusions and follower range when a source states follower counts.
+   Details the brief asks for that no source states (age, exact location, follower count, video style) are unknowns, not reasons to exclude: include the creator and mention the unknowns in evidence. Exclude someone only when a source contradicts the brief. The team reviews every result.
 10. Only read public web search results. Do not log in, scrape, message, follow, like, or take any action on Instagram or other platforms.`;
 
 const MAX_REFERENCE_CREATORS = 10;
