@@ -790,6 +790,7 @@
           <option value="crm">CRM / Sales System</option>
           <option value="consulting">Sales &amp; Marketing Consulting</option>
           <option value="sponsor">Influencer Request</option>
+          <option value="ulio_sale">Sale of Ulio</option>
           <option value="other">General Inquiry</option>
         </select>
         <select class="filter-select" id="filter-stage" onchange="filterSubmits()">
@@ -1527,8 +1528,8 @@ function showPage(name) {
 }
 
 // ─── Load inquiries from Cloudflare D1 ───────────────────────
-const INQUIRY_LABELS = { website: 'Website', crm: 'CRM / Sales System', consulting: 'Consulting', creator: 'Creator', sponsor: 'Influencer Request', other: 'General' };
-const INQUIRY_CHIP = { website: 'chip-blue', crm: 'chip-purple', consulting: 'chip-green', creator: 'chip-orange', sponsor: 'chip-orange', other: 'chip-muted' };
+const INQUIRY_LABELS = { website: 'Website', crm: 'CRM / Sales System', consulting: 'Consulting', creator: 'Creator', sponsor: 'Influencer Request', ulio_sale: 'Sale of Ulio', other: 'General' };
+const INQUIRY_CHIP = { website: 'chip-blue', crm: 'chip-purple', consulting: 'chip-green', creator: 'chip-orange', sponsor: 'chip-orange', ulio_sale: 'chip-green', other: 'chip-muted' };
 const STAGES = ['new', 'contacted', 'qualified', 'proposal', 'won', 'lost'];
 let allRows = [];
 let allCreators = [];
