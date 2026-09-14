@@ -494,6 +494,14 @@
   .ops-type small { font-size: 11px; line-height: 1.45; display: block; }
   .ops-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
   .ops-form-grid .full { grid-column: 1 / -1; }
+  .ops-modal.inq-modal { max-width: 860px; }
+  .inq-modal .detail-section-title:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+  .inq-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); padding-top: 8px; }
+  .inq-kv-row { display: grid; grid-template-columns: 170px 110px 1fr auto; gap: 8px; align-items: start; margin-bottom: 8px; }
+  .inq-kv-row .c-input { font-size: 12px; padding: 7px 10px; }
+  .inq-kv-row textarea.c-input { min-height: 36px; font-family: var(--mono); font-size: 12px; line-height: 1.5; }
+  .inq-kv-empty { font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+  @media (max-width: 700px) { .inq-kv-row { grid-template-columns: 1fr 1fr auto; } .inq-kv-row textarea { grid-column: 1 / -1; grid-row: 2; } }
   .ops-slug { display: flex; align-items: stretch; }
   .ops-slug .c-input { border-radius: 7px 0 0 7px; }
   .ops-slug span { display: flex; align-items: center; font-family: var(--mono); font-size: 12px; color: var(--text-muted); background: var(--surface2); border: 1px solid var(--border); border-left: none; border-radius: 0 7px 7px 0; padding: 0 10px; white-space: nowrap; }
@@ -770,6 +778,9 @@
       <div class="page-head">
         <div class="page-title">Inquiries</div>
         <div class="page-sub">New conversations and commercial briefs across every source</div>
+        <div class="cr-head-actions">
+          <button class="action-btn primary" onclick="openInquiryForm()">+ Add inquiry</button>
+        </div>
       </div>
       <div class="submits-toolbar">
         <input class="search-box" id="submit-search" type="text" placeholder="Search name, email, phone, summary…" oninput="filterSubmits()">
@@ -1219,6 +1230,76 @@
   </div>
 </div>
 
+<div class="ops-modal-bg" id="inquiry-modal" hidden onclick="if (event.target === this) closeInquiryForm()">
+  <div class="ops-modal inq-modal" role="dialog" aria-labelledby="inquiry-modal-title">
+    <div class="ops-modal-head">
+      <span class="compose-title" id="inquiry-modal-title">Add inquiry</span>
+      <button class="drawer-close" onclick="closeInquiryForm()" aria-label="Close">✕</button>
+    </div>
+    <div class="ops-modal-body">
+      <div class="detail-section-title">Inquiry</div>
+      <div class="ops-form-grid">
+        <div class="c-field"><label>Inquiry type</label><select class="c-input" id="if-inquiryType"></select></div>
+        <div class="c-field"><label>Type label</label><input class="c-input" id="if-inquiryLabel" type="text" placeholder="Leave blank to use the type's name"></div>
+        <div class="c-field"><label>Inquiry time</label><input class="c-input" id="if-createdAt" type="datetime-local"></div>
+        <div class="c-field"><label>Completed</label><input class="c-input" id="if-completedAt" type="datetime-local"></div>
+        <div class="c-field"><label>Form</label><select class="c-input" id="if-status"><option value="complete">Complete</option><option value="partial">Unfinished</option><option value="new">New</option></select></div>
+        <div class="c-field"><label>Stage</label><select class="c-input" id="if-stage"><option value="new">New</option><option value="contacted">Contacted</option><option value="qualified">Qualified</option><option value="proposal">Proposal</option><option value="won">Won</option><option value="lost">Lost</option></select></div>
+      </div>
+
+      <div class="detail-section-title">Contact</div>
+      <div class="ops-form-grid">
+        <div class="c-field"><label>Name *</label><input class="c-input" id="if-name" type="text" placeholder="Jane Doe"></div>
+        <div class="c-field"><label>Email</label><input class="c-input" id="if-email" type="email"></div>
+        <div class="c-field"><label>Phone</label><input class="c-input" id="if-phone" type="tel"></div>
+        <div class="c-field"><label>Phone (E.164)</label><input class="c-input" id="if-phoneE164" type="text" placeholder="+15551234567"></div>
+        <div class="c-field"><label>Phone country</label><input class="c-input" id="if-phoneCountry" type="text" placeholder="US"></div>
+        <div class="c-field"><label>Company</label><input class="c-input" id="if-company" type="text"></div>
+        <div class="c-field full"><label>Business type</label><input class="c-input" id="if-businessType" type="text"></div>
+      </div>
+
+      <div class="detail-section-title">Website</div>
+      <div class="ops-form-grid">
+        <div class="c-field"><label>Has website</label><input class="c-input" id="if-hasWebsite" type="text" placeholder="yes / no"></div>
+        <div class="c-field"><label>Input mode</label><input class="c-input" id="if-inputMode" type="text" placeholder="text"></div>
+        <div class="c-field"><label>Sketch URL</label><input class="c-input" id="if-sketchUrl" type="text" placeholder="https://"></div>
+        <div class="c-field"><label>Sketch thumbnail URL</label><input class="c-input" id="if-sketchThumbUrl" type="text" placeholder="https://"></div>
+        <div class="c-field full"><label class="inq-check"><input type="checkbox" id="if-hasSketch"> Has sketch</label></div>
+        <div class="c-field full"><label>Description</label><textarea class="c-input" id="if-description" style="min-height:90px;"></textarea></div>
+      </div>
+
+      <div class="detail-section-title">Answers</div>
+      <div id="if-details"></div>
+      <button class="action-btn" type="button" onclick="addInquiryKv('if-details')">+ Add answer</button>
+
+      <div class="detail-section-title">Summary</div>
+      <textarea class="c-input" id="if-summary" style="min-height:90px;"></textarea>
+
+      <div class="detail-section-title">Tracking</div>
+      <div class="ops-form-grid">
+        <div class="c-field"><label>Source</label><input class="c-input" id="if-source" type="text" placeholder="manual"></div>
+        <div class="c-field"><label>Form version</label><input class="c-input" id="if-formVersion" type="number" min="0" step="1"></div>
+        <div class="c-field full"><label>Page URL</label><input class="c-input" id="if-pageUrl" type="text"></div>
+        <div class="c-field full"><label>Referrer</label><input class="c-input" id="if-referrer" type="text"></div>
+        <div class="c-field full"><label>Lead ID</label><input class="c-input" id="if-leadId" type="text" placeholder="Optional, 8-64 letters, numbers, or dashes"></div>
+      </div>
+      <div class="c-field"><label>UTM</label></div>
+      <div id="if-utm"></div>
+      <button class="action-btn" type="button" onclick="addInquiryKv('if-utm')">+ Add UTM field</button>
+
+      <div class="detail-section-title">Other Fields</div>
+      <div id="if-extra"></div>
+      <button class="action-btn" type="button" onclick="addInquiryKv('if-extra')">+ Add field</button>
+
+      <div class="email-msg" id="if-msg"></div>
+    </div>
+    <div class="ops-modal-foot">
+      <button class="action-btn" onclick="closeInquiryForm()">Cancel</button>
+      <button class="send-btn" id="if-save" onclick="saveInquiry()"><span class="btn-text">Add inquiry</span></button>
+    </div>
+  </div>
+</div>
+
 <div class="ops-modal-bg" id="creator-modal" hidden onclick="if (event.target === this) closeCreatorForm()">
   <div class="ops-modal" role="dialog" aria-labelledby="creator-modal-title">
     <div class="ops-modal-head">
@@ -1637,6 +1718,7 @@ function renderFiltered(rows) {
         ${Object.keys(extra).length ? `<div class="detail-section-title">Other Fields</div><div class="detail-grid">${objectFields(extra)}</div>` : ''}
 
         <div class="detail-actions" style="margin-top:14px;">
+          <button class="action-btn" data-id="${id}" onclick="openInquiryForm(this.dataset.id)">✎ Edit Inquiry</button>
           ${email ? `<button class="action-btn primary" data-id="${id}" onclick="prefillEmail(this.dataset.id)">✉ Email This Lead</button>` : ''}
           ${phone ? `<button class="action-btn" data-phone="${esc(phone)}" onclick="copyText(this.dataset.phone,'Phone')">📋 Copy Phone</button>` : ''}
           ${type === 'sponsor' ? `<button class="action-btn" data-id="${id}" onclick="findCreators(this.dataset.id)">★ Find Creators</button>` : ''}
@@ -1725,6 +1807,143 @@ async function updateStage(select) {
   } catch (err) {
     alert('Stage not saved: ' + err.message);
     if (previous) select.value = previous;
+  }
+}
+
+// ─── Add / edit an inquiry by hand ────────────────────────────
+const INQ_TEXT_FIELDS = ['inquiryLabel', 'status', 'stage', 'name', 'email', 'phone', 'phoneE164', 'phoneCountry', 'company', 'businessType',
+  'hasWebsite', 'inputMode', 'sketchUrl', 'sketchThumbUrl', 'description', 'summary', 'source', 'formVersion', 'pageUrl', 'referrer', 'leadId'];
+const INQ_ROW_KEYS = { inquiryLabel: 'Inquiry Label', status: 'Status', stage: 'Stage', name: 'Name', email: 'Email', phone: 'Phone', phoneE164: 'Phone E164',
+  phoneCountry: 'Phone Country', company: 'Company', businessType: 'Business Type', hasWebsite: 'Has Website', inputMode: 'Mode', sketchUrl: 'Sketch URL',
+  sketchThumbUrl: 'Sketch Thumb URL', description: 'Description', summary: 'Summary', source: 'Source', formVersion: 'Form Version', pageUrl: 'Page URL',
+  referrer: 'Referrer', leadId: 'Lead ID' };
+const KV_KINDS = { text: 'Text', list: 'List', bool: 'Yes / No', number: 'Number', json: 'JSON' };
+let editingInquiry = null;
+
+const toLocalInput = (ts) => {
+  const d = new Date(ts || '');
+  return isNaN(d) ? '' : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+
+function kvKind(value) {
+  if (typeof value === 'boolean') return 'bool';
+  if (typeof value === 'number') return 'number';
+  if (Array.isArray(value) && value.every(v => v === null || typeof v !== 'object')) return 'list';
+  if (value && typeof value === 'object') return 'json';
+  return 'text';
+}
+
+function kvText(value, kind) {
+  if (kind === 'list') return value.join('\n');
+  if (kind === 'json') return JSON.stringify(value, null, 2);
+  if (kind === 'bool') return value ? 'yes' : 'no';
+  return String(value ?? '');
+}
+
+function addInquiryKv(boxId, key = '', value = '') {
+  const kind = kvKind(value);
+  const text = kvText(value, kind);
+  const row = document.createElement('div');
+  row.className = 'inq-kv-row';
+  row.innerHTML = `<input class="c-input kv-key" type="text" placeholder="field name" value="${esc(key)}">
+    <select class="c-input kv-kind">${Object.entries(KV_KINDS).map(([k, l]) => `<option value="${k}"${k === kind ? ' selected' : ''}>${l}</option>`).join('')}</select>
+    <textarea class="c-input kv-val" rows="${Math.min(8, Math.max(1, text.split('\n').length))}" placeholder="value (lists: one per line)">${esc(text)}</textarea>
+    <button class="action-btn" type="button" title="Remove field" onclick="this.parentElement.remove()">✕</button>`;
+  document.getElementById(boxId).appendChild(row);
+  if (!key) row.querySelector('.kv-key').focus();
+}
+
+function readInquiryKv(boxId, label) {
+  const out = {};
+  for (const row of document.getElementById(boxId).querySelectorAll('.inq-kv-row')) {
+    const key = row.querySelector('.kv-key').value.trim();
+    const raw = row.querySelector('.kv-val').value;
+    if (!key) { if (raw.trim()) throw new Error(`${label}: a field with a value is missing its name.`); continue; }
+    const kind = row.querySelector('.kv-kind').value;
+    if (kind === 'list') out[key] = raw.split('\n').map(s => s.trim()).filter(Boolean);
+    else if (kind === 'bool') out[key] = /^(y|yes|true|1)$/i.test(raw.trim());
+    else if (kind === 'number') {
+      if (raw.trim() === '' || isNaN(Number(raw))) throw new Error(`${label}: "${key}" must be a number.`);
+      out[key] = Number(raw);
+    } else if (kind === 'json') {
+      try { out[key] = JSON.parse(raw); } catch { throw new Error(`${label}: "${key}" is not valid JSON.`); }
+    } else out[key] = raw;
+  }
+  return out;
+}
+
+function openInquiryForm(id) {
+  const r = id ? allRows.find(x => x['ID'] === id) : null;
+  editingInquiry = r ? id : null;
+  const val = (f) => document.getElementById('if-' + f);
+  const type = r?.['Inquiry Type'] || 'other';
+  const types = { ...INQUIRY_LABELS };
+  delete types.creator;
+  if (!types[type]) types[type] = type;
+  val('inquiryType').innerHTML = Object.entries(types).map(([k, l]) => `<option value="${esc(k)}"${k === type ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  INQ_TEXT_FIELDS.forEach(f => { val(f).value = r ? (r[INQ_ROW_KEYS[f]] ?? '') : ''; });
+  if (!r) { val('status').value = 'complete'; val('stage').value = 'new'; val('source').value = 'manual'; }
+  if (r && ![...val('status').options].some(o => o.value === r['Status'])) val('status').add(new Option(r['Status'], r['Status']));
+  if (r) val('status').value = r['Status'];
+  val('createdAt').value = toLocalInput(r ? r['Timestamp'] : new Date());
+  val('completedAt').value = r ? toLocalInput(r['Completed']) : '';
+  val('hasSketch').checked = !!r?.['Has Sketch'];
+
+  ['details', 'utm', 'extra'].forEach(b => { val(b).innerHTML = ''; });
+  Object.entries(r?.['Details'] || {}).forEach(([k, v]) => addInquiryKv('if-details', k, v));
+  const utm = r?.['UTM'] || {};
+  UTM_KEYS.forEach(k => addInquiryKv('if-utm', k, utm[k] ?? ''));
+  Object.entries(utm).filter(([k]) => !UTM_KEYS.includes(k)).forEach(([k, v]) => addInquiryKv('if-utm', k, v));
+  Object.entries(r?.['Extra'] || {}).forEach(([k, v]) => addInquiryKv('if-extra', k, v));
+
+  document.getElementById('inquiry-modal-title').textContent = r ? `Edit inquiry · ${r['Name'] || ''}` : 'Add inquiry';
+  document.querySelector('#if-save .btn-text').textContent = r ? 'Save changes' : 'Add inquiry';
+  document.getElementById('if-msg').className = 'email-msg';
+  document.getElementById('inquiry-modal').hidden = false;
+  val('name').focus();
+}
+
+function closeInquiryForm() {
+  document.getElementById('inquiry-modal').hidden = true;
+  editingInquiry = null;
+}
+
+async function saveInquiry() {
+  const val = (f) => document.getElementById('if-' + f);
+  const msg = val('msg');
+  const btn = val('save');
+  const fail = (text) => { msg.textContent = text; msg.className = 'email-msg show error'; };
+  if (!val('name').value.trim()) { fail('Name is required.'); return val('name').focus(); }
+  let body;
+  try {
+    body = Object.fromEntries(INQ_TEXT_FIELDS.map(f => [f, val(f).value]));
+    body.formVersion = body.formVersion === '' ? undefined : Number(body.formVersion);
+    body.inquiryType = val('inquiryType').value;
+    body.hasSketch = val('hasSketch').checked;
+    if (!val('createdAt').value) throw new Error('Inquiry time is required.');
+    body.createdAt = new Date(val('createdAt').value).toISOString();
+    body.completedAt = val('completedAt').value ? new Date(val('completedAt').value).toISOString() : null;
+    body.details = readInquiryKv('if-details', 'Answers');
+    body.utm = Object.fromEntries(Object.entries(readInquiryKv('if-utm', 'UTM')).filter(([, v]) => v !== ''));
+    body.extra = readInquiryKv('if-extra', 'Other fields');
+  } catch (err) { return fail(err.message); }
+
+  btn.disabled = true;
+  try {
+    const path = editingInquiry ? '/api/submissions/' + encodeURIComponent(editingInquiry) : '/api/submissions/manual';
+    const res = await api(path, { method: editingInquiry ? 'PATCH' : 'POST', body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(res.error || 'Not saved');
+    const i = allRows.findIndex(x => x['ID'] === res.row['ID']);
+    if (i >= 0) allRows[i] = res.row; else allRows.push(res.row);
+    allSubmits = allRows.filter(x => x['Inquiry Type'] !== 'creator');
+    closeInquiryForm();
+    filterSubmits();
+    updateDashboard(allRows);
+    document.getElementById('sc-' + res.row['ID'])?.classList.add('open');
+  } catch (err) {
+    fail(err.message);
+  } finally {
+    btn.disabled = false;
   }
 }
 

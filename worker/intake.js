@@ -267,13 +267,112 @@ async function listSubmissions(request, env, headers) {
   return json({ ok: true, rows: result.results.map(mapSubmission), total: result.results.length }, 200, headers);
 }
 
+// Hand edits from the CRM. Only keys present in the body are returned, as column → value.
+const TEXT_COLUMNS = {
+  email: ['email', 254], phone: ['phone', 40], phoneCountry: ['phone_country', 8], company: ['company', 200],
+  businessType: ['business_type', 160], hasWebsite: ['has_website', 24], description: ['description', 4000], inputMode: ['input_mode', 32],
+  summary: ['summary', 8000], source: ['source', 80], inquiryLabel: ['inquiry_label', 80], status: ['status', 32],
+  pageUrl: ['page_url', 1000], referrer: ['referrer', 1000], sketchUrl: ['sketch_url', 1000], sketchThumbUrl: ['sketch_thumb_url', 1000]
+};
+const OBJECT_COLUMNS = { details: ['details', MAX_DETAILS_BYTES], utm: ['utm', 4096], extra: ['extra', MAX_EXTRA_BYTES] };
+
+function isoOrNull(value, label) {
+  if (value === null || value === '') return null;
+  const d = new Date(value);
+  if (isNaN(d)) throw new HttpError(400, `${label} is not a valid date.`);
+  return d.toISOString();
+}
+
+function submissionFields(body) {
+  const fields = {};
+  if (body.name !== undefined) {
+    fields.name = clean(body.name, 160);
+    if (!fields.name) throw new HttpError(400, 'Name is required.');
+  }
+  for (const [key, [col, max]] of Object.entries(TEXT_COLUMNS)) if (body[key] !== undefined) fields[col] = clean(body[key], max);
+  if (fields.email) fields.email = fields.email.toLowerCase();
+  if (body.phoneE164 !== undefined) {
+    fields.phone_e164 = clean(body.phoneE164, 20);
+    if (fields.phone_e164 && !/^\+[1-9]\d{6,14}$/.test(fields.phone_e164)) throw new HttpError(400, 'Phone (E.164) must look like +15551234567.');
+  }
+  if (body.inquiryType !== undefined) {
+    fields.inquiry_type = clean(body.inquiryType, 32).toLowerCase();
+    if (!TYPE_RE.test(fields.inquiry_type)) throw new HttpError(400, 'Inquiry type must be lowercase letters, numbers, dashes, or underscores.');
+  }
+  if (body.stage !== undefined) {
+    if (!STAGES.includes(body.stage)) throw new HttpError(400, `stage must be one of: ${STAGES.join(', ')}`);
+    fields.stage = body.stage;
+  }
+  if (body.formVersion !== undefined) {
+    const v = Number(body.formVersion);
+    if (!Number.isInteger(v) || v < 0) throw new HttpError(400, 'Form version must be a whole number.');
+    fields.form_version = v;
+  }
+  if (body.leadId !== undefined) {
+    fields.lead_id = clean(body.leadId, 64) || null;
+    if (fields.lead_id && !LEAD_ID_RE.test(fields.lead_id)) throw new HttpError(400, 'Lead ID must be 8-64 letters, numbers, or dashes.');
+  }
+  if (body.createdAt !== undefined) {
+    fields.created_at = isoOrNull(body.createdAt, 'Inquiry time');
+    if (!fields.created_at) throw new HttpError(400, 'Inquiry time is required.');
+  }
+  if (body.completedAt !== undefined) fields.completed_at = isoOrNull(body.completedAt, 'Completed time');
+  for (const [key, [col, max]] of Object.entries(OBJECT_COLUMNS)) {
+    if (body[key] === undefined) continue;
+    if (!isPlainObject(body[key])) throw new HttpError(400, `${key} must be an object.`);
+    fields[col] = jsonText(body[key], {}, max);
+  }
+  return fields;
+}
+
+async function submissionRow(env, id) {
+  const row = await env.DB.prepare(
+    `SELECT s.*, (SELECT COUNT(*) FROM submissions o WHERE o.contact_id = s.contact_id AND o.id <> s.id) other_inquiries FROM submissions s WHERE s.id = ?`
+  ).bind(id).first();
+  return row && mapSubmission(row);
+}
+
+async function writeSubmission(sql, values) {
+  try {
+    return await sql.bind(...values).run();
+  } catch (error) {
+    if (/UNIQUE/i.test(error.message)) throw new HttpError(409, 'Another inquiry already uses that Lead ID.');
+    throw error;
+  }
+}
+
+async function createManualSubmission(request, env, headers) {
+  const user = await requireUser(request, env);
+  const body = await readJson(request);
+  const fields = submissionFields({ name: '', ...body });
+  const id = crypto.randomUUID();
+  const ts = now();
+  const row = {
+    id, created_at: ts, updated_at: ts, source: 'manual', status: 'complete', inquiry_type: 'other', stage: 'new',
+    metadata: JSON.stringify({ hasSketch: body.hasSketch === true, addedBy: user.name || user.email }), ...fields
+  };
+  if (!row.completed_at && row.status === 'complete') row.completed_at = row.created_at;
+  await writeSubmission(env.DB.prepare(`INSERT INTO submissions (${Object.keys(row).join(', ')}) VALUES (${Object.keys(row).map(() => '?').join(', ')})`), Object.values(row));
+  await env.DB.prepare(
+    `INSERT INTO activities (id, created_at, actor, type, subject_type, subject_id, summary, metadata) VALUES (?, ?, ?, 'submission.created', 'submission', ?, ?, '{}')`
+  ).bind(crypto.randomUUID(), ts, user.email || 'user', id, `${user.name || user.email} added an inquiry from ${row.name}`).run();
+  return json({ ok: true, row: await submissionRow(env, id) }, 201, headers);
+}
+
 async function updateSubmission(request, env, headers, [id]) {
   await requireUser(request, env);
   const body = await readJson(request);
-  if (!STAGES.includes(body.stage)) throw new HttpError(400, `stage must be one of: ${STAGES.join(', ')}`);
-  const result = await env.DB.prepare('UPDATE submissions SET stage = ?, updated_at = ? WHERE id = ?').bind(body.stage, now(), id).run();
+  const fields = submissionFields(body);
+  if (body.hasSketch !== undefined) {
+    const existing = await env.DB.prepare('SELECT metadata FROM submissions WHERE id = ?').bind(id).first();
+    if (!existing) throw new HttpError(404, 'Submission not found.');
+    fields.metadata = JSON.stringify({ ...parse(existing.metadata, {}), hasSketch: body.hasSketch === true });
+  }
+  if (!Object.keys(fields).length) throw new HttpError(400, 'Nothing to update.');
+  fields.updated_at = now();
+  const result = await writeSubmission(env.DB.prepare(`UPDATE submissions SET ${Object.keys(fields).map(k => `${k} = ?`).join(', ')} WHERE id = ?`), [...Object.values(fields), id]);
   if (!result.meta.changes) throw new HttpError(404, 'Submission not found.');
-  return json({ ok: true }, 200, headers);
+  return json({ ok: true, row: await submissionRow(env, id) }, 200, headers);
 }
 
 // ── Creator roster ────────────────────────────────────────────
@@ -553,6 +652,7 @@ async function getSketch(request, env, headers, [id]) {
 export const intakeRoutes = {
   'POST /api/submissions': createSubmission,
   'GET /api/submissions': listSubmissions,
+  'POST /api/submissions/manual': createManualSubmission,
   'PATCH /api/submissions/:id': updateSubmission,
   'GET /api/submissions/:id/matches': matchCreators,
   'POST /api/submissions/:lead/sketch': uploadSketch,
