@@ -125,6 +125,8 @@ function readFields(body, existing = {}) {
   if (contactEmail && !isEmail(contactEmail)) throw new HttpError(400, 'Enter a valid contact email.');
   const startDate = clean(pick('startDate', existing.start_date), 10);
   if (startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new HttpError(400, 'Invalid start date.');
+  const driveUrl = clean(pick('driveUrl', existing.drive_url), 500);
+  if (driveUrl) url(driveUrl, 'Google Drive link');
 
   let slug = type === 'marketing' ? '' : body.slug === undefined ? existing.slug || '' : normalizeSlug(body.slug);
   // Sales always runs through a CRM we build, so it always gets a subdomain.
@@ -144,6 +146,7 @@ function readFields(body, existing = {}) {
     client: clean(pick('client', existing.client), 120),
     contact_name: clean(pick('contactName', existing.contact_name), 120),
     contact_email: contactEmail,
+    drive_url: driveUrl,
     start_date: startDate || null,
     notes: clean(pick('notes', existing.notes), 8000)
   };
@@ -228,7 +231,7 @@ async function loadOperations(env, where = '', binds = []) {
   const [varMap, formulaMap, creatorMap, peopleMap, overrideMap] = [vars, formulas, creators, people, overrides].map(byOp);
   return ops.results.map(o => ({
     id: o.id, type: o.type, name: o.name, client: o.client,
-    contactName: o.contact_name, contactEmail: o.contact_email,
+    contactName: o.contact_name, contactEmail: o.contact_email, driveUrl: o.drive_url || '',
     status: o.status, slug: o.slug, crmUrl: o.slug ? `https://${o.slug}.${CRM_DOMAIN}` : '',
     startDate: o.start_date, notes: o.notes, recruiting: !!o.recruiting, overrides: !!o.overrides, recruitPay: o.recruit_pay,
     ownerId: o.owner_id, ownerName: o.owner_name || '',
@@ -391,9 +394,9 @@ async function createOperation(request, env, headers) {
   const id = crypto.randomUUID();
   const stamp = now();
   await runSave(env, [
-    env.DB.prepare(`INSERT INTO operations (id, type, name, client, contact_name, contact_email, status, slug, start_date, notes, recruiting, overrides, recruit_pay, owner_id, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(id, fields.type, fields.name, fields.client, fields.contact_name, fields.contact_email, fields.status, fields.slug,
+    env.DB.prepare(`INSERT INTO operations (id, type, name, client, contact_name, contact_email, drive_url, status, slug, start_date, notes, recruiting, overrides, recruit_pay, owner_id, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(id, fields.type, fields.name, fields.client, fields.contact_name, fields.contact_email, fields.drive_url, fields.status, fields.slug,
         fields.start_date, fields.notes, fields.recruiting, fields.overrides, fields.recruit_pay, user.id, user.id, stamp, stamp),
     ...syncStatements(env, user, id, data, EMPTY)
   ], fields);
@@ -418,8 +421,8 @@ async function updateOperation(request, env, headers, [id]) {
     data.formulas = packed.formulas;
   }
   await runSave(env, [
-    env.DB.prepare(`UPDATE operations SET type = ?, name = ?, client = ?, contact_name = ?, contact_email = ?, status = ?, slug = ?, start_date = ?, notes = ?, recruiting = ?, overrides = ?, recruit_pay = ?, updated_at = ? WHERE id = ?`)
-      .bind(fields.type, fields.name, fields.client, fields.contact_name, fields.contact_email, fields.status, fields.slug, fields.start_date, fields.notes, fields.recruiting, fields.overrides, fields.recruit_pay, now(), id),
+    env.DB.prepare(`UPDATE operations SET type = ?, name = ?, client = ?, contact_name = ?, contact_email = ?, drive_url = ?, status = ?, slug = ?, start_date = ?, notes = ?, recruiting = ?, overrides = ?, recruit_pay = ?, updated_at = ? WHERE id = ?`)
+      .bind(fields.type, fields.name, fields.client, fields.contact_name, fields.contact_email, fields.drive_url, fields.status, fields.slug, fields.start_date, fields.notes, fields.recruiting, fields.overrides, fields.recruit_pay, now(), id),
     ...syncStatements(env, user, id, data, previous)
   ], fields);
   return json({ ok: true, operation: await getOperation(env, id) }, 200, headers);

@@ -510,6 +510,7 @@
   .opd-save { width: auto; margin: 0; padding: 9px 18px; font-size: 13px; }
   .opd-title h1 { font-size: 30px; font-weight: 600; letter-spacing: -0.03em; margin: 10px 0 2px; }
   .opd-crm { display: inline-flex; margin-top: 10px; min-width: 320px; }
+  .opd-drive-add { margin-top: 10px; }
   .opd-hero { background: #102019; color: #edf3ef; border-radius: 16px; padding: 26px 30px; margin: 20px 0 8px; }
   .opd-hero-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #a4c9b6; }
   .opd-hero-val { font-size: 52px; font-weight: 600; letter-spacing: -0.04em; margin: 6px 0 12px; line-height: 1; }
@@ -1202,6 +1203,9 @@
         <div class="c-field" id="op-overrides-field"><label>Overrides?</label>
           <div class="interval-row"><button type="button" class="interval-btn" data-flag="overrides" data-value="1" onclick="setOpFlag(this)">Yes</button><button type="button" class="interval-btn" data-flag="overrides" data-value="0" onclick="setOpFlag(this)">No</button></div>
           <div class="ops-hint">Track people whose sales I earn an override % on.</div>
+        </div>
+        <div class="c-field full"><label>Google Drive (optional)</label><input class="c-input" id="op-drive" type="url" placeholder="https://drive.google.com/drive/folders/…">
+          <div class="ops-hint">Paste the link to the client's shared folder. You can add or change it later from Edit details.</div>
         </div>
         <div class="c-field full"><label>Notes</label><textarea class="c-input" id="op-notes" style="min-height:90px;" placeholder="Scope, deliverables, access, anything the team should know…"></textarea></div>
       </div>
@@ -2212,6 +2216,9 @@ function renderOpDetail() {
       <h1>${esc(op.name)}</h1>
       <div class="op-client">${esc([op.client, op.contactName, op.contactEmail].filter(Boolean).join(' · ') || 'No client details')}</div>
       ${op.crmUrl ? `<a class="op-crm opd-crm" href="${esc(op.crmUrl)}" target="_blank" rel="noopener"><span>🔗 ${esc(op.slug)}.${esc(opsDomain)}</span>Open CRM ↗</a>` : ''}
+      ${op.driveUrl
+        ? `<a class="op-crm opd-crm" href="${safeUrl(op.driveUrl)}" target="_blank" rel="noopener"><span>📁 Google Drive</span>Open Drive ↗</a>`
+        : `<div><button class="action-btn opd-drive-add" onclick="openOperation(opDraft.id, 'op-drive')">📁 Link Google Drive</button></div>`}
     </div>
     <div class="opd-hero" id="opd-hero"></div>
     ${sections.map(([title, html], i) => `<div class="opd-section-title">${i + 1} · ${title}</div>${html}`).join('')}
@@ -2445,7 +2452,7 @@ async function saveOpDetail() {
 window.addEventListener('beforeunload', (e) => { if (opDirty) e.preventDefault(); });
 
 // ── Create / edit details ──
-function openOperation(id) {
+function openOperation(id, focusId = 'op-name') {
   editingOp = id ? allOperations.find(o => o.id === id) : null;
   const o = editingOp || { type: opsTab || 'marketing', status: 'active' };
   document.getElementById('ops-modal-title').textContent = editingOp ? 'Edit details' : 'New Operation';
@@ -2458,6 +2465,7 @@ function openOperation(id) {
   document.getElementById('op-status').value = o.status;
   document.getElementById('op-start').value = o.startDate || (editingOp ? '' : new Date().toLocaleDateString('en-CA'));
   document.getElementById('op-notes').value = o.notes || '';
+  document.getElementById('op-drive').value = o.driveUrl || '';
   const slug = document.getElementById('op-slug');
   slug.value = o.slug || '';
   slug.dataset.touched = o.slug ? '1' : '';
@@ -2466,7 +2474,7 @@ function openOperation(id) {
   opFlags = editingOp ? { recruiting: +editingOp.recruiting, overrides: +editingOp.overrides, recruitPay: editingOp.recruitPay } : null;
   setOpType(o.type);
   document.getElementById('ops-modal').hidden = false;
-  document.getElementById('op-name').focus();
+  document.getElementById(focusId).focus();
 }
 
 function closeOperation() {
@@ -2517,6 +2525,7 @@ async function saveOperation() {
     type: opType, name: field('op-name'), client: field('op-client'), contactName: field('op-contact-name'),
     contactEmail: field('op-contact-email'), status: field('op-status'), startDate: field('op-start'),
     slug: opType === 'marketing' ? '' : field('op-slug'), notes: field('op-notes'),
+    driveUrl: field('op-drive') && (opLink(field('op-drive')) || field('op-drive')),
     recruiting: !!opFlags.recruiting, overrides: !!opFlags.overrides, recruitPay: opFlags.recruitPay
   };
   msg.className = 'email-msg';
