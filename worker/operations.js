@@ -9,8 +9,8 @@ const RESERVED_SLUGS = new Set(['www', 'crm', 'api', 'app', 'mail', 'admin', 'te
 const VAR_FORMATS = ['number', 'money', 'percent'];
 const FORMULA_FORMATS = ['number', 'money', 'percent', 'multiple', 'months'];
 // Names the page fills in from creators and people, so a typed number can't use them.
-const AUTO_KEYS = new Set(['views', 'hires', 'hireRevenue', 'prospects', 'prospectRevenue']);
-const LIMITS = { vars: 40, formulas: 30, creators: 100, videos: 200, people: 200 };
+const AUTO_KEYS = new Set(['views', 'hires', 'hireRevenue', 'prospects', 'prospectRevenue', 'overrideRevenue', 'overrideIncome']);
+const LIMITS = { vars: 40, formulas: 30, creators: 100, videos: 200, people: 200, overrides: 200 };
 
 // Starting numbers and calculations for a new operation, by type.
 const recruitVars = (percent) => [{ key: 'myPercent', label: 'I get', value: percent, format: 'percent' }];
@@ -19,6 +19,17 @@ const recruitFormulas = [
   { label: 'Brings in per hire /mo', expr: 'hireRevenue / hires', format: 'money' },
   { label: 'My extra cut /mo if prospects get hired', expr: 'prospectRevenue * myPercent / 100', format: 'money' }
 ];
+// Added when a section is switched on (and its formulas removed when switched off).
+const SECTION_PACKS = {
+  recruiting: { vars: recruitVars(10), formulas: recruitFormulas },
+  overrides: {
+    vars: [],
+    formulas: [
+      { label: 'My overrides /mo', expr: 'overrideIncome', format: 'money' },
+      { label: 'Total I make /mo', expr: 'closed * avgJob * myPercent / 100 + overrideIncome', format: 'money', types: ['sales'] }
+    ]
+  }
+};
 const TEMPLATES = {
   marketing: {
     vars: [
@@ -40,9 +51,9 @@ const TEMPLATES = {
       ...recruitVars(10)
     ],
     formulas: [
+      { label: 'My commission /mo', expr: 'closed * avgJob * myPercent / 100', format: 'money' },
       { label: 'Revenue closed', expr: 'closed * avgJob', format: 'money' },
-      { label: 'Close rate', expr: 'closed / leads * 100', format: 'percent' },
-      ...recruitFormulas
+      { label: 'Close rate', expr: 'closed / leads * 100', format: 'percent' }
     ]
   },
   systems: {
@@ -50,15 +61,29 @@ const TEMPLATES = {
       { key: 'callsBefore', label: 'Booked calls/mo before us', value: 0 },
       { key: 'calls', label: 'Booked calls/mo now', value: 0, tracked: true },
       { key: 'showRate', label: 'Show-up rate (0-1)', value: 0 },
-      { key: 'ticket', label: 'Average ticket', value: 0, format: 'money' },
-      ...recruitVars(15)
+      { key: 'ticket', label: 'Average ticket', value: 0, format: 'money' }
     ],
     formulas: [
-      { label: 'Extra revenue per month', expr: '(calls - callsBefore) * showRate * ticket', format: 'money' },
-      ...recruitFormulas
+      { label: 'Extra revenue per month', expr: '(calls - callsBefore) * showRate * ticket', format: 'money' }
     ]
   }
 };
+
+// Template plus the packs for whichever sections are on, without repeating a var key or formula.
+function applyPacks(type, vars, formulas, sections) {
+  vars = [...vars];
+  formulas = [...formulas];
+  for (const [name, pack] of Object.entries(SECTION_PACKS)) {
+    const packFormulas = pack.formulas.filter(f => !f.types || f.types.includes(type));
+    if (sections[name]) {
+      for (const v of pack.vars) if (!vars.some(x => x.key === v.key)) vars.push(v);
+      for (const f of packFormulas) if (!formulas.some(x => x.expr === f.expr)) formulas.push(f);
+    } else {
+      formulas = formulas.filter(f => !packFormulas.some(p => p.expr === f.expr));
+    }
+  }
+  return { vars, formulas };
+}
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const bool = (v) => (v ? 1 : 0);
@@ -93,8 +118,13 @@ function readFields(body, existing = {}) {
   if (type === 'sales' && !slug) slug = normalizeSlug(name);
   if (slug && (slug.length < 2 || RESERVED_SLUGS.has(slug))) throw new HttpError(400, `"${slug}.${CRM_DOMAIN}" can't be used. Pick another CRM subdomain.`);
 
+  // Recruiting and overrides are sections of sales / systems work only.
+  const sectionFlag = (key, column, fallback) => type === 'marketing' ? 0 : bool(body[key] === undefined ? existing[column] ?? fallback : body[key]);
+
   return {
     type, name, status, slug: slug || null,
+    recruiting: sectionFlag('recruiting', 'recruiting', 1),
+    overrides: sectionFlag('overrides', 'overrides', 0),
     client: clean(pick('client', existing.client), 120),
     contact_name: clean(pick('contactName', existing.contact_name), 120),
     contact_email: contactEmail,
@@ -158,25 +188,33 @@ function readPeople(list) {
   }) ?? null;
 }
 
+function readOverrides(list) {
+  return capped(list, 'overrides')?.map(o => ({
+    id: clean(o.id, 64), name: clean(o.name, 120) || 'Unnamed',
+    revenue: Math.max(0, num(o.revenue)), percent: Math.min(100, Math.max(0, num(o.percent)))
+  })) ?? null;
+}
+
 // ── Loading ──
 
 async function loadOperations(env, where = '', binds = []) {
   const scope = `IN (SELECT id FROM operations o ${where})`;
-  const [ops, vars, formulas, creators, videos, people] = await env.DB.batch([
+  const [ops, vars, formulas, creators, videos, people, overrides] = await env.DB.batch([
     env.DB.prepare(`SELECT o.*, u.name owner_name FROM operations o LEFT JOIN users u ON u.id = o.owner_id ${where} ORDER BY o.updated_at DESC`).bind(...binds),
     env.DB.prepare(`SELECT * FROM operation_vars WHERE operation_id ${scope} ORDER BY sort`).bind(...binds),
     env.DB.prepare(`SELECT * FROM operation_formulas WHERE operation_id ${scope} ORDER BY sort`).bind(...binds),
     env.DB.prepare(`SELECT * FROM operation_creators WHERE operation_id ${scope} ORDER BY sort`).bind(...binds),
     env.DB.prepare(`SELECT v.*, c.operation_id FROM operation_videos v JOIN operation_creators c ON c.id = v.creator_id WHERE c.operation_id ${scope} ORDER BY v.sort`).bind(...binds),
-    env.DB.prepare(`SELECT * FROM operation_people WHERE operation_id ${scope} ORDER BY sort`).bind(...binds)
+    env.DB.prepare(`SELECT * FROM operation_people WHERE operation_id ${scope} ORDER BY sort`).bind(...binds),
+    env.DB.prepare(`SELECT * FROM operation_overrides WHERE operation_id ${scope} ORDER BY sort`).bind(...binds)
   ]);
   const byOp = (rows) => rows.results.reduce((map, r) => map.set(r.operation_id, [...(map.get(r.operation_id) || []), r]), new Map());
-  const [varMap, formulaMap, creatorMap, peopleMap] = [vars, formulas, creators, people].map(byOp);
+  const [varMap, formulaMap, creatorMap, peopleMap, overrideMap] = [vars, formulas, creators, people, overrides].map(byOp);
   return ops.results.map(o => ({
     id: o.id, type: o.type, name: o.name, client: o.client,
     contactName: o.contact_name, contactEmail: o.contact_email,
     status: o.status, slug: o.slug, crmUrl: o.slug ? `https://${o.slug}.${CRM_DOMAIN}` : '',
-    startDate: o.start_date, notes: o.notes,
+    startDate: o.start_date, notes: o.notes, recruiting: !!o.recruiting, overrides: !!o.overrides,
     ownerId: o.owner_id, ownerName: o.owner_name || '',
     createdAt: o.created_at, updatedAt: o.updated_at,
     vars: (varMap.get(o.id) || []).map(v => ({ id: v.id, key: v.key, label: v.label, value: v.value, format: v.format, tracked: !!v.tracked, updatedAt: v.updated_at })),
@@ -186,7 +224,8 @@ async function loadOperations(env, where = '', binds = []) {
       videos: videos.results.filter(v => v.creator_id === c.id)
         .map(v => ({ id: v.id, url: v.url, views: v.views, viewsConfirmed: !!v.views_confirmed, viewsUpdatedAt: v.views_updated_at }))
     })),
-    people: (peopleMap.get(o.id) || []).map(p => ({ id: p.id, name: p.name, role: p.role, stage: p.stage, started: p.started, revenue: p.revenue }))
+    people: (peopleMap.get(o.id) || []).map(p => ({ id: p.id, name: p.name, role: p.role, stage: p.stage, started: p.started, revenue: p.revenue })),
+    overrideList: (overrideMap.get(o.id) || []).map(r => ({ id: r.id, name: r.name, revenue: r.revenue, percent: r.percent }))
   }));
 }
 
@@ -286,10 +325,25 @@ function syncStatements(env, user, operationId, data, previous) {
     removeMissing('operation_people', previous.people, keep);
   }
 
+  if (data.overrides) {
+    const keep = new Set();
+    data.overrides.forEach((r, sort) => {
+      const old = known(previous.overrideList, r.id);
+      const id = old ? old.id : crypto.randomUUID();
+      keep.add(id);
+      statements.push(old
+        ? env.DB.prepare('UPDATE operation_overrides SET name = ?, revenue = ?, percent = ?, sort = ?, updated_at = ? WHERE id = ?')
+          .bind(r.name, r.revenue, r.percent, sort, stamp, id)
+        : env.DB.prepare('INSERT INTO operation_overrides (id, operation_id, name, revenue, percent, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(id, operationId, r.name, r.revenue, r.percent, sort, stamp, stamp));
+    });
+    removeMissing('operation_overrides', previous.overrideList, keep);
+  }
+
   return statements;
 }
 
-const EMPTY = { vars: [], formulas: [], creators: [], people: [] };
+const EMPTY = { vars: [], formulas: [], creators: [], people: [], overrideList: [] };
 const slugTaken = (error) => /UNIQUE/i.test(error.message) && /slug/i.test(error.message);
 
 async function runSave(env, statements, fields) {
@@ -310,20 +364,21 @@ async function createOperation(request, env, headers) {
   const user = await requireUser(request, env);
   const body = await readJson(request);
   const fields = readFields(body);
-  const template = TEMPLATES[fields.type];
+  const template = applyPacks(fields.type, TEMPLATES[fields.type].vars, TEMPLATES[fields.type].formulas, fields);
   const data = {
     vars: readVars(body.vars ?? template.vars),
     formulas: readFormulas(body.formulas ?? template.formulas),
     creators: readCreators(body.creators ?? []),
-    people: readPeople(body.people ?? [])
+    people: readPeople(body.people ?? []),
+    overrides: readOverrides(body.overrideList ?? [])
   };
   const id = crypto.randomUUID();
   const stamp = now();
   await runSave(env, [
-    env.DB.prepare(`INSERT INTO operations (id, type, name, client, contact_name, contact_email, status, slug, start_date, notes, owner_id, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    env.DB.prepare(`INSERT INTO operations (id, type, name, client, contact_name, contact_email, status, slug, start_date, notes, recruiting, overrides, owner_id, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(id, fields.type, fields.name, fields.client, fields.contact_name, fields.contact_email, fields.status, fields.slug,
-        fields.start_date, fields.notes, user.id, user.id, stamp, stamp),
+        fields.start_date, fields.notes, fields.recruiting, fields.overrides, user.id, user.id, stamp, stamp),
     ...syncStatements(env, user, id, data, EMPTY)
   ], fields);
   return json({ ok: true, operation: await getOperation(env, id) }, 201, headers);
@@ -335,11 +390,21 @@ async function updateOperation(request, env, headers, [id]) {
   if (!existing) throw new HttpError(404, 'Operation not found.');
   const body = await readJson(request);
   const fields = readFields(body, existing);
-  const data = { vars: readVars(body.vars), formulas: readFormulas(body.formulas), creators: readCreators(body.creators), people: readPeople(body.people) };
+  const data = {
+    vars: readVars(body.vars), formulas: readFormulas(body.formulas), creators: readCreators(body.creators),
+    people: readPeople(body.people), overrides: readOverrides(body.overrideList)
+  };
+  const previous = await getOperation(env, id);
+  // Switching a section on or off adds or removes its starter numbers and calculations.
+  if (fields.recruiting !== existing.recruiting || fields.overrides !== existing.overrides) {
+    const packed = applyPacks(fields.type, readVars(data.vars ?? previous.vars), readFormulas(data.formulas ?? previous.formulas), fields);
+    data.vars = packed.vars.map(v => ({ ...v, format: v.format || 'number', tracked: bool(v.tracked) }));
+    data.formulas = packed.formulas;
+  }
   await runSave(env, [
-    env.DB.prepare(`UPDATE operations SET type = ?, name = ?, client = ?, contact_name = ?, contact_email = ?, status = ?, slug = ?, start_date = ?, notes = ?, updated_at = ? WHERE id = ?`)
-      .bind(fields.type, fields.name, fields.client, fields.contact_name, fields.contact_email, fields.status, fields.slug, fields.start_date, fields.notes, now(), id),
-    ...syncStatements(env, user, id, data, await getOperation(env, id))
+    env.DB.prepare(`UPDATE operations SET type = ?, name = ?, client = ?, contact_name = ?, contact_email = ?, status = ?, slug = ?, start_date = ?, notes = ?, recruiting = ?, overrides = ?, updated_at = ? WHERE id = ?`)
+      .bind(fields.type, fields.name, fields.client, fields.contact_name, fields.contact_email, fields.status, fields.slug, fields.start_date, fields.notes, fields.recruiting, fields.overrides, now(), id),
+    ...syncStatements(env, user, id, data, previous)
   ], fields);
   return json({ ok: true, operation: await getOperation(env, id) }, 200, headers);
 }

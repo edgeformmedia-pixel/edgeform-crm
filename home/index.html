@@ -1094,6 +1094,14 @@
           <div class="ops-slug"><input class="c-input" id="op-slug" type="text" placeholder="acme" oninput="this.dataset.touched = '1'"><span id="op-slug-domain">.edgeform-media.com</span></div>
           <div class="ops-hint" id="op-slug-hint"></div>
         </div>
+        <div class="c-field" id="op-recruiting-field"><label>Recruiting?</label>
+          <div class="interval-row"><button type="button" class="interval-btn" data-flag="recruiting" data-value="1" onclick="setOpFlag(this)">Yes</button><button type="button" class="interval-btn" data-flag="recruiting" data-value="0" onclick="setOpFlag(this)">No</button></div>
+          <div class="ops-hint">Track hires and prospects, and my cut of what they bring in.</div>
+        </div>
+        <div class="c-field" id="op-overrides-field"><label>Overrides?</label>
+          <div class="interval-row"><button type="button" class="interval-btn" data-flag="overrides" data-value="1" onclick="setOpFlag(this)">Yes</button><button type="button" class="interval-btn" data-flag="overrides" data-value="0" onclick="setOpFlag(this)">No</button></div>
+          <div class="ops-hint">Track people whose sales I earn an override % on.</div>
+        </div>
         <div class="c-field full"><label>Notes</label><textarea class="c-input" id="op-notes" style="min-height:90px;" placeholder="Scope, deliverables, access, anything the team should know…"></textarea></div>
       </div>
       <div class="email-msg" id="op-msg"></div>
@@ -1640,8 +1648,11 @@ const OP_AUTO = {
   hires: ['People hired', 'number'],
   hireRevenue: ['Hires bring in /mo', 'money'],
   prospects: ['Prospects', 'number'],
-  prospectRevenue: ['Prospects could bring in /mo', 'money']
+  prospectRevenue: ['Prospects could bring in /mo', 'money'],
+  overrideRevenue: ['Override people sell /mo', 'money'],
+  overrideIncome: ['My overrides /mo', 'money']
 };
+let opFlags = { recruiting: 1, overrides: 0 };
 const OP_SYM = { '*': '×', '-': '−', '/': '÷', '+': '+' };
 let allOperations = [];
 let opsDomain = 'edgeform-media.com';
@@ -1669,7 +1680,8 @@ async function loadOperations() {
 
 // ── Math ──
 const opSum = (list, key) => list.reduce((n, x) => n + (Number(x[key]) || 0), 0);
-const opRecruits = (op) => op.type === 'sales' || op.type === 'systems';
+const opRecruits = (op) => op.type !== 'marketing' && op.recruiting;
+const opHasOverrides = (op) => op.type !== 'marketing' && op.overrides;
 
 function opAutoValues(op) {
   const hired = op.people.filter(p => p.stage === 'hired');
@@ -1677,8 +1689,16 @@ function opAutoValues(op) {
   return {
     views: opSum(op.creators.flatMap(c => c.videos), 'views'),
     hires: hired.length, hireRevenue: opSum(hired, 'revenue'),
-    prospects: prospects.length, prospectRevenue: opSum(prospects, 'revenue')
+    prospects: prospects.length, prospectRevenue: opSum(prospects, 'revenue'),
+    overrideRevenue: opSum(op.overrideList, 'revenue'),
+    overrideIncome: op.overrideList.reduce((n, r) => n + (Number(r.revenue) || 0) * (Number(r.percent) || 0) / 100, 0)
   };
+}
+
+// Automatic names shown for this operation, based on its type and sections.
+function opAutoKeys(op) {
+  if (op.type === 'marketing') return ['views'];
+  return [...(opRecruits(op) ? ['hires', 'hireRevenue', 'prospects', 'prospectRevenue'] : []), ...(opHasOverrides(op) ? ['overrideRevenue', 'overrideIncome'] : [])];
 }
 
 // Only numbers, names, + - * / ( ) reach Function(), so a formula can't run other code.
@@ -1761,7 +1781,8 @@ function renderOperations() {
     const result = head ? opResult(o, head) : null;
     const stats = o.type === 'marketing'
       ? `${o.creators.length} creator${o.creators.length === 1 ? '' : 's'} · ${opFmt(auto.views, 'number')} views`
-      : `${auto.hires} hired · ${auto.prospects} prospect${auto.prospects === 1 ? '' : 's'}`;
+      : [opRecruits(o) && `${auto.hires} hired · ${auto.prospects} prospect${auto.prospects === 1 ? '' : 's'}`,
+         opHasOverrides(o) && `${o.overrideList.length} override${o.overrideList.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ') || o.slug || '';
     return `<div class="op-card" role="button" tabindex="0" data-id="${esc(o.id)}" onclick="openOpDetail(this.dataset.id)" onkeydown="if (event.key === 'Enter') openOpDetail(this.dataset.id)">
       <div class="op-card-top"><span class="chip ${type.chip}">${esc(type.label)}</span><span class="chip ${OP_STATUS_CHIP[o.status] || 'chip-muted'}">${esc(o.status)}</span></div>
       <div><div class="op-name">${esc(o.name)}</div><div class="op-client">${esc([o.client, o.contactName].filter(Boolean).join(' · ') || 'No client details')}</div></div>
@@ -1813,6 +1834,7 @@ function renderOpDetail() {
   const sections = [];
   if (op.type === 'marketing') sections.push(['Creators & videos', opCreatorsHtml(op)]);
   if (opRecruits(op)) sections.push(['Recruitment', opPeopleHtml(op)]);
+  if (opHasOverrides(op)) sections.push(['Overrides', opOverridesHtml(op)]);
   sections.push(['Numbers you enter', opVarsHtml(op)], ['What we calculate', opFormulasHtml(op)]);
 
   document.getElementById('ops-detail').innerHTML = `
@@ -1906,8 +1928,27 @@ function opPeopleHtml(op) {
     <button class="action-btn primary" onclick="opChange(o => o.people.push({ name: '', role: '', stage: 'prospect', started: null, revenue: 0 }), true)">+ Add prospect</button>`;
 }
 
+function opOverridesHtml(op) {
+  return `<div class="opd-card" style="overflow-x:auto;">
+      <table class="inv-table opd-people">
+        <thead><tr><th>Name</th><th>Sells /mo</th><th>My override %</th><th>My override /mo</th><th></th></tr></thead>
+        <tbody>
+        ${op.overrideList.map((r, ri) => `<tr>
+          <td><input class="c-input" value="${esc(r.name)}" placeholder="Rep or team name" oninput="opChange(o => o.overrideList[${ri}].name = this.value)"></td>
+          <td><div class="amount-prefix"><span class="dollar">$</span><input class="c-input" type="number" min="0" step="any" value="${Number(r.revenue) || 0}" oninput="opChange(o => o.overrideList[${ri}].revenue = Number(this.value) || 0)"></div></td>
+          <td><input class="c-input opd-pct-cell" type="number" min="0" max="100" step="any" value="${Number(r.percent) || 0}" oninput="opChange(o => o.overrideList[${ri}].percent = Number(this.value) || 0)"></td>
+          <td class="opd-money" data-override="${ri}"></td>
+          <td><button class="opd-x" title="Remove" onclick="opChange(o => o.overrideList.splice(${ri}, 1), true)">✕</button></td>
+        </tr>`).join('') || '<tr><td colspan="5" class="opd-muted">No overrides yet.</td></tr>'}
+        </tbody>
+        <tfoot><tr><td><b>Total</b></td><td class="opd-money" data-auto="overrideRevenue"></td><td></td><td class="opd-money" data-auto="overrideIncome"></td><td></td></tr></tfoot>
+      </table>
+    </div>
+    <button class="action-btn primary" onclick="opChange(o => o.overrideList.push({ name: '', revenue: 0, percent: 0 }), true)">+ Add override</button>`;
+}
+
 function opVarsHtml(op) {
-  const autoKeys = op.type === 'marketing' ? ['views'] : opRecruits(op) ? ['hires', 'hireRevenue', 'prospects', 'prospectRevenue'] : [];
+  const autoKeys = opAutoKeys(op);
   return `<div class="opd-inputs">
     ${autoKeys.map(k => `<div class="opd-input auto">
       <label>${OP_AUTO[k][0]}</label><div class="opd-input-val" data-auto="${k}"></div>
@@ -1940,7 +1981,7 @@ function opAddVar() {
 }
 
 function opFormulasHtml(op) {
-  const names = [...(op.type === 'marketing' ? ['views'] : opRecruits(op) ? ['hires', 'hireRevenue', 'prospects', 'prospectRevenue'] : []), ...op.vars.map(v => v.key)];
+  const names = [...opAutoKeys(op), ...op.vars.map(v => v.key)];
   return `<div class="opd-results">
     ${op.formulas.map((f, i) => `<div class="opd-result${i === 0 ? ' headline' : ''}">
       <div class="opd-result-top"><span>${esc(f.label)}</span>${i === 0 ? '<span class="chip chip-purple">Headline</span>' : `<button class="panel-link" onclick="opChange(o => o.formulas.unshift(...o.formulas.splice(${i}, 1)), true)">★ Make headline</button>`}</div>
@@ -1970,6 +2011,7 @@ function refreshOpNumbers() {
   root.querySelectorAll('[data-creator-views]').forEach(el => el.textContent = opFmt(opSum(op.creators[el.dataset.creatorViews].videos, 'views'), 'number'));
   const pct = Number(op.vars.find(v => v.key === 'myPercent')?.value) || 0;
   const people = { hired: op.people.filter(p => p.stage === 'hired'), prospect: op.people.filter(p => p.stage !== 'hired') };
+  root.querySelectorAll('[data-override]').forEach(el => { const r = op.overrideList[el.dataset.override]; el.textContent = opFmt(r.revenue * r.percent / 100, 'money'); });
   root.querySelectorAll('[data-cut]').forEach(el => el.textContent = opFmt(op.people[el.dataset.cut].revenue * pct / 100, 'money'));
   root.querySelectorAll('[data-people-total]').forEach(el => el.textContent = opFmt(opSum(people[el.dataset.peopleTotal], 'revenue'), 'money'));
   root.querySelectorAll('[data-people-cut]').forEach(el => el.textContent = opFmt(opSum(people[el.dataset.peopleCut], 'revenue') * pct / 100, 'money'));
@@ -2001,7 +2043,7 @@ async function saveOpDetail() {
   msg.className = 'email-msg';
   try {
     const res = await api('/api/operations/' + encodeURIComponent(op.id), { method: 'PATCH', body: JSON.stringify({
-      vars: op.vars, formulas: op.formulas, people: op.people,
+      vars: op.vars, formulas: op.formulas, people: op.people, overrideList: op.overrideList,
       creators: op.creators.map(c => ({ id: c.id, profileUrl: c.profileUrl, videos: c.videos }))
     }) });
     if (!res.ok) throw new Error(res.error);
@@ -2038,6 +2080,7 @@ function openOperation(id) {
   slug.dataset.touched = o.slug ? '1' : '';
   document.getElementById('op-slug-domain').textContent = '.' + opsDomain;
   document.getElementById('op-msg').className = 'email-msg';
+  opFlags = editingOp ? { recruiting: +editingOp.recruiting, overrides: +editingOp.overrides } : null;
   setOpType(o.type);
   document.getElementById('ops-modal').hidden = false;
   document.getElementById('op-name').focus();
@@ -2059,7 +2102,21 @@ function setOpType(type) {
   document.getElementById('op-slug-hint').textContent = sales
     ? 'The sales CRM we build them lives here. Filled in from the operation name.'
     : 'Add one if this system includes a CRM we host for them.';
+  // New operations: systems usually recruit, sales starts with both sections off.
+  if (!editingOp) opFlags = { recruiting: type === 'systems' ? 1 : 0, overrides: 0 };
+  document.getElementById('op-recruiting-field').hidden = type === 'marketing';
+  document.getElementById('op-overrides-field').hidden = type === 'marketing';
+  renderOpFlags();
   suggestSlug();
+}
+
+function renderOpFlags() {
+  document.querySelectorAll('#ops-modal [data-flag]').forEach(b => b.classList.toggle('active', String(opFlags[b.dataset.flag]) === b.dataset.value));
+}
+
+function setOpFlag(button) {
+  opFlags[button.dataset.flag] = Number(button.dataset.value);
+  renderOpFlags();
 }
 
 function suggestSlug() {
@@ -2074,7 +2131,8 @@ async function saveOperation() {
   const payload = {
     type: opType, name: field('op-name'), client: field('op-client'), contactName: field('op-contact-name'),
     contactEmail: field('op-contact-email'), status: field('op-status'), startDate: field('op-start'),
-    slug: opType === 'marketing' ? '' : field('op-slug'), notes: field('op-notes')
+    slug: opType === 'marketing' ? '' : field('op-slug'), notes: field('op-notes'),
+    recruiting: !!opFlags.recruiting, overrides: !!opFlags.overrides
   };
   msg.className = 'email-msg';
   if (!payload.name) { msg.className = 'email-msg error show'; msg.textContent = 'Give the operation a name.'; return; }
@@ -2089,10 +2147,14 @@ async function saveOperation() {
     const saved = res.operation;
     closeOperation();
     if (editing && opDraft?.id === saved.id) {
-      // Keep unsaved numbers / people in the open detail view; only the details changed.
-      const stored = allOperations.find(o => o.id === saved.id);
-      allOperations = [{ ...saved, vars: stored.vars, formulas: stored.formulas, creators: stored.creators, people: stored.people }, ...allOperations.filter(o => o.id !== saved.id)];
-      Object.assign(opDraft, { ...saved, vars: opDraft.vars, formulas: opDraft.formulas, creators: opDraft.creators, people: opDraft.people });
+      // Keep unsaved creators / people / overrides in the open detail view. Switching a section on or off
+      // changes the stored numbers and calculations, so those come from the server in that case.
+      const sectionsChanged = saved.recruiting !== editing.recruiting || saved.overrides !== editing.overrides;
+      allOperations = [saved, ...allOperations.filter(o => o.id !== saved.id)];
+      Object.assign(opDraft, {
+        ...saved, creators: opDraft.creators, people: opDraft.people, overrideList: opDraft.overrideList,
+        ...(sectionsChanged ? {} : { vars: opDraft.vars, formulas: opDraft.formulas })
+      });
       renderOpDetail();
     } else {
       allOperations = [saved, ...allOperations.filter(o => o.id !== saved.id)];
