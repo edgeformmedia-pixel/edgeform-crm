@@ -1096,7 +1096,10 @@
         </div>
         <div class="c-field" id="op-recruiting-field"><label>Recruiting?</label>
           <div class="interval-row"><button type="button" class="interval-btn" data-flag="recruiting" data-value="1" onclick="setOpFlag(this)">Yes</button><button type="button" class="interval-btn" data-flag="recruiting" data-value="0" onclick="setOpFlag(this)">No</button></div>
-          <div class="ops-hint">Track hires and prospects, and my cut of what they bring in.</div>
+          <div class="ops-hint">Track hires and prospects I recruit for them.</div>
+        </div>
+        <div class="c-field full" id="op-pay-field"><label>How I'm paid for recruits</label>
+          <div class="interval-row"><button type="button" class="interval-btn" data-flag="recruitPay" data-value="one_time" onclick="setOpFlag(this)">One-time fee per hire</button><button type="button" class="interval-btn" data-flag="recruitPay" data-value="recurring" onclick="setOpFlag(this)">Recurring % of what they bring in</button></div>
         </div>
         <div class="c-field" id="op-overrides-field"><label>Overrides?</label>
           <div class="interval-row"><button type="button" class="interval-btn" data-flag="overrides" data-value="1" onclick="setOpFlag(this)">Yes</button><button type="button" class="interval-btn" data-flag="overrides" data-value="0" onclick="setOpFlag(this)">No</button></div>
@@ -1649,10 +1652,12 @@ const OP_AUTO = {
   hireRevenue: ['Hires bring in /mo', 'money'],
   prospects: ['Prospects', 'number'],
   prospectRevenue: ['Prospects could bring in /mo', 'money'],
+  hireFees: ['Fees from hires (one-time)', 'money'],
+  prospectFees: ['Fees if prospects get hired', 'money'],
   overrideRevenue: ['Override people sell /mo', 'money'],
   overrideIncome: ['My overrides /mo', 'money']
 };
-let opFlags = { recruiting: 1, overrides: 0 };
+let opFlags = { recruiting: 1, overrides: 0, recruitPay: 'recurring' };
 const OP_SYM = { '*': '×', '-': '−', '/': '÷', '+': '+' };
 let allOperations = [];
 let opsDomain = 'edgeform-media.com';
@@ -1690,6 +1695,7 @@ function opAutoValues(op) {
     views: opSum(op.creators.flatMap(c => c.videos), 'views'),
     hires: hired.length, hireRevenue: opSum(hired, 'revenue'),
     prospects: prospects.length, prospectRevenue: opSum(prospects, 'revenue'),
+    hireFees: opSum(hired, 'fee'), prospectFees: opSum(prospects, 'fee'),
     overrideRevenue: opSum(op.overrideList, 'revenue'),
     overrideIncome: op.overrideList.reduce((n, r) => n + (Number(r.revenue) || 0) * (Number(r.percent) || 0) / 100, 0)
   };
@@ -1698,7 +1704,8 @@ function opAutoValues(op) {
 // Automatic names shown for this operation, based on its type and sections.
 function opAutoKeys(op) {
   if (op.type === 'marketing') return ['views'];
-  return [...(opRecruits(op) ? ['hires', 'hireRevenue', 'prospects', 'prospectRevenue'] : []), ...(opHasOverrides(op) ? ['overrideRevenue', 'overrideIncome'] : [])];
+  const recruitKeys = op.recruitPay === 'one_time' ? ['hires', 'hireFees', 'prospects', 'prospectFees'] : ['hires', 'hireRevenue', 'prospects', 'prospectRevenue'];
+  return [...(opRecruits(op) ? recruitKeys : []), ...(opHasOverrides(op) ? ['overrideRevenue', 'overrideIncome'] : [])];
 }
 
 // Only numbers, names, + - * / ( ) reach Function(), so a formula can't run other code.
@@ -1894,38 +1901,55 @@ function opAddVideo(ci) {
 }
 
 function opPeopleHtml(op) {
-  const pct = op.vars.findIndex(v => v.key === 'myPercent');
+  // One-time: I earn a flat fee per recruit. Recurring: I get a % of what each hire brings in monthly.
+  const oneTime = op.recruitPay === "one_time";
+  const pct = op.vars.findIndex(v => v.key === "myPercent");
+  const feeVar = op.vars.findIndex(v => v.key === "feePerHire");
+  const showCut = !oneTime && pct >= 0;
   const table = (title, stage) => {
-    const rows = op.people.map((p, pi) => [p, pi]).filter(([p]) => (p.stage === 'hired') === (stage === 'hired'));
+    const rows = op.people.map((p, pi) => [p, pi]).filter(([p]) => (p.stage === "hired") === (stage === "hired"));
+    const amountHead = oneTime ? "My fee (one-time)" : (stage === "hired" ? "Brings in /mo" : "Could bring in /mo");
     return `<div class="opd-card" style="overflow-x:auto;">
       <div class="opd-card-title">${title} (${rows.length})</div>
       <table class="inv-table opd-people">
-        <thead><tr><th>Name</th><th>Role</th><th>Stage</th><th>${stage === 'hired' ? 'Started' : ''}</th><th>${stage === 'hired' ? 'Brings in' : 'Could bring in'} /mo</th>${pct >= 0 ? '<th>My cut /mo</th>' : ''}<th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Role</th><th>Stage</th><th>${stage === "hired" ? "Started" : ""}</th><th>${amountHead}</th>${showCut ? "<th>My cut /mo</th>" : ""}<th></th></tr></thead>
         <tbody>
         ${rows.map(([p, pi]) => `<tr>
           <td><input class="c-input" value="${esc(p.name)}" oninput="opChange(o => o.people[${pi}].name = this.value)"></td>
           <td><input class="c-input" value="${esc(p.role)}" oninput="opChange(o => o.people[${pi}].role = this.value)"></td>
-          <td><select class="c-input" onchange="opChange(o => { const x = o.people[${pi}]; x.stage = this.value; if (x.stage === 'hired' && !x.started) x.started = new Date().toLocaleDateString('en-CA'); }, true)">
-            <option value="prospect"${p.stage !== 'hired' ? ' selected' : ''}>Prospect</option><option value="hired"${p.stage === 'hired' ? ' selected' : ''}>Hired</option></select></td>
-          <td>${stage === 'hired' ? `<input class="c-input" type="date" value="${esc(p.started || '')}" oninput="opChange(o => o.people[${pi}].started = this.value)">` : ''}</td>
-          <td><div class="amount-prefix"><span class="dollar">$</span><input class="c-input" type="number" min="0" step="any" value="${Number(p.revenue) || 0}" oninput="opChange(o => o.people[${pi}].revenue = Number(this.value) || 0)"></div></td>
-          ${pct >= 0 ? `<td class="opd-money" data-cut="${pi}"></td>` : ''}
+          <td><select class="c-input" onchange="opChange(o => { const x = o.people[${pi}]; x.stage = this.value; if (x.stage === &quot;hired&quot; && !x.started) x.started = new Date().toLocaleDateString(&quot;en-CA&quot;); }, true)">
+            <option value="prospect"${p.stage !== "hired" ? " selected" : ""}>Prospect</option><option value="hired"${p.stage === "hired" ? " selected" : ""}>Hired</option></select></td>
+          <td>${stage === "hired" ? `<input class="c-input" type="date" value="${esc(p.started || "")}" oninput="opChange(o => o.people[${pi}].started = this.value)">` : ""}</td>
+          <td><div class="amount-prefix"><span class="dollar">$</span><input class="c-input" type="number" min="0" step="any" value="${Number(oneTime ? p.fee : p.revenue) || 0}" oninput="opChange(o => o.people[${pi}].${oneTime ? "fee" : "revenue"} = Number(this.value) || 0)"></div></td>
+          ${showCut ? `<td class="opd-money" data-cut="${pi}"></td>` : ""}
           <td><button class="opd-x" title="Remove" onclick="opChange(o => o.people.splice(${pi}, 1), true)">✕</button></td>
-        </tr>`).join('') || `<tr><td colspan="7" class="opd-muted">Nobody here yet.</td></tr>`}
+        </tr>`).join("") || `<tr><td colspan="7" class="opd-muted">Nobody here yet.</td></tr>`}
         </tbody>
-        <tfoot><tr><td colspan="4"><b>Total</b></td><td class="opd-money" data-people-total="${stage}"></td>${pct >= 0 ? `<td class="opd-money" data-people-cut="${stage}"></td>` : ''}<td></td></tr></tfoot>
+        <tfoot><tr><td colspan="4"><b>Total</b></td><td class="opd-money" data-people-total="${stage}"></td>${showCut ? `<td class="opd-money" data-people-cut="${stage}"></td>` : ""}<td></td></tr></tfoot>
       </table>
     </div>`;
   };
+  const payBox = oneTime
+    ? (feeVar >= 0
+      ? `<span class="opd-pct">My fee per hire $ <input type="number" min="0" step="any" id="opd-fee" value="${Number(op.vars[feeVar].value) || 0}" oninput="opChange(o => o.vars[${feeVar}].value = Number(this.value) || 0)"></span>`
+      : `<button class="action-btn" onclick="opChange(o => o.vars.push({ key: &quot;feePerHire&quot;, label: &quot;My fee per hire&quot;, value: 0, format: &quot;money&quot; }), true)">+ Set my fee per hire</button>`)
+    : (pct >= 0
+      ? `<span class="opd-pct">I get <input type="number" min="0" step="any" id="opd-pct" value="${Number(op.vars[pct].value) || 0}" oninput="opChange(o => o.vars[${pct}].value = Number(this.value) || 0)"> %</span>`
+      : `<button class="action-btn" onclick="opChange(o => o.vars.push({ key: &quot;myPercent&quot;, label: &quot;I get&quot;, value: 10, format: &quot;percent&quot; }), true)">+ Set my %</button>`);
   return `<div class="opd-funnel">
       <span><b data-auto="hires"></b> Hired</span><span><b data-auto="prospects"></b> Prospects</span>
-      ${pct >= 0
-        ? `<span class="opd-pct">I get <input type="number" min="0" step="any" id="opd-pct" value="${Number(op.vars[pct].value) || 0}" oninput="opChange(o => o.vars[${pct}].value = Number(this.value) || 0)"> %</span>`
-        : `<button class="action-btn" onclick="opChange(o => o.vars.push({ key: 'myPercent', label: 'I get', value: 10, format: 'percent' }), true)">+ Set my %</button>`}
+      <span class="chip ${oneTime ? "chip-orange" : "chip-green"}">${oneTime ? "One-time fee per recruit" : "Recurring % of what they bring in"}</span>
+      ${payBox}
     </div>
-    ${table('✅ Hired', 'hired')}
-    ${table('🕓 Prospects', 'prospect')}
-    <button class="action-btn primary" onclick="opChange(o => o.people.push({ name: '', role: '', stage: 'prospect', started: null, revenue: 0 }), true)">+ Add prospect</button>`;
+    ${table("✅ Hired", "hired")}
+    ${table("🕓 Prospects", "prospect")}
+    <button class="action-btn primary" onclick="opAddPerson()">+ Add prospect</button>
+    ${oneTime ? "<div class=\"ops-hint\">New prospects start with your fee per hire. Change any one person’s fee in the table.</div>" : ""}`;
+}
+
+function opAddPerson() {
+  const fee = Number(opDraft.vars.find(v => v.key === "feePerHire")?.value) || 0;
+  opChange(o => o.people.push({ name: "", role: "", stage: "prospect", started: null, revenue: 0, fee }), true);
 }
 
 function opOverridesHtml(op) {
@@ -1956,7 +1980,7 @@ function opVarsHtml(op) {
     ${op.vars.map((v, i) => `<div class="opd-input">
       <button class="opd-x opd-corner" title="Remove" onclick="if (confirm('Remove this number? Formulas using ${v.key} will stop working.'))opChange(o => o.vars.splice(${i}, 1), true)">✕</button>
       <input class="opd-input-label" value="${esc(v.label)}" oninput="opChange(o => o.vars[${i}].label = this.value)">
-      <div class="opd-input-row">${v.format === 'money' ? '<span>$</span>' : ''}<input type="number" step="any" ${v.key === 'myPercent' ? 'id="opd-var-pct"' : ''} value="${Number(v.value) || 0}" oninput="opChange(o => o.vars[${i}].value = Number(this.value) || 0)">${v.format === 'percent' ? '<span>%</span>' : ''}</div>
+      <div class="opd-input-row">${v.format === 'money' ? '<span>$</span>' : ''}<input type="number" step="any" ${v.key === 'myPercent' ? 'id="opd-var-pct"' : v.key === 'feePerHire' ? 'id="opd-var-fee"' : ''} value="${Number(v.value) || 0}" oninput="opChange(o => o.vars[${i}].value = Number(this.value) || 0)">${v.format === 'percent' ? '<span>%</span>' : ''}</div>
       <div class="opd-input-kind"><code>${esc(v.key)}</code> ·
         <select onchange="opChange(o => o.vars[${i}].format = this.value, true)">${Object.entries(OP_VAR_FORMATS).map(([k, l]) => `<option value="${k}"${v.format === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
         <label class="opd-track"><input type="checkbox"${v.tracked ? ' checked' : ''} onchange="opChange(o => o.vars[${i}].tracked = this.checked)"> Track history</label>
@@ -2013,10 +2037,13 @@ function refreshOpNumbers() {
   const people = { hired: op.people.filter(p => p.stage === 'hired'), prospect: op.people.filter(p => p.stage !== 'hired') };
   root.querySelectorAll('[data-override]').forEach(el => { const r = op.overrideList[el.dataset.override]; el.textContent = opFmt(r.revenue * r.percent / 100, 'money'); });
   root.querySelectorAll('[data-cut]').forEach(el => el.textContent = opFmt(op.people[el.dataset.cut].revenue * pct / 100, 'money'));
-  root.querySelectorAll('[data-people-total]').forEach(el => el.textContent = opFmt(opSum(people[el.dataset.peopleTotal], 'revenue'), 'money'));
+  const amountKey = op.recruitPay === 'one_time' ? 'fee' : 'revenue';
+  root.querySelectorAll('[data-people-total]').forEach(el => el.textContent = opFmt(opSum(people[el.dataset.peopleTotal], amountKey), 'money'));
   root.querySelectorAll('[data-people-cut]').forEach(el => el.textContent = opFmt(opSum(people[el.dataset.peopleCut], 'revenue') * pct / 100, 'money'));
   // The % appears twice (recruitment and numbers); keep whichever isn't being typed in matching.
   for (const id of ['opd-pct', 'opd-var-pct']) { const el = document.getElementById(id); if (el && el !== document.activeElement) el.value = pct; }
+  const feePerHire = Number(op.vars.find(v => v.key === 'feePerHire')?.value) || 0;
+  for (const id of ['opd-fee', 'opd-var-fee']) { const el = document.getElementById(id); if (el && el !== document.activeElement) el.value = feePerHire; }
 
   op.formulas.forEach((f, i) => {
     const r = opResult(op, f);
@@ -2080,7 +2107,7 @@ function openOperation(id) {
   slug.dataset.touched = o.slug ? '1' : '';
   document.getElementById('op-slug-domain').textContent = '.' + opsDomain;
   document.getElementById('op-msg').className = 'email-msg';
-  opFlags = editingOp ? { recruiting: +editingOp.recruiting, overrides: +editingOp.overrides } : null;
+  opFlags = editingOp ? { recruiting: +editingOp.recruiting, overrides: +editingOp.overrides, recruitPay: editingOp.recruitPay } : null;
   setOpType(o.type);
   document.getElementById('ops-modal').hidden = false;
   document.getElementById('op-name').focus();
@@ -2103,7 +2130,7 @@ function setOpType(type) {
     ? 'The sales CRM we build them lives here. Filled in from the operation name.'
     : 'Add one if this system includes a CRM we host for them.';
   // New operations: systems usually recruit, sales starts with both sections off.
-  if (!editingOp) opFlags = { recruiting: type === 'systems' ? 1 : 0, overrides: 0 };
+  if (!editingOp) opFlags = { recruiting: type === 'systems' ? 1 : 0, overrides: 0, recruitPay: type === 'systems' ? 'one_time' : 'recurring' };
   document.getElementById('op-recruiting-field').hidden = type === 'marketing';
   document.getElementById('op-overrides-field').hidden = type === 'marketing';
   renderOpFlags();
@@ -2112,10 +2139,12 @@ function setOpType(type) {
 
 function renderOpFlags() {
   document.querySelectorAll('#ops-modal [data-flag]').forEach(b => b.classList.toggle('active', String(opFlags[b.dataset.flag]) === b.dataset.value));
+  document.getElementById('op-pay-field').hidden = opType === 'marketing' || !opFlags.recruiting;
 }
 
 function setOpFlag(button) {
-  opFlags[button.dataset.flag] = Number(button.dataset.value);
+  const value = button.dataset.value;
+  opFlags[button.dataset.flag] = /^\d$/.test(value) ? Number(value) : value;
   renderOpFlags();
 }
 
@@ -2132,7 +2161,7 @@ async function saveOperation() {
     type: opType, name: field('op-name'), client: field('op-client'), contactName: field('op-contact-name'),
     contactEmail: field('op-contact-email'), status: field('op-status'), startDate: field('op-start'),
     slug: opType === 'marketing' ? '' : field('op-slug'), notes: field('op-notes'),
-    recruiting: !!opFlags.recruiting, overrides: !!opFlags.overrides
+    recruiting: !!opFlags.recruiting, overrides: !!opFlags.overrides, recruitPay: opFlags.recruitPay
   };
   msg.className = 'email-msg';
   if (!payload.name) { msg.className = 'email-msg error show'; msg.textContent = 'Give the operation a name.'; return; }
@@ -2149,7 +2178,7 @@ async function saveOperation() {
     if (editing && opDraft?.id === saved.id) {
       // Keep unsaved creators / people / overrides in the open detail view. Switching a section on or off
       // changes the stored numbers and calculations, so those come from the server in that case.
-      const sectionsChanged = saved.recruiting !== editing.recruiting || saved.overrides !== editing.overrides;
+      const sectionsChanged = saved.recruiting !== editing.recruiting || saved.overrides !== editing.overrides || saved.recruitPay !== editing.recruitPay;
       allOperations = [saved, ...allOperations.filter(o => o.id !== saved.id)];
       Object.assign(opDraft, {
         ...saved, creators: opDraft.creators, people: opDraft.people, overrideList: opDraft.overrideList,

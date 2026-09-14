@@ -9,7 +9,7 @@ const RESERVED_SLUGS = new Set(['www', 'crm', 'api', 'app', 'mail', 'admin', 'te
 const VAR_FORMATS = ['number', 'money', 'percent'];
 const FORMULA_FORMATS = ['number', 'money', 'percent', 'multiple', 'months'];
 // Names the page fills in from creators and people, so a typed number can't use them.
-const AUTO_KEYS = new Set(['views', 'hires', 'hireRevenue', 'prospects', 'prospectRevenue', 'overrideRevenue', 'overrideIncome']);
+const AUTO_KEYS = new Set(['views', 'hires', 'hireRevenue', 'hireFees', 'prospects', 'prospectRevenue', 'prospectFees', 'overrideRevenue', 'overrideIncome']);
 const LIMITS = { vars: 40, formulas: 30, creators: 100, videos: 200, people: 200, overrides: 200 };
 
 // Starting numbers and calculations for a new operation, by type.
@@ -21,7 +21,15 @@ const recruitFormulas = [
 ];
 // Added when a section is switched on (and its formulas removed when switched off).
 const SECTION_PACKS = {
-  recruiting: { vars: recruitVars(10), formulas: recruitFormulas },
+  recruiting_recurring: { vars: recruitVars(10), formulas: recruitFormulas },
+  recruiting_one_time: {
+    vars: [{ key: 'feePerHire', label: 'My fee per hire', value: 0, format: 'money' }],
+    formulas: [
+      { label: 'Earned from recruits (one-time)', expr: 'hireFees', format: 'money' },
+      { label: 'Could earn if prospects get hired', expr: 'prospectFees', format: 'money' },
+      { label: 'Average fee per hire', expr: 'hireFees / hires', format: 'money' }
+    ]
+  },
   overrides: {
     vars: [],
     formulas: [
@@ -70,9 +78,14 @@ const TEMPLATES = {
 };
 
 // Template plus the packs for whichever sections are on, without repeating a var key or formula.
-function applyPacks(type, vars, formulas, sections) {
+function applyPacks(type, vars, formulas, fields) {
   vars = [...vars];
   formulas = [...formulas];
+  const sections = {
+    recruiting_recurring: fields.recruiting && fields.recruit_pay === 'recurring',
+    recruiting_one_time: fields.recruiting && fields.recruit_pay === 'one_time',
+    overrides: fields.overrides
+  };
   for (const [name, pack] of Object.entries(SECTION_PACKS)) {
     const packFormulas = pack.formulas.filter(f => !f.types || f.types.includes(type));
     if (sections[name]) {
@@ -125,6 +138,9 @@ function readFields(body, existing = {}) {
     type, name, status, slug: slug || null,
     recruiting: sectionFlag('recruiting', 'recruiting', 1),
     overrides: sectionFlag('overrides', 'overrides', 0),
+    // Systems recruiting is paid per recruit; sales recruiting as a cut of what hires bring in.
+    recruit_pay: ['recurring', 'one_time'].includes(body.recruitPay) ? body.recruitPay
+      : existing.recruit_pay || (type === 'systems' ? 'one_time' : 'recurring'),
     client: clean(pick('client', existing.client), 120),
     contact_name: clean(pick('contactName', existing.contact_name), 120),
     contact_email: contactEmail,
@@ -183,7 +199,7 @@ function readPeople(list) {
     return {
       id: clean(p.id, 64), name: clean(p.name, 120) || 'Unnamed', role: clean(p.role, 80),
       stage: p.stage === 'hired' ? 'hired' : 'prospect',
-      started: /^\d{4}-\d{2}-\d{2}$/.test(started) ? started : null, revenue: Math.max(0, num(p.revenue))
+      started: /^\d{4}-\d{2}-\d{2}$/.test(started) ? started : null, revenue: Math.max(0, num(p.revenue)), fee: Math.max(0, num(p.fee))
     };
   }) ?? null;
 }
@@ -214,7 +230,7 @@ async function loadOperations(env, where = '', binds = []) {
     id: o.id, type: o.type, name: o.name, client: o.client,
     contactName: o.contact_name, contactEmail: o.contact_email,
     status: o.status, slug: o.slug, crmUrl: o.slug ? `https://${o.slug}.${CRM_DOMAIN}` : '',
-    startDate: o.start_date, notes: o.notes, recruiting: !!o.recruiting, overrides: !!o.overrides,
+    startDate: o.start_date, notes: o.notes, recruiting: !!o.recruiting, overrides: !!o.overrides, recruitPay: o.recruit_pay,
     ownerId: o.owner_id, ownerName: o.owner_name || '',
     createdAt: o.created_at, updatedAt: o.updated_at,
     vars: (varMap.get(o.id) || []).map(v => ({ id: v.id, key: v.key, label: v.label, value: v.value, format: v.format, tracked: !!v.tracked, updatedAt: v.updated_at })),
@@ -224,7 +240,7 @@ async function loadOperations(env, where = '', binds = []) {
       videos: videos.results.filter(v => v.creator_id === c.id)
         .map(v => ({ id: v.id, url: v.url, views: v.views, viewsConfirmed: !!v.views_confirmed, viewsUpdatedAt: v.views_updated_at }))
     })),
-    people: (peopleMap.get(o.id) || []).map(p => ({ id: p.id, name: p.name, role: p.role, stage: p.stage, started: p.started, revenue: p.revenue })),
+    people: (peopleMap.get(o.id) || []).map(p => ({ id: p.id, name: p.name, role: p.role, stage: p.stage, started: p.started, revenue: p.revenue, fee: p.fee })),
     overrideList: (overrideMap.get(o.id) || []).map(r => ({ id: r.id, name: r.name, revenue: r.revenue, percent: r.percent }))
   }));
 }
@@ -317,10 +333,10 @@ function syncStatements(env, user, operationId, data, previous) {
       const id = old ? old.id : crypto.randomUUID();
       keep.add(id);
       statements.push(old
-        ? env.DB.prepare('UPDATE operation_people SET name = ?, role = ?, stage = ?, started = ?, revenue = ?, sort = ?, updated_at = ? WHERE id = ?')
-          .bind(p.name, p.role, p.stage, p.started, p.revenue, sort, stamp, id)
-        : env.DB.prepare('INSERT INTO operation_people (id, operation_id, name, role, stage, started, revenue, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-          .bind(id, operationId, p.name, p.role, p.stage, p.started, p.revenue, sort, stamp, stamp));
+        ? env.DB.prepare('UPDATE operation_people SET name = ?, role = ?, stage = ?, started = ?, revenue = ?, fee = ?, sort = ?, updated_at = ? WHERE id = ?')
+          .bind(p.name, p.role, p.stage, p.started, p.revenue, p.fee, sort, stamp, id)
+        : env.DB.prepare('INSERT INTO operation_people (id, operation_id, name, role, stage, started, revenue, fee, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(id, operationId, p.name, p.role, p.stage, p.started, p.revenue, p.fee, sort, stamp, stamp));
     });
     removeMissing('operation_people', previous.people, keep);
   }
@@ -375,10 +391,10 @@ async function createOperation(request, env, headers) {
   const id = crypto.randomUUID();
   const stamp = now();
   await runSave(env, [
-    env.DB.prepare(`INSERT INTO operations (id, type, name, client, contact_name, contact_email, status, slug, start_date, notes, recruiting, overrides, owner_id, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    env.DB.prepare(`INSERT INTO operations (id, type, name, client, contact_name, contact_email, status, slug, start_date, notes, recruiting, overrides, recruit_pay, owner_id, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(id, fields.type, fields.name, fields.client, fields.contact_name, fields.contact_email, fields.status, fields.slug,
-        fields.start_date, fields.notes, fields.recruiting, fields.overrides, user.id, user.id, stamp, stamp),
+        fields.start_date, fields.notes, fields.recruiting, fields.overrides, fields.recruit_pay, user.id, user.id, stamp, stamp),
     ...syncStatements(env, user, id, data, EMPTY)
   ], fields);
   return json({ ok: true, operation: await getOperation(env, id) }, 201, headers);
@@ -396,14 +412,14 @@ async function updateOperation(request, env, headers, [id]) {
   };
   const previous = await getOperation(env, id);
   // Switching a section on or off adds or removes its starter numbers and calculations.
-  if (fields.recruiting !== existing.recruiting || fields.overrides !== existing.overrides) {
+  if (fields.recruiting !== existing.recruiting || fields.overrides !== existing.overrides || fields.recruit_pay !== existing.recruit_pay) {
     const packed = applyPacks(fields.type, readVars(data.vars ?? previous.vars), readFormulas(data.formulas ?? previous.formulas), fields);
     data.vars = packed.vars.map(v => ({ ...v, format: v.format || 'number', tracked: bool(v.tracked) }));
     data.formulas = packed.formulas;
   }
   await runSave(env, [
-    env.DB.prepare(`UPDATE operations SET type = ?, name = ?, client = ?, contact_name = ?, contact_email = ?, status = ?, slug = ?, start_date = ?, notes = ?, recruiting = ?, overrides = ?, updated_at = ? WHERE id = ?`)
-      .bind(fields.type, fields.name, fields.client, fields.contact_name, fields.contact_email, fields.status, fields.slug, fields.start_date, fields.notes, fields.recruiting, fields.overrides, now(), id),
+    env.DB.prepare(`UPDATE operations SET type = ?, name = ?, client = ?, contact_name = ?, contact_email = ?, status = ?, slug = ?, start_date = ?, notes = ?, recruiting = ?, overrides = ?, recruit_pay = ?, updated_at = ? WHERE id = ?`)
+      .bind(fields.type, fields.name, fields.client, fields.contact_name, fields.contact_email, fields.status, fields.slug, fields.start_date, fields.notes, fields.recruiting, fields.overrides, fields.recruit_pay, now(), id),
     ...syncStatements(env, user, id, data, previous)
   ], fields);
   return json({ ok: true, operation: await getOperation(env, id) }, 200, headers);
