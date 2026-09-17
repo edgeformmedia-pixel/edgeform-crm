@@ -989,20 +989,32 @@ $('load-leads').onclick=async()=>{
     const d=await gasCall('loadTab',{tab});
     headers=d.headers;
     tabName=tab;
-    const {ni,pi}=detectColumns(headers,d.rows);
+    const {ni,pi,alts,looksPhone}=detectColumns(headers,d.rows);
+    let noPhone=0,removed=0;
     leads=d.rows.map((row,i)=>{
       const cells={};headers.forEach((h,j)=>{cells[h]=(row[j]??'').toString().trim()});
-      const phone=normalizePhone(cells[headers[pi]]||'');
-      if(!phone)return null;
+      let phoneKey=headers[pi],phone=normalizePhone(cells[phoneKey]||'');
+      // Main cell empty? Take the row's own alternate number rather than
+      // dropping an otherwise dialable lead.
+      if(!phone)for(const j of alts){
+        if(!looksPhone(cells[headers[j]]))continue;
+        phone=normalizePhone(cells[headers[j]]);phoneKey=headers[j];break;
+      }
+      if(!phone){noPhone++;return null}
       const name=(cells[headers[ni]]||'').trim()||'Row '+(i+2);
       const existingOutcomes=row.slice(headers.length).map(c=>String(c||'').trim()).filter(Boolean);
       // Skip leads marked DELETED in the CRM
-      if(existingOutcomes.some(o=>/^DELETED/i.test(o)))return null;
+      if(existingOutcomes.some(o=>/^DELETED/i.test(o))){removed++;return null}
       const isDNC=existingOutcomes.some(o=>/DNC/i.test(o));
-      return{rowIdx:i+2,name,phone,cells,nameKey:headers[ni],phoneKey:headers[pi],status:isDNC?'dnc':'pending',attempts:0,history:existingOutcomes};
+      return{rowIdx:i+2,name,phone,cells,nameKey:headers[ni],phoneKey,status:isDNC?'dnc':'pending',attempts:0,history:existingOutcomes};
     }).filter(Boolean);
     idx=0;attempt=0;stats={book:0,conn:0,vm:0,fail:0};updateStats();
-    log('Loaded '+leads.length+' leads from '+tab,'ok');
+    log('Loaded '+leads.length+' leads from '+tab+' (phone column: '+headers[pi]+')','ok');
+    // Never lose rows quietly — a short queue should always say why it is short.
+    if(noPhone||removed){
+      log('⚠ Skipped '+(noPhone+removed)+' of '+d.rows.length+' rows — '+
+        noPhone+' with no usable phone number, '+removed+' marked DELETED','warn');
+    }
     // Check for saved position on this tab
     const saved=loadPosition(tab);
     if(saved&&saved.idx>0&&saved.idx<leads.length){
@@ -1027,15 +1039,23 @@ function detectColumns(hdrs,rows){
   const ni=findNameColumn(hdrs);
   if(ni<0)throw new Error('This list has no NAME column. Headers: '+hdrs.join(', '));
   const looksPhone=v=>{const d=String(v||'').replace(/\D/g,'');return d.length>=10&&d.length<=15};
-  const score=j=>{const vals=rows.map(r=>r[j]).filter(v=>String(v||'').trim());return vals.length?vals.filter(looksPhone).length/vals.length:0};
-  let pi=hdrs.findIndex((h,j)=>j!==ni&&/phone|cell|mobile|tel/i.test(h)&&score(j)>0);
-  if(pi<0){
-    let best=0;
-    hdrs.forEach((h,j)=>{if(j===ni)return;const sc=score(j);if(sc>best){best=sc;pi=j}});
-    if(best<0.5)pi=-1;
-  }
-  if(pi<0)throw new Error('Could not find a phone number column. Headers: '+hdrs.join(', '));
-  return{ni,pi};
+  // Score over every row, not just the filled-in ones. A column holding good
+  // numbers for half the list is a worse phone column than one that covers all
+  // of it, and scoring per non-empty value hid that difference completely.
+  const score=j=>rows.length?rows.filter(r=>looksPhone(r[j])).length/rows.length:0;
+  const scores=hdrs.map((h,j)=>j===ni?-1:score(j));
+  const bestOf=js=>js.reduce((a,b)=>scores[b]>scores[a]?b:a,js[0]??-1);
+  // Prefer the best-covered phone-ish header, then fall back to the best column
+  // of any name. Picking the *first* matching header meant a sparse "Phone"
+  // beat a complete "Mobile" sitting right next to it.
+  const named=hdrs.map((h,j)=>j).filter(j=>j!==ni&&/phone|cell|mobile|tel/i.test(hdrs[j]));
+  let pi=bestOf(named);
+  if(pi<0||scores[pi]<0.5)pi=bestOf(hdrs.map((h,j)=>j).filter(j=>j!==ni));
+  if(pi<0||scores[pi]<=0)throw new Error('Could not find a phone number column. Headers: '+hdrs.join(', '));
+  // Any other column carrying real numbers becomes a per-row fallback, so a row
+  // whose main phone cell is blank still gets dialed off its alternate number.
+  const alts=hdrs.map((h,j)=>j).filter(j=>j!==ni&&j!==pi&&scores[j]>0);
+  return{ni,pi,alts,looksPhone};
 }
 
 function findLastNonEmpty(arr){for(let i=arr.length-1;i>=0;i--)if(String(arr[i]||'').trim())return i;return-1}
