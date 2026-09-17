@@ -126,7 +126,81 @@ async function deleteList(env, user, { name }) {
   return {};
 }
 
-const ACTIONS = { listTabs, loadTab, logOutcomes, markDeleted, upsertTracker, importList, deleteList };
+// ── Caller-ID health ──────────────────────────────────────────────────────
+// The dialer records one row per dial so it can score each caller ID the way
+// carrier analytics engines do (volume, burst rate, short calls, answer rate)
+// and stop handing out numbers that are about to get flagged.
+
+const HEALTH_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_DIAL_EVENTS = 200;
+const MAX_HEALTH_ROWS = 5000;
+
+async function logDials(env, user, { items }) {
+  if (!Array.isArray(items)) throw new HttpError(400, 'Expected items.');
+  const rows = items.slice(0, MAX_DIAL_EVENTS)
+    .filter(i => i && typeof i.id === 'string' && i.id.length <= 64 && i.callerId && Number.isFinite(Number(i.at)))
+    .map(i => env.DB.prepare(
+      `INSERT INTO dialer_number_calls (id, owner_id, caller_id, day, started_at, talk_sec, answered, agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET talk_sec = excluded.talk_sec, answered = excluded.answered`
+    ).bind(
+      clean(i.id, 64), user.id, clean(i.callerId, 24),
+      /^\d{4}-\d{2}-\d{2}$/.test(i.day) ? i.day : new Date(Number(i.at)).toISOString().slice(0, 10),
+      Math.round(Number(i.at)), Math.max(0, Math.min(86400, Number(i.talkSec) | 0)),
+      i.answered ? 1 : 0, clean(i.agent, 60)
+    ));
+  if (rows.length) await env.DB.batch(rows);
+  return { count: rows.length };
+}
+
+async function numberHealth(env, user) {
+  const since = Date.now() - HEALTH_WINDOW_MS;
+  const weekStart = Date.now() - 7 * HEALTH_WINDOW_MS;
+  const [recent, week, rest] = await env.DB.batch([
+    // Raw events for the scoring window, so the browser can compute gaps and
+    // per-hour velocity exactly instead of re-deriving them from averages.
+    env.DB.prepare(
+      `SELECT id, caller_id, day, started_at, talk_sec, answered FROM dialer_number_calls
+       WHERE owner_id = ? AND started_at >= ? ORDER BY started_at LIMIT ${MAX_HEALTH_ROWS}`
+    ).bind(user.id, since),
+    env.DB.prepare(
+      `SELECT caller_id, COUNT(*) dials, SUM(answered) answered, SUM(talk_sec) talk_sec,
+              SUM(CASE WHEN answered = 1 AND talk_sec < 6 THEN 1 ELSE 0 END) short_calls, COUNT(DISTINCT day) days
+       FROM dialer_number_calls WHERE owner_id = ? AND started_at >= ? GROUP BY caller_id`
+    ).bind(user.id, weekStart),
+    env.DB.prepare('SELECT caller_id, resting_until, reason FROM dialer_number_rest WHERE owner_id = ?').bind(user.id)
+  ]);
+  return {
+    asOf: Date.now(),
+    // Short keys keep this payload small enough to poll while a shift is running.
+    events: recent.results.map(r => ({ i: r.id, c: r.caller_id, d: r.day, a: r.started_at, t: r.talk_sec, s: r.answered })),
+    week: week.results.map(r => ({
+      callerId: r.caller_id, dials: r.dials, answered: r.answered,
+      talkSec: r.talk_sec, shortCalls: r.short_calls, days: r.days
+    })),
+    rest: rest.results.map(r => ({ callerId: r.caller_id, until: r.resting_until, reason: r.reason }))
+  };
+}
+
+async function restNumber(env, user, { callerId, until, reason }) {
+  callerId = clean(callerId, 24);
+  if (!callerId) throw new HttpError(400, 'callerId is required.');
+  if (!until) {
+    await env.DB.prepare('DELETE FROM dialer_number_rest WHERE owner_id = ? AND caller_id = ?').bind(user.id, callerId).run();
+    return { callerId, until: null };
+  }
+  const restingUntil = new Date(until);
+  if (isNaN(restingUntil)) throw new HttpError(400, 'until must be a timestamp.');
+  await env.DB.prepare(
+    `INSERT INTO dialer_number_rest (owner_id, caller_id, resting_until, reason, updated_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(owner_id, caller_id) DO UPDATE SET resting_until = excluded.resting_until,
+       reason = excluded.reason, updated_at = excluded.updated_at`
+  ).bind(user.id, callerId, restingUntil.toISOString(), clean(reason, 200), now()).run();
+  return { callerId, until: restingUntil.toISOString() };
+}
+
+const ACTIONS = { listTabs, loadTab, logOutcomes, markDeleted, upsertTracker, importList, deleteList,
+  logDials, numberHealth, restNumber };
 
 async function dialer(request, env, headers) {
   const user = await requireUser(request, env);

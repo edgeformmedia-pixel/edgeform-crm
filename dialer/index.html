@@ -29,6 +29,7 @@
   --blue:#2563eb;
   --purple:#7c3aed;
   --pink:#db2777;
+  --orange:#ea580c;
   /* Effects */
   --shadow-sm:0 1px 2px rgba(20,20,30,.04), 0 1px 1px rgba(20,20,30,.03);
   --shadow:0 4px 12px rgba(20,20,30,.06), 0 1px 2px rgba(20,20,30,.04);
@@ -57,6 +58,7 @@
   --blue:#60a5fa;
   --purple:#a78bfa;
   --pink:#f472b6;
+  --orange:#fb923c;
   --shadow-sm:0 1px 2px rgba(0,0,0,.3);
   --shadow:0 4px 12px rgba(0,0,0,.35);
   --shadow-lg:0 24px 48px -12px rgba(0,0,0,.55);
@@ -297,6 +299,57 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .trk-row span:first-child{text-align:left}
 .trk-sync{font-size:10px;color:var(--t3);font-family:'Geist Mono',monospace;margin-top:8px;text-align:right}
 
+/* Number health leaderboard */
+.nh{margin-top:16px;background:var(--sf);border:1px solid var(--b);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow-sm)}
+.nh h3{font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.nh h3 .nh-sub{font-weight:400;color:var(--t3);font-size:10px;font-family:'Geist Mono',monospace}
+.nh h3 .nh-sync{margin-left:auto;font-weight:400;color:var(--t3);font-size:10px;font-family:'Geist Mono',monospace}
+.nh-caps{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0;font-size:11px}
+.nh-caps input[type=number]{width:58px}
+.nh-caps .nh-toggle{display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;color:var(--t2)}
+.nh-caps .nh-toggle input{width:14px;height:14px;cursor:pointer;accent-color:var(--red)}
+.nh-caps button{padding:5px 10px;font-size:11px}
+.nh-scroll{overflow-x:auto;border:1px solid var(--b);border-radius:var(--radius-sm)}
+.nh-table{min-width:760px;font-family:'Geist Mono',monospace;font-size:11px}
+.nh-row{display:grid;grid-template-columns:24px minmax(150px,1.3fr) 92px 1.25fr 76px 82px 70px 70px 62px;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--b);color:var(--t2)}
+.nh-row:last-child{border-bottom:none}
+.nh-row.header{background:var(--s2);color:var(--t3);font-size:10px;font-weight:500;position:sticky;top:0}
+.nh-row.locked{background:color-mix(in srgb, var(--red) 7%, var(--sf))}
+.nh-row .nh-rank{color:var(--t3)}
+.nh-num{display:flex;flex-direction:column;gap:2px;min-width:0}
+.nh-num b{color:var(--tx);font-weight:600;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nh-num span{color:var(--t3);font-size:10px}
+.nh-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:600;letter-spacing:.04em;white-space:nowrap;justify-self:start}
+.nh-chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.nh-chip.cool{background:color-mix(in srgb, var(--green) 13%, var(--sf));color:var(--gdim);border:1px solid color-mix(in srgb, var(--green) 32%, transparent)}
+.nh-chip.warm{background:color-mix(in srgb, var(--amber) 14%, var(--sf));color:var(--amber);border:1px solid color-mix(in srgb, var(--amber) 34%, transparent)}
+.nh-chip.hot{background:color-mix(in srgb, var(--orange) 15%, var(--sf));color:var(--orange);border:1px solid color-mix(in srgb, var(--orange) 36%, transparent)}
+.nh-chip.burnt{background:var(--red);color:#fff;border:1px solid var(--red)}
+.nh-chip.locked{background:var(--red);color:#fff;border:1px solid var(--red)}
+.nh-chip.locked .dot{animation:p 1.6s infinite}
+.nh-bar{display:flex;flex-direction:column;gap:3px;min-width:0}
+.nh-bar-track{position:relative;height:7px;background:var(--s3);border:1px solid var(--b);border-radius:4px;overflow:hidden}
+.nh-bar-fill{position:absolute;left:0;top:0;bottom:0;border-radius:3px;transition:width .3s ease}
+.nh-bar-fill.cool{background:var(--green)}
+.nh-bar-fill.warm{background:var(--amber)}
+.nh-bar-fill.hot{background:var(--orange)}
+.nh-bar-fill.burnt{background:var(--red)}
+.nh-bar-lbl{font-size:10px;color:var(--t3);white-space:nowrap}
+.nh-v{text-align:right;color:var(--tx)}
+.nh-v.dim{color:var(--t3)}
+.nh-v.bad{color:var(--red);font-weight:600}
+.nh-v.mid{color:var(--amber);font-weight:600}
+.nh-act{display:flex;justify-content:flex-end}
+.nh-act button{padding:4px 8px;font-size:10px;font-family:'Geist Mono',monospace;border-radius:5px}
+.nh-act button.resting{border-color:var(--green);color:var(--green)}
+.nh-act button:not(.resting):hover{border-color:var(--red);color:var(--red);background:color-mix(in srgb, var(--red) 10%, transparent)}
+.nh-empty{padding:18px;text-align:center;color:var(--t3);font-size:11px}
+.nh-why{grid-column:1/-1;font-size:10px;color:var(--t3);padding-top:2px;white-space:normal;line-height:1.5}
+.nh-why b{color:var(--red);font-weight:600}
+.nh-legend{margin-top:9px;font-size:10px;color:var(--t3);line-height:1.6;font-family:'Geist Mono',monospace}
+.nh-legend b{color:var(--t2);font-weight:600}
+@media(max-width:880px){.nh-table{min-width:680px}}
+
 /* Log */
 .log{background:var(--s2);border:1px solid var(--b);border-radius:var(--radius-sm);padding:12px;height:140px;overflow:auto;font-family:'Geist Mono',monospace;font-size:11px;color:var(--t2);margin-top:12px;line-height:1.55}
 .log div{padding:1px 0}
@@ -516,6 +569,39 @@ summary:hover{color:var(--tx)}
     </details>
     <div class="trk-sync" id="trk-sync">Not synced</div>
   </div>
+
+  <div class="nh" id="nh-panel">
+    <h3>🌡 NUMBER HEALTH
+      <span class="nh-sub">caller ID leaderboard · trailing 24h</span>
+      <span class="nh-sync" id="nh-sync">—</span>
+    </h3>
+    <div class="nh-caps">
+      <label title="Carrier analytics flag numbers that push past roughly 50 dials a day.">Dials / day</label>
+      <input type="number" id="nh-day-cap" min="5" max="500" value="50">
+      <label title="Most guidance puts the ceiling at 10-15 dials an hour from one number.">Dials / hour</label>
+      <input type="number" id="nh-hour-cap" min="1" max="120" value="15">
+      <label class="nh-toggle" title="When on, the dialer refuses to use any number that is BURNT, resting, or over a cap — every dial path, including the keypad.">
+        <input type="checkbox" id="nh-enforce" checked>
+        <span style="color:var(--red);font-family:'Geist Mono',monospace;letter-spacing:.05em">🔒 LOCK HOT NUMBERS</span>
+      </label>
+      <button id="nh-refresh" title="Pull the latest caller-ID history for every agent on this account">↻ Refresh</button>
+    </div>
+    <div class="nh-scroll">
+      <div class="nh-table" id="nh-table">
+        <div class="nh-row header">
+          <span>#</span><span>Caller ID</span><span>Temp</span><span>Dials today</span>
+          <span class="nh-v">Avg conn</span><span class="nh-v">Gap</span><span class="nh-v">Answer</span><span class="nh-v">&lt;6s</span><span class="nh-v">Rest</span>
+        </div>
+        <div class="nh-empty">No dials recorded yet today.</div>
+      </div>
+    </div>
+    <div class="nh-legend">
+      <b>Temp</b> is the worst of six carrier-reputation signals: daily volume, hourly burst, share of calls under 6s,
+      average connected time, answer rate, and how tightly dials are spaced.
+      <b style="color:var(--red)">BURNT</b>, resting, and over-cap numbers are locked out of every dial path while
+      <b>LOCK HOT NUMBERS</b> is on.
+    </div>
+  </div>
 </div>
 
 <div class="panel">
@@ -595,7 +681,33 @@ let NUMBERS = [
   {n:'+15176189305',lbl:'(517) Howell',       lat:42.6075,lng:-83.9297},
 ];
 const AC_COORDS={'231':{lat:44.76,lng:-85.62},'248':{lat:42.58,lng:-83.25},'269':{lat:42.29,lng:-85.59},'313':{lat:42.33,lng:-83.05},'517':{lat:42.73,lng:-84.56},'586':{lat:42.58,lng:-82.91},'616':{lat:42.96,lng:-85.67},'734':{lat:42.28,lng:-83.74},'810':{lat:43.01,lng:-83.69},'906':{lat:46.48,lng:-84.99},'947':{lat:42.58,lng:-83.25},'989':{lat:43.42,lng:-83.95},'default':{lat:43.33,lng:-84.54}};
-function closestNum(p){const ac=p.replace(/\D/g,'').slice(-10).slice(0,3);const c=AC_COORDS[ac]||AC_COORDS.default;let best=NUMBERS[0],bestD=Infinity;for(const n of NUMBERS){const dLat=(n.lat-c.lat)*Math.PI/180,dLng=(n.lng-c.lng)*Math.PI/180;const a=Math.sin(dLat/2)**2+Math.cos(c.lat*Math.PI/180)*Math.cos(n.lat*Math.PI/180)*Math.sin(dLng/2)**2;const d=3958.8*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));if(d<bestD){bestD=d;best=n;}}return best;}
+// Nearest caller ID to the destination's area code, picked only from numbers the
+// health guard still allows. Returns null when every number is locked out — callers
+// must treat that as "do not dial" rather than quietly falling back to a burnt one.
+function closestNum(p){return rankedNumbers(p)[0]||null;}
+
+// Every usable caller ID, ranked by distance to the destination area code.
+function rankedNumbers(phone){
+  const ac=String(phone||'').replace(/\D/g,'').slice(-10).slice(0,3);
+  const c=AC_COORDS[ac]||AC_COORDS.default;
+  return nhUsableNumbers().map(n=>{
+    const dLat=(n.lat-c.lat)*Math.PI/180,dLng=(n.lng-c.lng)*Math.PI/180;
+    const a=Math.sin(dLat/2)**2+Math.cos(c.lat*Math.PI/180)*Math.cos(n.lat*Math.PI/180)*Math.sin(dLng/2)**2;
+    const d=3958.8*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+    return {n,d};
+  }).sort((a,b)=>a.d-b.d).map(x=>x.n);
+}
+
+// Single funnel for "which caller ID does this dial go out on". Returns null and
+// halts the run when the pool is empty, so the last healthy number never gets smoked.
+function pickCallerId(phone,{halt=true}={}){
+  const from=closestNum(phone);
+  if(from)return from;
+  log('🔒 Every caller ID ('+NUMBERS.length+') is resting or over its safe limit — not dialing. '+
+      'Add numbers, raise the caps, or wait for the rest periods to clear.','err');
+  if(halt&&running)$('stop').click();
+  return null;
+}
 
 // ══ STATE ══
 const $=id=>document.getElementById(id);
@@ -862,6 +974,7 @@ $('load-tabs').onclick=async()=>{
       $('kp-from').innerHTML='<option value="auto">Auto (closest match)</option>';
       NUMBERS.forEach(n=>{const o=document.createElement('option');o.value=n.n;o.textContent=n.lbl;$('kp-from').appendChild(o)});
       $('kp-from').value=LS('kp_from','auto');
+      nhRender();  // the leaderboard tracks whatever pool is actually loaded
     }else{
       log('No NUMBERS list found — using default caller IDs','warn');
     }
@@ -1007,7 +1120,8 @@ async function manualDial(){
   if(!lead){log('No lead','warn');return}
   const maxAtt=+$('maxAtt').value;
   dialing=true;showLead(idx);
-  const from=closestNum(lead.phone);
+  const from=pickCallerId(lead.phone,{halt:false});
+  if(!from){dialing=false;$('dial').disabled=!device||!leads.length;updateDialBtnLabel();setState('IDLE');return}
   setState('DIALING','ring');
   log('📞 Manual dial '+lead.name+' from '+from.lbl+' ('+(attempt+1)+'/'+maxAtt+')');
   try{
@@ -1017,7 +1131,7 @@ async function manualDial(){
     lead._manualDial=true;
     attempt++;             // <-- this dial counts as an attempt
     trkBump('dials');
-    bindCall(lead);
+    bindCall(lead,nhStart(from.n));
     updateDialBtnLabel();
   }catch(e){
     log('Manual dial failed: '+e.message,'err');
@@ -1237,17 +1351,6 @@ async function startMicMonitor(){
   }
 }
 
-// Ranked list of caller IDs by distance to a given destination
-function rankedNumbers(phone){
-  const ac=phone.replace(/\D/g,'').slice(-10).slice(0,3);
-  const c=AC_COORDS[ac]||AC_COORDS.default;
-  return NUMBERS.map(n=>{
-    const dLat=(n.lat-c.lat)*Math.PI/180,dLng=(n.lng-c.lng)*Math.PI/180;
-    const a=Math.sin(dLat/2)**2+Math.cos(c.lat*Math.PI/180)*Math.cos(n.lat*Math.PI/180)*Math.sin(dLng/2)**2;
-    const d=3958.8*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-    return {n,d};
-  }).sort((a,b)=>a.d-b.d).map(x=>x.n);
-}
 
 // Fast redial — same caller ID, zero delay, doesn't count as new attempt
 async function fastRedial(from,reason){
@@ -1266,20 +1369,24 @@ async function fastRedial(from,reason){
       lead._lastCallerId=from.n;
       lead._manualRedial=true; // flag so afterCall doesn't count this as a per-lead attempt
       trkBump('dials');  // ← tracker: still count this dial
-      bindCall(lead);
+      bindCall(lead,nhStart(from.n));
     }catch(e){log('Redial failed: '+e.message,'err');dialing=false}
   },150);
 }
 
 $('redial').onclick=()=>{
   const lead=leads[idx];if(!lead){log('No active lead','warn');return}
-  const from=lead._lastCallerId?NUMBERS.find(n=>n.n===lead._lastCallerId)||closestNum(lead.phone):closestNum(lead.phone);
+  // Reuse the same caller ID only while it is still healthy enough to dial.
+  const prev=lead._lastCallerId&&!nhLock(lead._lastCallerId).locked?NUMBERS.find(n=>n.n===lead._lastCallerId):null;
+  const from=prev||pickCallerId(lead.phone,{halt:false});
+  if(!from)return;
   fastRedial(from,'INSTANT REDIAL');
 };
 
 $('block-redial').onclick=()=>{
   const lead=leads[idx];if(!lead){log('No active lead','warn');return}
   const ranked=rankedNumbers(lead.phone);
+  if(!ranked.length){pickCallerId(lead.phone,{halt:false});return}
   // Track which numbers we've already tried on this lead
   if(!lead._triedIds)lead._triedIds=new Set();
   if(lead._lastCallerId)lead._triedIds.add(lead._lastCallerId);
@@ -1331,7 +1438,7 @@ async function dialNext(){
     const ranked=rankedNumbers(lead.phone);
     from=ranked.find(n=>!lead._triedIds.has(n.n));
     if(!from){
-      // Cycled through all — reset and use the closest again
+      // Cycled through all — reset and use the closest still-usable one.
       log('🔀 All caller IDs tried on this lead — restarting rotation','warn');
       lead._triedIds=new Set();
       from=ranked[0];
@@ -1341,6 +1448,7 @@ async function dialNext(){
   } else {
     from=closestNum(lead.phone);
   }
+  if(!from){dialing=false;pickCallerId(lead.phone);return}
 
   setState('DIALING','ring');log('Dialing '+lead.name+' from '+from.lbl+' ('+(attempt+1)+'/'+$('maxAtt').value+')');
   try{
@@ -1349,13 +1457,19 @@ async function dialNext(){
 
     lead._lastCallerId=from.n;
     trkBump('dials');  // ← tracker: count this dial
-    bindCall(lead);
+    bindCall(lead,nhStart(from.n));
   }catch(e){log('connect() failed: '+e.message,'err');dialing=false;attempt++;setTimeout(dialNext,1500)}
 }
 
-function bindCall(lead){
+function bindCall(lead,healthEvent){
   callStart=Date.now();let finalized=false;let accepted=false;let acceptedAt=0;let pickupCounted=false;
-  const finalize=reason=>{if(finalized)return;finalized=true;clearInterval(callTimer);afterCall(reason)};
+  const finalize=reason=>{
+    if(finalized)return;finalized=true;clearInterval(callTimer);
+    // Every ending — disconnect, error, cancel, reject — lands here, so the
+    // caller ID's answer rate and talk time stay honest.
+    nhEnd(healthEvent,accepted?Math.floor((Date.now()-acceptedAt)/1000):0,accepted);
+    afterCall(reason);
+  };
   callTimer=setInterval(()=>{const s=Math.floor((Date.now()-callStart)/1000);$('timer').className='timer';$('timer').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')},250);
   conn.on('ringing',()=>{setState('RINGING','ring');log('Ringing…')});
   conn.on('accept',()=>{accepted=true;acceptedAt=Date.now();setState('CONNECTED','live');log('Accepted','ok');applyMuteToConn();startSpamScreenWatch(lead)});
@@ -1597,7 +1711,7 @@ function showLead(i){
   savePosition();
   const l=leads[i];const from=closestNum(l.phone);
   $('name').textContent=l.name;$('phone').textContent=l.phone;
-  $('att').textContent='Lead '+(i+1)+'/'+leads.length+' • Try '+(attempt+1)+'/'+$('maxAtt').value+' • '+from.lbl+(l.history.length?' • '+l.history.length+' prior':'');
+  $('att').textContent='Lead '+(i+1)+'/'+leads.length+' • Try '+(attempt+1)+'/'+$('maxAtt').value+' • '+(from?from.lbl:'no caller ID free')+(l.history.length?' • '+l.history.length+' prior':'');
   const entries=Object.entries(l.cells).filter(([k,v])=>v&&k!==l.nameKey&&k!==l.phoneKey);
   $('info').innerHTML=entries.length?entries.map(([k,v])=>`<div class="info-row"><div class="info-k">${esc(k)}</div><div class="info-v">${renderCellValue(k,v)}</div></div>`).join(''):'<div style="color:var(--t3);text-align:center;padding:18px">No extra info</div>';
   renderScript(l);
@@ -1714,27 +1828,38 @@ function updateStats(){$('s-total').textContent=leads.length;$('s-book').textCon
 // ══ KEYPAD ══
 NUMBERS.forEach(n=>{const o=document.createElement('option');o.value=n.n;o.textContent=n.lbl;$('kp-from').appendChild(o)});
 $('kp-from').value=LS('kp_from','auto');$('kp-from').addEventListener('change',e=>SS('kp_from',e.target.value));
-let kpBuf='',manualCall=false;const kpDisp=$('kp-disp');
+let kpBuf='',manualCall=false,kpEvent=null,kpAcceptedAt=0;const kpDisp=$('kp-disp');
 function kpRender(){if(!kpBuf){kpDisp.textContent='Type to dial';kpDisp.className='kp-display empty'}else{kpDisp.textContent=kpBuf;kpDisp.className='kp-display'}}
 function kpPress(k){if(conn&&manualCall){try{conn.sendDigits(k);log('DTMF: '+k)}catch{};return}if(kpBuf.length<20)kpBuf+=k;kpRender()}
 document.querySelectorAll('.kp-key').forEach(b=>b.onclick=()=>kpPress(b.dataset.k));
 $('kp-bs').onclick=()=>{kpBuf=kpBuf.slice(0,-1);kpRender()};
 $('kp-call').onclick=async()=>{
   if(!device){alert('Connect mic');return}if(!kpBuf){alert('Enter number');return}if(running){alert('Stop auto-dialer first');return}
-  const num=normalizePhone(kpBuf);const fromSel=$('kp-from').value;const from=fromSel==='auto'?closestNum(num):(NUMBERS.find(n=>n.n===fromSel)||closestNum(num));
+  const num=normalizePhone(kpBuf);const fromSel=$('kp-from').value;
+  let from;
+  if(fromSel==='auto')from=pickCallerId(num,{halt:false});
+  else{
+    const lock=nhLock(fromSel);
+    if(lock.locked){alert('That caller ID is locked: '+lock.reason+'.\n\nPick another number, or switch it off with LOCK HOT NUMBERS.');return}
+    from=NUMBERS.find(n=>n.n===fromSel)||pickCallerId(num,{halt:false});
+  }
+  if(!from)return;
   log('Manual: '+num+' from '+from.lbl);setState('DIALING','ring');manualCall=true;
   $('kp-call').style.display='none';$('kp-end').style.display='block';callStart=Date.now();
   callTimer=setInterval(()=>{const s=Math.floor((Date.now()-callStart)/1000);$('timer').className='timer';$('timer').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')},250);
   try{
     conn=await device.connect({params:{To:num,callerId:from.n,leadName:'Manual'}});
-
-    conn.on('accept',()=>{setState('CONNECTED','live');log('Connected','ok');applyMuteToConn()});
+    kpEvent=nhStart(from.n);kpAcceptedAt=0;
+    conn.on('accept',()=>{kpAcceptedAt=Date.now();setState('CONNECTED','live');log('Connected','ok');applyMuteToConn()});
     conn.on('disconnect',()=>endManual('Disconnected'));conn.on('error',e=>{log('Error: '+e.message,'err');endManual('Error')});
     conn.on('cancel',()=>endManual('Cancel'));conn.on('reject',()=>endManual('Reject'));
   }catch(e){log('Manual dial failed: '+e.message,'err');endManual('Failed')}
 };
 $('kp-end').onclick=()=>{if(conn)try{conn.disconnect()}catch{}};
-function endManual(r){log(r);clearInterval(callTimer);beepStop();resetMuteUI();conn=null;manualCall=false;$('timer').textContent='00:00';$('timer').className='timer idle';setState('IDLE');$('kp-call').style.display='block';$('kp-end').style.display='none'}
+function endManual(r){
+  nhEnd(kpEvent,kpAcceptedAt?Math.floor((Date.now()-kpAcceptedAt)/1000):0,!!kpAcceptedAt);
+  kpEvent=null;kpAcceptedAt=0;
+  log(r);clearInterval(callTimer);beepStop();resetMuteUI();conn=null;manualCall=false;$('timer').textContent='00:00';$('timer').className='timer idle';setState('IDLE');$('kp-call').style.display='block';$('kp-end').style.display='none'}
 
 // ══ DAILY TRACKER ══
 // Counts dials, pickups, and outcomes per day. Buffers in localStorage,
@@ -1839,6 +1964,262 @@ setInterval(trkSync,30000);
 // Render on load
 trkRender();
 
+// == NUMBER HEALTH - caller-ID reputation guard ==============================
+// Carrier analytics engines (Hiya on AT&T, TNS on Verizon, First Orion on
+// T-Mobile) score a caller ID on behaviour, not on what is said. The signals
+// they weigh, and the thresholds the industry consistently publishes:
+//   - daily volume      - flag risk climbs steeply past roughly 50 dials/day
+//   - hourly burst      - 10-15 dials/hour from one number is the usual ceiling
+//   - short calls (<6s) - carriers take notice once these pass ~15% of traffic
+//   - connected time    - an average under 30s reads as nuisance traffic
+//   - answer rate       - healthy cold calling runs 5-15%; under 5% looks flagged
+//   - cadence           - evenly spaced back-to-back dials look like a robot
+// We score all six per number over a trailing 24 hours, colour the leaderboard
+// by the worst of them, and refuse to hand a BURNT number to any dial path.
+
+const NH_WINDOW_MS=24*60*60*1000;   // carriers weight recent behaviour most heavily
+const NH_MIN_SAMPLE=10;             // ratios below this are noise, so they score 0
+const NH_MIN_ANSWERED=5;            // talk-time and short-call ratios need connected calls
+// Bands are a share of the signals actually in play, so a number is not let off
+// just because the volume caps happen to be set loosely.
+const NH_HOT_RATIO=0.35, NH_BURNT_RATIO=0.55;
+
+let nhEvents=new Map();   // id -> {id,callerId,day,at,talkSec,answered}
+let nhDirty=new Set();    // ids not yet pushed to the CRM
+let nhWeek=new Map();     // callerId -> 7-day totals, for context only
+let nhRest=new Map();     // callerId -> {callerId,until,reason}
+let nhCache=null;         // per-number snapshot, rebuilt at most once a second
+
+const nhDayCap=()=>Math.max(5,+$('nh-day-cap').value||50);
+const nhHourCap=()=>Math.max(1,+$('nh-hour-cap').value||15);
+const nhEnforce=()=>$('nh-enforce').checked;
+const nhPct=v=>Math.round(v*100)+'%';
+const nhDur=sec=>sec>=60?Math.floor(sec/60)+'m'+String(sec%60).padStart(2,'0')+'s':sec+'s';
+const nhClock=ms=>new Date(ms).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+
+function nhLoadLocal(){
+  try{
+    const d=JSON.parse(LS('dialer_numhealth','{}')||'{}');
+    (d.events||[]).forEach(e=>nhEvents.set(e.id,e));
+    (d.dirty||[]).forEach(i=>nhDirty.add(i));
+    (d.rest||[]).forEach(r=>nhRest.set(r.callerId,r));
+  }catch{}
+}
+function nhSaveLocal(){
+  // Anything outside the scoring window is dead weight, unless it still owes a push.
+  const cut=Date.now()-NH_WINDOW_MS;
+  for(const [id,e] of nhEvents) if(e.at<cut&&!nhDirty.has(id))nhEvents.delete(id);
+  nhCache=null;
+  try{SS('dialer_numhealth',JSON.stringify({events:[...nhEvents.values()],dirty:[...nhDirty],rest:[...nhRest.values()]}))}catch{}
+}
+
+// A dial just went out on this caller ID. Recorded before the call resolves so a
+// second agent sees the velocity immediately.
+function nhStart(callerId){
+  const ev={id:(crypto.randomUUID?crypto.randomUUID():'e'+Date.now()+Math.random().toString(36).slice(2)),
+            callerId,day:trkDateKey(),at:Date.now(),talkSec:0,answered:0};
+  nhEvents.set(ev.id,ev);nhDirty.add(ev.id);
+  nhSaveLocal();nhScheduleSync();nhRender();
+  return ev;
+}
+// The call ended. `answered` is the carrier-visible answer (voicemail counts -
+// the network saw a 200, and that is what the analytics engines see too).
+function nhEnd(ev,talkSec,answered){
+  if(!ev||!nhEvents.has(ev.id))return;
+  ev.talkSec=Math.max(0,talkSec|0);ev.answered=answered?1:0;
+  nhDirty.add(ev.id);
+  nhSaveLocal();nhScheduleSync();nhRender();
+}
+
+function nhMetrics(callerId){
+  const t=Date.now(),today=trkDateKey();
+  const mine=[...nhEvents.values()].filter(e=>e.callerId===callerId).sort((a,b)=>a.at-b.at);
+  const win=mine.filter(e=>e.at>=t-NH_WINDOW_MS);
+  const day=mine.filter(e=>e.day===today);
+  const hour=mine.filter(e=>e.at>=t-3600e3);
+  const answered=win.filter(e=>e.answered);
+  // Gaps over an hour are breaks, not cadence - averaging them in would hide bursts.
+  const gaps=[];
+  for(let i=1;i<win.length;i++){const g=(win[i].at-win[i-1].at)/1000;if(g>0&&g<=3600)gaps.push(g)}
+  return {
+    callerId,
+    dialsToday:day.length, dialsHour:hour.length, dials:win.length,
+    answered:answered.length,
+    answerRate:win.length?answered.length/win.length:0,
+    // Short calls are *connected* calls that died instantly. A ring nobody
+    // answered has no duration - that shows up in the answer rate instead.
+    shortRate:answered.length?answered.filter(e=>e.talkSec<6).length/answered.length:0,
+    avgTalk:answered.length?Math.round(answered.reduce((a,e)=>a+e.talkSec,0)/answered.length):0,
+    avgGap:gaps.length?Math.round(gaps.reduce((a,b)=>a+b,0)/gaps.length):0,
+    gapSamples:gaps.length,
+    hourResetsAt:hour.length?hour[0].at+3600e3:0,
+    week:nhWeek.get(callerId)||null
+  };
+}
+
+// Each signal scores 0 (fine), 1 (watch), or 2 (bad). The total sets the band.
+function nhScore(m){
+  const f=[],dayCap=nhDayCap(),hourCap=nhHourCap();
+  const add=(k,v,note)=>f.push({k,v,note});
+  add('daily volume',m.dialsToday>=dayCap?2:m.dialsToday>=dayCap*0.7?1:0,m.dialsToday+'/'+dayCap+' today');
+  add('hourly burst',m.dialsHour>=hourCap?2:m.dialsHour>=hourCap*0.7?1:0,m.dialsHour+'/'+hourCap+' this hour');
+  if(m.dials>=NH_MIN_SAMPLE)add('answer rate',m.answerRate<0.04?2:m.answerRate<0.08?1:0,nhPct(m.answerRate)+' answered');
+  if(m.answered>=NH_MIN_ANSWERED){
+    add('short calls',m.shortRate>0.25?2:m.shortRate>0.15?1:0,nhPct(m.shortRate)+' under 6s');
+    add('connected time',m.avgTalk<15?2:m.avgTalk<30?1:0,m.avgTalk+'s average');
+  }
+  if(m.gapSamples>=NH_MIN_SAMPLE)add('cadence',m.avgGap<20?2:m.avgGap<45?1:0,m.avgGap+'s between dials');
+  const score=f.reduce((a,x)=>a+x.v,0),max=f.length*2,ratio=max?score/max:0;
+  const worst=f.filter(x=>x.v===2);
+  // Two signals pinned at their worst is decisive on its own - carriers do not
+  // wait for all six to go bad before they hang a label on a number.
+  const key=worst.length>=2||ratio>NH_BURNT_RATIO?'burnt'
+           :ratio>NH_HOT_RATIO?'hot'
+           :score?'warm':'cool';
+  return {score,max,ratio,factors:f,worst,key,label:key.toUpperCase()};
+}
+
+function nhLockFor(m,sc){
+  const rest=nhRest.get(m.callerId);
+  if(rest&&new Date(rest.until).getTime()>Date.now())
+    return {locked:true,reason:'resting until '+nhClock(new Date(rest.until).getTime()),rest:true};
+  if(m.dialsToday>=nhDayCap())return {locked:true,reason:'hit the '+nhDayCap()+'/day cap'};
+  if(m.dialsHour>=nhHourCap())return {locked:true,reason:'hit the '+nhHourCap()+'/hour cap, clears '+nhClock(m.hourResetsAt)};
+  if(sc.key==='burnt')return {locked:true,reason:'burnt - '+(sc.worst.map(x=>x.k).join(', ')||'multiple signals')};
+  return {locked:false,reason:''};
+}
+
+// One snapshot per second covers the whole pool - closestNum runs on every render.
+function nhSnapshot(){
+  if(nhCache&&Date.now()-nhCache.at<1000)return nhCache.map;
+  const map=new Map();
+  for(const n of NUMBERS){
+    const m=nhMetrics(n.n),sc=nhScore(m);
+    const lock=nhEnforce()?nhLockFor(m,sc):{locked:false,reason:''};
+    map.set(n.n,{num:n,m,sc,lock});
+  }
+  nhCache={at:Date.now(),map};
+  return map;
+}
+function nhLock(callerId){return nhSnapshot().get(callerId)?.lock||{locked:false,reason:''}}
+function nhUsableNumbers(){const snap=nhSnapshot();return NUMBERS.filter(n=>!snap.get(n.n)?.lock.locked)}
+
+// -- Leaderboard --
+function nhRender(){
+  const table=$('nh-table');if(!table)return;
+  nhCache=null;
+  const rows=[...nhSnapshot().values()].sort((a,b)=>b.m.dialsToday-a.m.dialsToday||b.sc.score-a.sc.score);
+  const header='<div class="nh-row header"><span>#</span><span>Caller ID</span><span>Temp</span><span>Dials today</span>'+
+    '<span class="nh-v">Avg conn</span><span class="nh-v">Gap</span><span class="nh-v">Answer</span><span class="nh-v">&lt;6s</span><span class="nh-v">Rest</span></div>';
+  if(!rows.length){table.innerHTML=header+'<div class="nh-empty">No caller IDs loaded.</div>';return}
+  const cap=nhDayCap();
+  table.innerHTML=header+rows.map((r,i)=>{
+    const {num,m,sc,lock}=r;
+    const key=lock.locked?'burnt':sc.key;
+    const pctCap=Math.min(100,Math.round(m.dialsToday/cap*100));
+    const thin=m.dials<NH_MIN_SAMPLE;   // too few dials to read the ratios
+    const resting=nhRest.get(num.n)&&new Date(nhRest.get(num.n).until).getTime()>Date.now();
+    const weekNote=m.week?' - '+m.week.dials+' dials over '+m.week.days+'d':'';
+    const chip=lock.locked
+      ? '<span class="nh-chip locked"><span class="dot"></span>LOCKED</span>'
+      : '<span class="nh-chip '+key+'"><span class="dot"></span>'+sc.label+'</span>';
+    const why=lock.locked
+      ? '<div class="nh-why">&#128274; <b>Locked</b> - '+esc(lock.reason)+'. The dialer will skip it.</div>'
+      : sc.worst.length
+        ? '<div class="nh-why">&#9888; '+sc.worst.map(w=>esc(w.k)+' ('+esc(w.note)+')').join(' &middot; ')+'</div>'
+        : '';
+    return '<div class="nh-row'+(lock.locked?' locked':'')+'" title="'+escAttr(num.n+weekNote)+'">'+
+      '<span class="nh-rank">'+(i+1)+'</span>'+
+      '<span class="nh-num"><b>'+esc(num.lbl)+'</b><span>'+esc(num.n)+'</span></span>'+
+      chip+
+      '<span class="nh-bar"><span class="nh-bar-track"><span class="nh-bar-fill '+key+'" style="width:'+pctCap+'%"></span></span>'+
+        '<span class="nh-bar-lbl">'+m.dialsToday+' / '+cap+(m.dialsHour?' &middot; '+m.dialsHour+' this hr':'')+'</span></span>'+
+      '<span class="'+(thin||!m.answered?'nh-v dim':m.avgTalk<15?'nh-v bad':m.avgTalk<30?'nh-v mid':'nh-v')+'">'+(m.answered?nhDur(m.avgTalk):'-')+'</span>'+
+      '<span class="'+(m.gapSamples<NH_MIN_SAMPLE?'nh-v dim':m.avgGap<20?'nh-v bad':m.avgGap<45?'nh-v mid':'nh-v')+'">'+(m.gapSamples?nhDur(m.avgGap):'-')+'</span>'+
+      '<span class="'+(thin?'nh-v dim':m.answerRate<0.04?'nh-v bad':m.answerRate<0.08?'nh-v mid':'nh-v')+'">'+(m.dials?nhPct(m.answerRate):'-')+'</span>'+
+      '<span class="'+(thin?'nh-v dim':m.shortRate>0.25?'nh-v bad':m.shortRate>0.15?'nh-v mid':'nh-v')+'">'+(m.dials?nhPct(m.shortRate):'-')+'</span>'+
+      '<span class="nh-act"><button data-rest="'+escAttr(num.n)+'" class="'+(resting?'resting':'')+'">'+(resting?'&#10005; wake':'&#128164; 24h')+'</button></span>'+
+      why+
+    '</div>';
+  }).join('');
+  table.querySelectorAll('button[data-rest]').forEach(b=>b.onclick=()=>nhToggleRest(b.dataset.rest));
+}
+
+async function nhToggleRest(callerId){
+  const cur=nhRest.get(callerId);
+  const isResting=cur&&new Date(cur.until).getTime()>Date.now();
+  const until=isResting?null:new Date(Date.now()+NH_WINDOW_MS).toISOString();
+  if(isResting)nhRest.delete(callerId);
+  else nhRest.set(callerId,{callerId,until,reason:'Manual rest'});
+  nhSaveLocal();nhRender();
+  log(isResting?'> '+callerId+' back in rotation':'\u{1F4A4} '+callerId+' resting for 24h','warn');
+  try{await gasCall('restNumber',{callerId,until,reason:'Manual rest'})}
+  catch(e){log('Rest sync failed: '+e.message,'err')}
+}
+
+// -- Sync --
+let nhSyncTimer=null,nhSyncing=false;
+function nhScheduleSync(){if(nhSyncTimer)return;nhSyncTimer=setTimeout(()=>{nhSyncTimer=null;nhSync()},2000)}
+
+async function nhSync(){
+  if(nhSyncing||!nhDirty.size)return;
+  nhSyncing=true;
+  const batch=[...nhDirty].slice(0,200).map(id=>nhEvents.get(id)).filter(Boolean);
+  try{
+    await gasCall('logDials',{items:batch.map(e=>({id:e.id,callerId:e.callerId,day:e.day,at:e.at,
+      talkSec:e.talkSec,answered:e.answered,agent:LS('dialer_agent','')}))});
+    // Only clear ids that did not change while the request was in flight.
+    batch.forEach(e=>{const cur=nhEvents.get(e.id);if(cur&&cur.talkSec===e.talkSec&&cur.answered===e.answered)nhDirty.delete(e.id)});
+    nhSaveLocal();
+    $('nh-sync').textContent='synced '+new Date().toLocaleTimeString();
+  }catch(e){
+    $('nh-sync').textContent='sync failed';
+  }finally{nhSyncing=false}
+}
+
+// Pull every agent's history for this account, so one agent cannot burn a number
+// that another agent's browser still thinks is cool.
+async function nhRefresh(){
+  try{
+    const d=await gasCall('numberHealth',{});
+    const cut=Date.now()-NH_WINDOW_MS;
+    const merged=new Map();
+    (d.events||[]).forEach(e=>{
+      if(e.a<cut)return;
+      merged.set(e.i,{id:e.i,callerId:e.c,day:e.d,at:e.a,talkSec:e.t,answered:e.s});
+    });
+    // Anything still queued locally is newer than the server copy - keep ours.
+    for(const id of nhDirty){const e=nhEvents.get(id);if(e)merged.set(id,e)}
+    nhEvents=merged;
+    nhWeek=new Map((d.week||[]).map(w=>[w.callerId,w]));
+    nhRest=new Map((d.rest||[]).map(r=>[r.callerId,r]));
+    nhSaveLocal();nhRender();
+    $('nh-sync').textContent='updated '+new Date().toLocaleTimeString();
+  }catch(e){
+    $('nh-sync').textContent='offline - this device only';
+  }
+}
+
+function nhInit(){
+  $('nh-day-cap').value=LS('dialer_nh_day_cap','50');
+  $('nh-hour-cap').value=LS('dialer_nh_hour_cap','15');
+  $('nh-enforce').checked=LS('dialer_nh_enforce','1')==='1';
+  $('nh-day-cap').addEventListener('change',e=>{SS('dialer_nh_day_cap',e.target.value);nhRender()});
+  $('nh-hour-cap').addEventListener('change',e=>{SS('dialer_nh_hour_cap',e.target.value);nhRender()});
+  $('nh-enforce').addEventListener('change',e=>{
+    SS('dialer_nh_enforce',e.target.checked?'1':'0');nhRender();
+    log(e.target.checked?'\u{1F512} Caller-ID lock ON - burnt and over-cap numbers will be skipped'
+                        :'\u{1F513} Caller-ID lock OFF - every number is dialable, including burnt ones',
+        e.target.checked?'ok':'warn');
+  });
+  $('nh-refresh').onclick=()=>nhRefresh();
+  nhLoadLocal();nhRender();nhRefresh();
+  setInterval(nhSync,30000);
+  setInterval(nhRefresh,120000);
+  // Caps and rest periods roll over on the clock, so re-render even when idle.
+  setInterval(nhRender,30000);
+}
+
 // VM Detect toggle — persist on/off in localStorage
 $('vmDetect').checked=LS('dialer_vm_detect','1')==='1';
 $('vmDetect').addEventListener('change',e=>{
@@ -1853,6 +2234,7 @@ $('altDial').addEventListener('change',e=>{
   log('🔀 ALT DIAL '+(e.target.checked?'ENABLED — rotating caller IDs per retry':'DISABLED — using closest caller ID'),e.target.checked?'ok':'warn');
 });
 
+nhInit();
 renderPendingSyncs();log('Ready. Setup → Connect Mic → Import CSV or pick a list → Load Leads → Start.');
 
 // ── BOOTSTRAP MIC MONITOR ────────────────────────────────────────
