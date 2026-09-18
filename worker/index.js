@@ -7,6 +7,7 @@ import { mailRoutes, mailCron } from './mail.js';
 import { operationRoutes } from './operations.js';
 import { influencerLeadRoutes, discoveryCron } from './influencer-leads.js';
 import { campaignRoutes } from './campaigns.js';
+import { affiliateAdminRoutes } from './affiliate-admin.js';
 import { affiliateFetch, AFFILIATE_PREFIX } from './affiliate.js';
 
 function cors(request, env) {
@@ -42,7 +43,8 @@ const routes = {
   ...mailRoutes,
   ...operationRoutes,
   ...influencerLeadRoutes,
-  ...campaignRoutes
+  ...campaignRoutes,
+  ...affiliateAdminRoutes
 };
 
 const compiled = Object.entries(routes).map(([key, handler]) => {

@@ -445,3 +445,268 @@ async function addAffiliate(creatorId, btn) {
     if (btn) btn.disabled = false;
   }
 }
+
+// ── Videos (shared by the campaign view and the Affiliates page) ──
+
+const VIDEO_STATUS_CHIP = { pending_review: 'chip-orange', approved: 'chip-blue', locked: 'chip-green', rejected: 'chip-red', removed: 'chip-muted' };
+const VIDEO_STATUS_LABEL = { pending_review: 'to review', approved: 'tracking', locked: 'locked', rejected: 'rejected', removed: 'removed' };
+const FLAG_LABEL = { handle_mismatch: 'Handle mismatch', fetch_failed: 'Views not updating', video_unavailable: 'Video unavailable', suspicious_spike: 'Suspicious spike' };
+let cmpVideoFilter = 'all';
+let cmpVideos = [];         // videos in the open campaign
+let videoDetail = null;     // { video, snapshots, flags, audit } in the video modal
+
+function videoRowHtml(v, { showCampaign = false } = {}) {
+  const id = esc(v.id);
+  const ends = v.status === 'approved' ? `Tracking until ${fmtDate(v.trackingEndsAt)}` : v.lockedAt ? `Locked ${fmtDate(v.lockedAt)}` : '';
+  const actions = [];
+  if (!v.payoutId) {
+    if (['pending_review', 'rejected', 'removed'].includes(v.status)) actions.push(`<button class="action-btn primary" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'approve', this)">${v.status === 'pending_review' ? 'Approve' : 'Restore'}</button>`);
+    if (['pending_review', 'approved', 'removed'].includes(v.status)) actions.push(`<button class="action-btn" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'reject', this)">Reject</button>`);
+    if (['approved', 'locked'].includes(v.status)) actions.push(`<button class="action-btn" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'remove', this)">Remove</button>`);
+  }
+  actions.push(`<button class="action-btn" data-id="${id}" onclick="openVideoDetail(this.dataset.id)">Views…</button>`);
+  return `<tr>
+    <td><div class="cmp-video-url"><a href="${safeUrl(v.canonicalUrl)}" target="_blank" rel="noopener">${esc(CMP_PLATFORMS[v.platform] || v.platform)} · ${esc(v.platformVideoId)} ↗</a>
+      <span>Submitted ${fmtDate(v.submittedAt)}${v.caption ? ' · ' + esc(v.caption.slice(0, 60)) : ''}</span>
+      ${v.openFlags.map(f => `<span class="cmp-flag" title="${esc(f.details)}">⚑ ${esc(FLAG_LABEL[f.type] || f.type)}</span>`).join('')}</div></td>
+    <td><div class="cmp-who"><b>${esc(v.creator.name)}</b>${showCampaign ? `<span>${esc(v.campaignName)}</span>` : ''}</div></td>
+    <td><span class="chip ${VIDEO_STATUS_CHIP[v.status] || 'chip-muted'}">${esc(VIDEO_STATUS_LABEL[v.status] || v.status)}</span>
+      ${v.rejectionReason && v.status !== 'approved' ? `<div class="feed-time" title="${esc(v.rejectionReason)}">${esc(v.rejectionReason.slice(0, 50))}</div>` : ''}
+      ${v.payoutId ? '<div class="feed-time">on a payout</div>' : ''}</td>
+    <td class="num">${cmpNum(v.status === 'locked' ? v.billableViews : v.latestViewCount)}<div class="feed-time">${v.lastFetchedAt ? 'checked ' + fmtDate(v.lastFetchedAt) : 'not checked yet'}</div></td>
+    <td class="num">${cmpMoney(v.earnedCents)}<div class="feed-time">${cmpMoney(v.cpmRateCents)}/1K</div></td>
+    <td><span class="feed-time">${ends}</span></td>
+    <td><div class="cmp-row-actions">${actions.join('')}</div></td>
+  </tr>`;
+}
+
+const videoTableHtml = (videos, opts) => `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr>
+    <th>Video</th><th>Affiliate</th><th>Status</th><th class="num">Views</th><th class="num">Earned</th><th>Tracking</th><th></th>
+  </tr></thead><tbody>${videos.map(v => videoRowHtml(v, opts)).join('')}</tbody></table></div>`;
+
+function campaignVideosPanelHtml(c) {
+  setTimeout(loadCampaignVideos, 0);
+  return `<div class="panel cmp-panel" id="cmp-videos-panel"><div class="panel-head"><span class="panel-title">Videos</span></div><div class="cmp-empty">Loading videos…</div></div>`;
+}
+
+async function loadCampaignVideos() {
+  if (!cmpCurrent) return;
+  try {
+    cmpVideos = (await cmpRequest(`/api/affiliate-videos?campaignId=${encodeURIComponent(cmpCurrent.id)}`)).videos;
+    renderCampaignVideos();
+  } catch (err) {
+    const panel = document.getElementById('cmp-videos-panel');
+    if (panel) panel.innerHTML = `<div class="cmp-empty">Couldn't load videos: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderCampaignVideos() {
+  const panel = document.getElementById('cmp-videos-panel');
+  if (!panel) return;
+  const counts = cmpVideos.reduce((m, v) => ({ ...m, [v.status]: (m[v.status] || 0) + 1 }), {});
+  const flagged = cmpVideos.filter(v => v.openFlags.length).length;
+  const filters = [['all', 'All', cmpVideos.length], ['pending_review', 'To review', counts.pending_review], ['approved', 'Tracking', counts.approved],
+    ['locked', 'Locked', counts.locked], ['flagged', 'Flagged', flagged], ['rejected', 'Rejected', counts.rejected], ['removed', 'Removed', counts.removed]];
+  const shown = cmpVideos.filter(v => cmpVideoFilter === 'all' || (cmpVideoFilter === 'flagged' ? v.openFlags.length : v.status === cmpVideoFilter));
+  panel.innerHTML = `<div class="panel-head"><span class="panel-title">Videos</span>
+      <div class="cmp-panel-actions">${filters.map(([k, label, n]) => `<button class="action-btn${cmpVideoFilter === k ? ' primary' : ''}" onclick="cmpVideoFilter='${k}';renderCampaignVideos()">${label} ${n || 0}</button>`).join('')}</div></div>
+    ${shown.length ? videoTableHtml(shown) : `<div class="cmp-empty">${cmpVideos.length ? 'No videos in this view.' : 'No videos yet. Affiliates submit links from their portal.'}</div>`}`;
+}
+
+async function reviewVideo(id, action, btn) {
+  let reason;
+  if (action === 'reject') {
+    reason = prompt('Why is this video rejected? The affiliate sees this reason.');
+    if (reason === null) return;
+    if (!reason.trim()) { alert('A reason is required.'); return; }
+  }
+  if (action === 'remove' && !confirm('Remove this video? It stops earning. You can restore it later.')) return;
+  if (btn) btn.disabled = true;
+  try {
+    const { video } = await cmpRequest(`/api/affiliate-videos/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify({ action, reason }) });
+    afterVideoChange(video);
+  } catch (err) {
+    alert('Not saved: ' + err.message);
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Refresh whatever is showing this video.
+function afterVideoChange(video) {
+  if (cmpCurrent && cmpCurrent.id === video.campaignId && !campaignViewEl().hidden) refreshCampaign();
+  if (document.getElementById('page-affiliates').classList.contains('active')) loadAffiliatesPage();
+  if (videoDetail?.video.id === video.id) openVideoDetail(video.id);
+  loadAffiliateBadge();
+}
+
+// ── Video detail: view history, manual view entry, flags, audit ──
+
+function ensureVideoModal() {
+  if (document.getElementById('video-modal')) return;
+  document.body.insertAdjacentHTML('beforeend', `
+<div class="ops-modal-bg" id="video-modal" hidden onclick="if (event.target === this) closeVideoDetail()">
+  <div class="ops-modal" role="dialog" aria-labelledby="video-modal-title">
+    <div class="ops-modal-head"><span class="compose-title" id="video-modal-title">Video</span><button class="drawer-close" onclick="closeVideoDetail()" aria-label="Close">✕</button></div>
+    <div class="ops-modal-body" id="video-modal-body"></div>
+    <div class="ops-modal-foot"><button class="action-btn" onclick="closeVideoDetail()">Close</button></div>
+  </div>
+</div>`);
+}
+
+async function openVideoDetail(id) {
+  ensureVideoModal();
+  document.getElementById('video-modal').hidden = false;
+  const body = document.getElementById('video-modal-body');
+  if (videoDetail?.video.id !== id) body.innerHTML = '<div class="cmp-empty">Loading…</div>';
+  try {
+    videoDetail = await cmpRequest(`/api/affiliate-videos/${encodeURIComponent(id)}`);
+  } catch (err) { body.innerHTML = `<div class="cmp-empty">${esc(err.message)}</div>`; return; }
+  const { video: v, snapshots, flags, audit } = videoDetail;
+  document.getElementById('video-modal-title').textContent = `${v.creator.name} · ${CMP_PLATFORMS[v.platform]}`;
+  body.innerHTML = `
+    <div class="detail-grid">
+      ${detailField('Video', `<a href="${safeUrl(v.canonicalUrl)}" target="_blank" rel="noopener">${esc(v.canonicalUrl)} ↗</a>`, true)}
+      ${v.submittedUrl !== v.canonicalUrl ? detailField('Link they pasted', esc(v.submittedUrl), true) : ''}
+      ${detailField('Campaign', esc(v.campaignName))}
+      ${detailField('Status', `<span class="chip ${VIDEO_STATUS_CHIP[v.status]}">${esc(VIDEO_STATUS_LABEL[v.status])}</span>`)}
+      ${detailField('Latest views', cmpNum(v.latestViewCount))}
+      ${detailField('Billable views', v.status === 'locked' ? cmpNum(v.billableViews) : 'Set when it locks')}
+      ${detailField('Earned', `${cmpMoney(v.earnedCents)} at ${cmpMoney(v.cpmRateCents)}/1K`)}
+      ${detailField('Tracking ends', fmtDateTime(v.trackingEndsAt))}
+      ${detailField('Next check', v.nextFetchAt ? fmtDateTime(v.nextFetchAt) : '—')}
+      ${detailField('Failed checks in a row', String(v.consecutiveFetchFailures))}
+    </div>
+    ${v.payoutId ? '' : `<div class="detail-section-title">Enter views by hand</div>
+    <div class="ops-form-grid">
+      <div class="c-field"><label>Views *</label><input class="c-input" id="mv-views" inputmode="numeric" placeholder="${v.latestViewCount}"></div>
+      <div class="c-field"><label>Likes</label><input class="c-input" id="mv-likes" inputmode="numeric"></div>
+      <div class="c-field"><label>Comments</label><input class="c-input" id="mv-comments" inputmode="numeric"></div>
+      <div class="c-field full"><label>Note * (where the number came from)</label><input class="c-input" id="mv-note" placeholder="Screenshot from creator's insights, 9/18"></div>
+    </div>
+    <button class="action-btn primary" style="margin-top:10px;" onclick="saveManualViews()">Save views</button>
+    <div class="ops-hint">${v.status === 'locked' ? 'This video is locked, so this also changes its billable views.' : 'Replaces the latest count. Automatic checks only ever raise it.'} Logged in the audit log.</div>
+    <div class="email-msg" id="mv-msg"></div>`}
+    ${flags.length ? `<div class="detail-section-title">Flags</div>${flags.map(f => `<div class="aff-result"><div class="cmp-who"><b>${esc(FLAG_LABEL[f.type] || f.type)}</b><span>${esc(f.details)} · ${fmtDateTime(f.createdAt)}</span>
+      ${f.resolvedAt ? `<span>Resolved ${fmtDateTime(f.resolvedAt)}${f.resolvedByName ? ' by ' + esc(f.resolvedByName) : ''}</span>` : ''}</div>
+      ${f.resolvedAt ? '<span class="chip chip-muted">resolved</span>' : `<button class="action-btn" data-id="${esc(f.id)}" onclick="resolveFlag(this.dataset.id)">Resolve</button>`}</div>`).join('')}` : ''}
+    <div class="detail-section-title">View history (${snapshots.length})</div>
+    ${snapshots.length ? `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>When</th><th class="num">Views</th><th class="num">Likes</th><th class="num">Comments</th><th>Source</th><th>Note</th></tr></thead><tbody>
+      ${snapshots.map(s => `<tr><td>${fmtDateTime(s.fetchedAt)}</td><td class="num">${cmpNum(s.viewCount)}</td><td class="num">${s.likeCount === null ? '—' : cmpNum(s.likeCount)}</td>
+        <td class="num">${s.commentCount === null ? '—' : cmpNum(s.commentCount)}</td><td>${esc(s.source)}${s.enteredByName ? ' · ' + esc(s.enteredByName) : ''}</td><td>${esc(s.note || '')}</td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="cmp-empty">No view counts yet.</div>'}
+    ${audit.length ? `<div class="detail-section-title">Audit</div>${auditRowsHtml(audit)}` : ''}`;
+}
+
+function closeVideoDetail() {
+  document.getElementById('video-modal').hidden = true;
+  videoDetail = null;
+}
+
+async function saveManualViews() {
+  const v = (id) => document.getElementById(id).value.trim().replace(/,/g, '');
+  const body = { viewCount: v('mv-views'), likeCount: v('mv-likes') || null, commentCount: v('mv-comments') || null, note: v('mv-note') };
+  if (!body.viewCount || !body.note) { cmpMsg('mv-msg', 'Views and a note are required.'); return; }
+  try {
+    const { video } = await cmpRequest(`/api/affiliate-videos/${encodeURIComponent(videoDetail.video.id)}/views`, { method: 'POST', body: JSON.stringify(body) });
+    afterVideoChange(video);
+  } catch (err) { cmpMsg('mv-msg', err.message); }
+}
+
+async function resolveFlag(id) {
+  const note = prompt('Resolve this flag. Optional note:', '');
+  if (note === null) return;
+  try {
+    await cmpRequest(`/api/video-flags/${encodeURIComponent(id)}/resolve`, { method: 'POST', body: JSON.stringify({ note }) });
+    if (videoDetail) openVideoDetail(videoDetail.video.id);
+    if (document.getElementById('page-affiliates').classList.contains('active')) loadAffiliatesPage();
+    if (cmpCurrent && !campaignViewEl().hidden) loadCampaignVideos();
+    loadAffiliateBadge();
+  } catch (err) { alert('Not resolved: ' + err.message); }
+}
+
+// ── Affiliates page: review queue, flags, payouts, audit log ──
+
+let affPageTab = 'review';
+const AFF_PAGE_TABS = [['review', 'Review queue'], ['flags', 'Flags'], ['audit', 'Audit log']];
+
+const originalShowPageCampaigns = window.showPage;
+window.showPage = function(name) {
+  originalShowPageCampaigns(name);
+  if (name === 'affiliates') loadAffiliatesPage();
+};
+
+function renderAffiliateTabs() {
+  document.getElementById('aff-page-tabs').innerHTML = AFF_PAGE_TABS.map(([k, label]) =>
+    `<button class="billing-tab${affPageTab === k ? ' active' : ''}" onclick="affPageTab='${k}';loadAffiliatesPage()">${label}</button>`).join('');
+}
+
+async function loadAffiliatesPage() {
+  renderAffiliateTabs();
+  const box = document.getElementById('aff-page-body');
+  const loaders = { review: renderReviewQueue, flags: renderFlagsQueue, audit: renderAuditLog, payouts: window.renderPayoutsTab };
+  try {
+    await loaders[affPageTab](box);
+  } catch (err) {
+    box.innerHTML = `<div class="state-box">Couldn't load: ${esc(err.message)}</div>`;
+  }
+}
+
+async function renderReviewQueue(box) {
+  const { videos } = await cmpRequest('/api/affiliate-videos?status=pending_review');
+  box.innerHTML = `<div class="panel cmp-panel"><div class="panel-head"><span class="panel-title">Waiting for review · oldest first</span><button class="panel-link" onclick="loadAffiliatesPage()">↻ Refresh</button></div>
+    ${videos.length ? videoTableHtml(videos, { showCampaign: true }) : '<div class="cmp-empty">Nothing to review. New submissions on campaigns that need approval show up here.</div>'}</div>`;
+}
+
+async function renderFlagsQueue(box) {
+  const { flags } = await cmpRequest('/api/video-flags?open=1');
+  box.innerHTML = `<div class="panel cmp-panel"><div class="panel-head"><span class="panel-title">Open flags</span><button class="panel-link" onclick="loadAffiliatesPage()">↻ Refresh</button></div>
+    ${flags.length ? `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>Flag</th><th>Video</th><th>Affiliate</th><th>Status</th><th class="num">Views</th><th>Raised</th><th></th></tr></thead><tbody>
+      ${flags.map(f => `<tr><td><div class="cmp-who"><b>${esc(FLAG_LABEL[f.type] || f.type)}</b><span>${esc(f.details)}</span></div></td>
+        <td><div class="cmp-video-url"><a href="${safeUrl(f.canonicalUrl)}" target="_blank" rel="noopener">${esc(CMP_PLATFORMS[f.platform] || f.platform)} ↗</a><span>${esc(f.campaignName)}</span></div></td>
+        <td>${esc(f.creatorName)}</td><td><span class="chip ${VIDEO_STATUS_CHIP[f.videoStatus] || 'chip-muted'}">${esc(VIDEO_STATUS_LABEL[f.videoStatus] || f.videoStatus)}</span></td>
+        <td class="num">${cmpNum(f.latestViewCount)}</td><td>${fmtDateTime(f.createdAt)}</td>
+        <td><div class="cmp-row-actions"><button class="action-btn" data-id="${esc(f.videoId)}" onclick="openVideoDetail(this.dataset.id)">Open video</button>
+          <button class="action-btn" data-id="${esc(f.id)}" onclick="resolveFlag(this.dataset.id)">Resolve</button></div></td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="cmp-empty">No open flags.</div>'}</div>`;
+}
+
+const AUDIT_ACTIONS = {
+  rate_changed: 'Rate changed', caps_changed: 'Caps changed', status_changed: 'Status changed', campaign_created: 'Campaign created', campaign_deleted: 'Campaign deleted',
+  affiliate_added: 'Affiliate added', video_approved: 'Video approved', video_rejected: 'Video rejected', video_removed: 'Video removed',
+  manual_views_entered: 'Views entered by hand', flag_resolved: 'Flag resolved', payout_details_changed: 'Payout details changed',
+  payout_created: 'Payout created', payout_status_changed: 'Payout status changed', payout_deleted: 'Payout deleted', video_locked: 'Video locked',
+  video_unavailable: 'Video unavailable'
+};
+
+function auditRowsHtml(entries) {
+  const show = (obj) => (obj === null ? '' : esc(Object.entries(obj).map(([k, val]) => `${k}: ${typeof val === 'object' && val !== null ? JSON.stringify(val) : val}`).join('\n')));
+  return `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Before</th><th>After</th></tr></thead><tbody>
+    ${entries.map(a => `<tr><td>${fmtDateTime(a.createdAt)}</td><td>${esc(a.actorName || a.actorType)}<div class="feed-time">${esc(a.actorType)}</div></td>
+      <td><b>${esc(AUDIT_ACTIONS[a.action] || a.action)}</b><div class="feed-time">${esc(a.entityType)}</div></td>
+      <td><div class="cmp-audit-json">${show(a.before)}</div></td><td><div class="cmp-audit-json">${show(a.after)}</div></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+async function renderAuditLog(box) {
+  const { entries } = await cmpRequest('/api/affiliate-audit');
+  box.innerHTML = `<div class="panel cmp-panel"><div class="panel-head"><span class="panel-title">Audit log · latest 500</span><button class="panel-link" onclick="loadAffiliatesPage()">↻ Refresh</button></div>
+    ${entries.length ? auditRowsHtml(entries) : '<div class="cmp-empty">Nothing logged yet.</div>'}</div>`;
+}
+
+// Sidebar badge: videos waiting for review + open flags.
+async function loadAffiliateBadge() {
+  try {
+    const [{ videos }, { flags }] = await Promise.all([cmpRequest('/api/affiliate-videos?status=pending_review'), cmpRequest('/api/video-flags?open=1')]);
+    const n = videos.length + flags.length;
+    for (const id of ['badge-affiliates', 'drawer-badge-affiliates']) {
+      const el = document.getElementById(id);
+      el.textContent = n;
+      el.hidden = !n;
+    }
+  } catch { /* the badge is best-effort */ }
+}
+
+(function waitForSession() {
+  if (document.body.classList.contains('ready')) { loadAffiliateBadge(); setInterval(loadAffiliateBadge, 5 * 60 * 1000); }
+  else setTimeout(waitForSession, 500);
+})();

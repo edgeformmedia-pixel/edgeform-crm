@@ -659,6 +659,10 @@
       <span class="drawer-item-icon">▣</span> Operations
       <span class="drawer-item-badge" id="drawer-badge-operations">—</span>
     </a>
+    <a class="drawer-item drawer-child" id="drawer-nav-affiliates-page" href="#" onclick="drawerNav('affiliates')">
+      <span class="drawer-item-icon">◎</span> Affiliates
+      <span class="drawer-item-badge" id="drawer-badge-affiliates" hidden>0</span>
+    </a>
     <a class="drawer-item" id="drawer-nav-mail-page" href="#" onclick="drawerNav('mail')">
       <span class="drawer-item-icon">✉</span> Mail
       <span class="drawer-item-badge" id="drawer-badge-mail" hidden>0</span>
@@ -705,6 +709,10 @@
       <a class="side-item" id="nav-operations-page" href="#" onclick="showPage('operations');return false;">
         <span class="side-icon">▣</span> Operations
         <span class="side-badge" id="badge-operations">—</span>
+      </a>
+      <a class="side-item side-child" id="nav-affiliates-page" href="#" onclick="showPage('affiliates');return false;">
+        <span class="side-icon">◎</span> Affiliates
+        <span class="side-badge live" id="badge-affiliates" hidden>0</span>
       </a>
       <a class="side-item" id="nav-mail-page" href="#" onclick="showPage('mail');return false;">
         <span class="side-icon">✉</span> Mail
@@ -944,6 +952,16 @@
         <div class="state-box" style="grid-column:1/-1;"><div class="state-icon">▣</div>Loading operations…</div>
       </div>
      </div>
+    </div>
+
+    <!-- ══ AFFILIATES ══ -->
+    <div class="page-view" id="page-affiliates">
+      <div class="page-head">
+        <div class="page-title">Affiliates</div>
+        <div class="page-sub">Videos to review, flags from view tracking, payouts, and the audit log across every campaign</div>
+      </div>
+      <div class="billing-tabs" id="aff-page-tabs"></div>
+      <div id="aff-page-body"><div class="state-box"><div class="state-icon">◎</div>Loading…</div></div>
     </div>
 
     <!-- ══ MAIL ══ -->
