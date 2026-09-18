@@ -1,6 +1,7 @@
 import { json, HttpError, clean, now, readJson } from './lib.js';
 import { requireUser } from './auth.js';
 import { parseJson, recomputeCampaign, auditStatement } from './affiliate-lib.js';
+import { checkVideoNow } from './affiliate-views.js';
 
 // Admin side of affiliate videos: review queue, flags, manual views, audit log.
 
@@ -148,6 +149,13 @@ async function enterViews(request, env, headers, [id]) {
   return json({ ok: true, video: adminVideoJson(await loadVideo(env, id)) }, 200, headers);
 }
 
+// Runs the view provider for one tracking video right away.
+async function checkNow(request, env, headers, [id]) {
+  await requireUser(request, env);
+  if (!await checkVideoNow(env, id)) throw new HttpError(409, 'Only videos that are tracking views can be checked.');
+  return json({ ok: true, video: adminVideoJson(await loadVideo(env, id)) }, 200, headers);
+}
+
 // ── Flags ──
 
 const flagJson = (f) => ({
@@ -211,6 +219,7 @@ export const affiliateAdminRoutes = {
   'GET /api/affiliate-videos/:id': getVideo,
   'POST /api/affiliate-videos/:id/review': reviewVideo,
   'POST /api/affiliate-videos/:id/views': enterViews,
+  'POST /api/affiliate-videos/:id/check': checkNow,
   'GET /api/video-flags': listFlags,
   'POST /api/video-flags/:id/resolve': resolveFlag,
   'GET /api/affiliate-audit': listAudit

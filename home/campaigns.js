@@ -576,6 +576,7 @@ async function openVideoDetail(id) {
       ${detailField('Next check', v.nextFetchAt ? fmtDateTime(v.nextFetchAt) : '—')}
       ${detailField('Failed checks in a row', String(v.consecutiveFetchFailures))}
     </div>
+    ${v.status === 'approved' ? `<button class="action-btn" onclick="checkVideoNow(this)">↻ Check views now</button><div class="email-msg" id="vc-msg"></div>` : ''}
     ${v.payoutId ? '' : `<div class="detail-section-title">Enter views by hand</div>
     <div class="ops-form-grid">
       <div class="c-field"><label>Views *</label><input class="c-input" id="mv-views" inputmode="numeric" placeholder="${v.latestViewCount}"></div>
@@ -595,6 +596,14 @@ async function openVideoDetail(id) {
         <td class="num">${s.commentCount === null ? '—' : cmpNum(s.commentCount)}</td><td>${esc(s.source)}${s.enteredByName ? ' · ' + esc(s.enteredByName) : ''}</td><td>${esc(s.note || '')}</td></tr>`).join('')}
     </tbody></table></div>` : '<div class="cmp-empty">No view counts yet.</div>'}
     ${audit.length ? `<div class="detail-section-title">Audit</div>${auditRowsHtml(audit)}` : ''}`;
+}
+
+async function checkVideoNow(btn) {
+  btn.disabled = true;
+  try {
+    const { video } = await cmpRequest(`/api/affiliate-videos/${encodeURIComponent(videoDetail.video.id)}/check`, { method: 'POST' });
+    afterVideoChange(video);
+  } catch (err) { cmpMsg('vc-msg', err.message); btn.disabled = false; }
 }
 
 function closeVideoDetail() {

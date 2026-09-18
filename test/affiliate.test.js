@@ -108,3 +108,22 @@ test('payout details round-trip through AES-GCM', async () => {
   assert.equal(await decryptText(stored, 'secret'), 'iban DE89 3704 0044 0532 0130 00');
   await assert.rejects(() => decryptText(stored, 'wrong'));
 });
+
+test('polling schedule: every 6h for 72h, then daily, never past the end of tracking', async () => {
+  const { nextFetchAt } = await import('../worker/affiliate-views.js');
+  const video = { submitted_at: '2026-01-01T00:00:00.000Z', tracking_ends_at: '2026-01-31T00:00:00.000Z' };
+  assert.equal(nextFetchAt(video, '2026-01-01T00:00:00.000Z'), '2026-01-01T06:00:00.000Z');
+  assert.equal(nextFetchAt(video, '2026-01-03T23:00:00.000Z'), '2026-01-04T05:00:00.000Z');
+  assert.equal(nextFetchAt(video, '2026-01-04T00:00:00.000Z'), '2026-01-05T00:00:00.000Z');
+  assert.equal(nextFetchAt(video, '2026-01-30T12:00:00.000Z'), '2026-01-31T00:00:00.000Z');
+});
+
+test('suspicious spike: views more than 4x in a day while likes barely move', async () => {
+  const { isSuspiciousSpike } = await import('../worker/affiliate-views.js');
+  const base = { view_count: 1000, like_count: 100 };
+  assert.equal(isSuspiciousSpike(base, 10000, 120), true);    // +9000 views, +20 likes < 45
+  assert.equal(isSuspiciousSpike(base, 10000, 200), false);   // +100 likes
+  assert.equal(isSuspiciousSpike(base, 4000, 100), false);    // exactly +300% is not "more than"
+  assert.equal(isSuspiciousSpike({ view_count: 0, like_count: 0 }, 10000, 0), false);
+  assert.equal(isSuspiciousSpike(base, 10000, null), false);
+});
