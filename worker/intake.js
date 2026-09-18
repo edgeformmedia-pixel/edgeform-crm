@@ -121,7 +121,7 @@ async function syncCreator(env, s, submissionId, contactId) {
   const d = s.detailsObj;
   const socials = isPlainObject(d.socials) ? d.socials : {};
   const audience = dash(d.audienceSize);
-  await env.DB.prepare(
+  const upsert = (email) => env.DB.prepare(
     `INSERT INTO creators (id, lead_id, submission_id, contact_id, created_at, updated_at, name, email, phone, phone_e164,
        instagram, tiktok, youtube, other_social, audience_size, audience_tier, niches, location, content_types, media_kit, consent, form_status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -132,11 +132,26 @@ async function syncCreator(env, s, submissionId, contactId) {
        location = excluded.location, content_types = excluded.content_types, media_kit = excluded.media_kit,
        consent = excluded.consent, form_status = excluded.form_status`
   ).bind(
-    crypto.randomUUID(), s.leadId, submissionId, contactId, now(), now(), s.name, s.email, s.phone, s.phoneE164,
+    crypto.randomUUID(), s.leadId, submissionId, contactId, now(), now(), s.name, email, s.phone, s.phoneE164,
     clean(socials.instagram, 200), clean(socials.tiktok, 200), clean(socials.youtube, 300), clean(socials.other, 300),
     audience, AUDIENCE_TIERS[audience] || 0, JSON.stringify(cleanList(d.niches)), clean(d.location, 160),
     JSON.stringify(cleanList(d.contentTypes)), clean(d.mediaKit, 1000), d.consent === true ? 1 : 0, s.status
   ).run();
+  try {
+    await upsert(s.email);
+  } catch (error) {
+    // Creator emails are unique (they're the affiliate portal login).
+    if (!/UNIQUE/i.test(error.message) || !s.email) throw error;
+    const own = await env.DB.prepare('SELECT email FROM creators WHERE lead_id = ?').bind(s.leadId).first();
+    if (own) {
+      // This application switched to another creator's email: keep the one it had.
+      await upsert(own.email);
+    } else {
+      // Same person as a creator we already have (added by hand, or an earlier application): attach it to them.
+      await env.DB.prepare("UPDATE creators SET lead_id = ? WHERE email = ? COLLATE NOCASE AND email <> ''").bind(s.leadId, s.email).run();
+      await upsert(s.email);
+    }
+  }
 }
 
 function rowValues(s) {
@@ -379,7 +394,7 @@ async function updateSubmission(request, env, headers, [id]) {
 const FOLLOWER_COLUMNS = { instagram: 'instagram_followers', tiktok: 'tiktok_followers', youtube: 'youtube_followers' };
 const SOCIAL_COLUMNS = { instagram: 'instagram', tiktok: 'tiktok', youtube: 'youtube', other: 'other_social' };
 
-function mapCreator(c, notes = []) {
+function mapCreator(c, notes = [], campaigns = []) {
   return {
     id: c.id, leadId: c.lead_id, submissionId: c.submission_id, contactId: c.contact_id, source: c.source, createdAt: c.created_at, updatedAt: c.updated_at,
     name: c.name, email: c.email, phone: c.phone, phoneE164: c.phone_e164,
@@ -388,7 +403,11 @@ function mapCreator(c, notes = []) {
     followersUpdatedAt: c.followers_updated_at,
     audienceSize: c.audience_size, audienceTier: c.audience_tier, niches: parse(c.niches, []), location: c.location,
     contentTypes: parse(c.content_types, []), mediaKit: c.media_kit, consent: c.consent === 1,
-    formStatus: c.form_status, rosterStatus: c.roster_status, notes
+    formStatus: c.form_status, rosterStatus: c.roster_status, notes,
+    // Affiliate portal. Payout details themselves are never returned.
+    country: c.country || '', payoutMethod: c.payout_method || '', payoutDetailsLast4: c.payout_details_last4 || '',
+    taxFormReceived: c.tax_form_received === 1, portalLastLoginAt: c.portal_last_login_at || null,
+    campaigns
   };
 }
 
@@ -421,6 +440,11 @@ function creatorFields(body) {
   if (body.location !== undefined) fields.location = clean(body.location, 160);
   for (const [key, col] of Object.entries(SOCIAL_COLUMNS)) if (isPlainObject(body.socials) && body.socials[key] !== undefined) fields[col] = clean(body.socials[key], 300);
   for (const [key, col] of Object.entries(FOLLOWER_COLUMNS)) if (isPlainObject(body.followers) && body.followers[key] !== undefined) fields[col] = followerCount(body.followers[key]);
+  if (body.taxFormReceived !== undefined) fields.tax_form_received = body.taxFormReceived ? 1 : 0;
+  if (body.country !== undefined) {
+    fields.country = clean(body.country, 2).toUpperCase() || null;
+    if (fields.country && !/^[A-Z]{2}$/.test(fields.country)) throw new HttpError(400, 'Country must be a 2-letter code, like US.');
+  }
   if (body.rosterStatus !== undefined) {
     if (!ROSTER_STATUSES.includes(body.rosterStatus)) throw new HttpError(400, `rosterStatus must be one of: ${ROSTER_STATUSES.join(', ')}`);
     fields.roster_status = body.rosterStatus;
@@ -436,24 +460,44 @@ function applyFollowers(fields, existing = {}) {
   if (tier) { fields.audience_size = tier.size; fields.audience_tier = tier.tier; }
 }
 
+// Creator emails are unique: they're the affiliate portal login.
+async function emailUnique(write) {
+  try {
+    return await write;
+  } catch (error) {
+    if (/UNIQUE/i.test(error.message) && /email/i.test(error.message)) throw new HttpError(409, 'Another creator already uses that email.');
+    throw error;
+  }
+}
+
 async function creatorWithNotes(env, id) {
-  const [creator, notes] = await env.DB.batch([
+  const [creator, notes, assignments] = await env.DB.batch([
     env.DB.prepare('SELECT * FROM creators WHERE id = ?').bind(id),
-    env.DB.prepare('SELECT * FROM creator_notes WHERE creator_id = ? ORDER BY created_at DESC').bind(id)
+    env.DB.prepare('SELECT * FROM creator_notes WHERE creator_id = ? ORDER BY created_at DESC').bind(id),
+    env.DB.prepare(`SELECT ca.status, c.id, c.name, c.status campaign_status, c.operation_id FROM campaign_affiliates ca
+      JOIN campaigns c ON c.id = ca.campaign_id WHERE ca.creator_id = ? AND ca.status <> 'removed' ORDER BY c.name`).bind(id)
   ]);
-  return mapCreator(creator.results[0], notes.results.map(mapNote));
+  return mapCreator(creator.results[0], notes.results.map(mapNote),
+    assignments.results.map(a => ({ id: a.id, name: a.name, status: a.campaign_status, operationId: a.operation_id, assignmentStatus: a.status })));
 }
 
 async function listCreators(request, env, headers) {
   await requireUser(request, env);
   const includePartial = new URL(request.url).searchParams.get('include') === 'partial';
-  const [creators, notes] = await env.DB.batch([
+  const [creators, notes, assignments] = await env.DB.batch([
     env.DB.prepare(`SELECT * FROM creators ${includePartial ? '' : "WHERE form_status = 'complete'"} ORDER BY created_at DESC LIMIT 2000`),
-    env.DB.prepare('SELECT * FROM creator_notes ORDER BY created_at DESC')
+    env.DB.prepare('SELECT * FROM creator_notes ORDER BY created_at DESC'),
+    // "Assigned to" is derived from campaign_affiliates, never stored on the creator.
+    env.DB.prepare(`SELECT ca.creator_id, ca.status, c.id, c.name, c.status campaign_status, c.operation_id
+      FROM campaign_affiliates ca JOIN campaigns c ON c.id = ca.campaign_id WHERE ca.status <> 'removed' ORDER BY c.name`)
   ]);
   const byCreator = {};
   for (const n of notes.results) (byCreator[n.creator_id] ||= []).push(mapNote(n));
-  return json({ ok: true, creators: creators.results.map(c => mapCreator(c, byCreator[c.id])) }, 200, headers);
+  const campaignsOf = {};
+  for (const a of assignments.results) {
+    (campaignsOf[a.creator_id] ||= []).push({ id: a.id, name: a.name, status: a.campaign_status, operationId: a.operation_id, assignmentStatus: a.status });
+  }
+  return json({ ok: true, creators: creators.results.map(c => mapCreator(c, byCreator[c.id], campaignsOf[c.id])) }, 200, headers);
 }
 
 // Creators we already work with: added by hand, approved, and OK to offer to sponsors.
@@ -463,8 +507,8 @@ async function createCreator(request, env, headers) {
   applyFollowers(fields);
   const id = crypto.randomUUID();
   const row = { id, source: 'manual', created_at: now(), updated_at: now(), consent: 1, form_status: 'complete', roster_status: 'approved', ...fields };
-  await env.DB.prepare(`INSERT INTO creators (${Object.keys(row).join(', ')}) VALUES (${Object.keys(row).map(() => '?').join(', ')})`)
-    .bind(...Object.values(row)).run();
+  await emailUnique(env.DB.prepare(`INSERT INTO creators (${Object.keys(row).join(', ')}) VALUES (${Object.keys(row).map(() => '?').join(', ')})`)
+    .bind(...Object.values(row)).run());
   return json({ ok: true, creator: await creatorWithNotes(env, id) }, 201, headers);
 }
 
@@ -476,13 +520,19 @@ async function updateCreator(request, env, headers, [id]) {
   if (!existing) throw new HttpError(404, 'Creator not found.');
   applyFollowers(fields, existing);
   fields.updated_at = now();
-  await env.DB.prepare(`UPDATE creators SET ${Object.keys(fields).map(k => `${k} = ?`).join(', ')} WHERE id = ?`).bind(...Object.values(fields), id).run();
+  await emailUnique(env.DB.prepare(`UPDATE creators SET ${Object.keys(fields).map(k => `${k} = ?`).join(', ')} WHERE id = ?`).bind(...Object.values(fields), id).run());
   return json({ ok: true, creator: await creatorWithNotes(env, id) }, 200, headers);
 }
 
 async function deleteCreator(request, env, headers, [id]) {
   await requireUser(request, env);
-  const result = await env.DB.prepare('DELETE FROM creators WHERE id = ?').bind(id).run();
+  let result;
+  try {
+    result = await env.DB.prepare('DELETE FROM creators WHERE id = ?').bind(id).run();
+  } catch (error) {
+    if (/FOREIGN KEY/i.test(error.message)) throw new HttpError(409, 'This creator has affiliate payouts on record, so they can’t be deleted.');
+    throw error;
+  }
   if (!result.meta.changes) throw new HttpError(404, 'Creator not found.');
   return json({ ok: true }, 200, headers);
 }

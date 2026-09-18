@@ -29,3 +29,21 @@ npx wrangler d1 migrations apply edgeform-crm --remote
 ```
 
 For local development, omit `--remote`.
+
+## Affiliate system
+
+The affiliate portal (affiliate.edgeformmarketing.com) calls this Worker at `/api/affiliate/v1`. See `CONTRACT.md`. Worker secrets:
+
+| Secret | Used for |
+|---|---|
+| `AFFILIATE_ENCRYPTION_KEY` | AES-GCM wrapping key for creator payout details and platform OAuth tokens. Any long random string. Changing it makes stored payout details unreadable. |
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key for polling view counts. |
+| `APIFY_TOKEN` | Apify API token, the TikTok / Instagram view-count scraper. |
+
+```sh
+npx wrangler secret put AFFILIATE_ENCRYPTION_KEY
+npx wrangler secret put YOUTUBE_API_KEY
+npx wrangler secret put APIFY_TOKEN
+```
+
+`VIEW_PROVIDER_TIKTOK` and `VIEW_PROVIDER_INSTAGRAM` in `wrangler.jsonc` choose `oauth` (the creator's connected account) or `scraper` (Apify) per platform.

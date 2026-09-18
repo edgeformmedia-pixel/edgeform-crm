@@ -6,6 +6,8 @@ import { dialerRoutes } from './dialer.js';
 import { mailRoutes, mailCron } from './mail.js';
 import { operationRoutes } from './operations.js';
 import { influencerLeadRoutes, discoveryCron } from './influencer-leads.js';
+import { campaignRoutes } from './campaigns.js';
+import { affiliateFetch, AFFILIATE_PREFIX } from './affiliate.js';
 
 function cors(request, env) {
   const origin = request.headers.get('origin') || '';
@@ -39,7 +41,8 @@ const routes = {
   ...dialerRoutes,
   ...mailRoutes,
   ...operationRoutes,
-  ...influencerLeadRoutes
+  ...influencerLeadRoutes,
+  ...campaignRoutes
 };
 
 const compiled = Object.entries(routes).map(([key, handler]) => {
@@ -53,6 +56,8 @@ export default {
     const url = new URL(request.url);
     const headers = cors(request, env);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+    // The affiliate portal API has its own error shape ({ ok, error, code }).
+    if (url.pathname === AFFILIATE_PREFIX || url.pathname.startsWith(AFFILIATE_PREFIX + '/')) return affiliateFetch(request, env, headers);
     try {
       for (const { method, pattern, handler } of compiled) {
         const match = request.method === method && url.pathname.match(pattern);

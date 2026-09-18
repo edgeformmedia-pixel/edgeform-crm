@@ -3,8 +3,9 @@ export const json = (data, status = 200, headers = {}) => new Response(JSON.stri
   headers: { 'content-type': 'application/json; charset=utf-8', ...headers }
 });
 
+// `code` is a machine-readable error code; only the affiliate API sends it.
 export class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, code) { super(message); this.status = status; this.code = code; }
 }
 
 export const clean = (value, max = 4000) => String(value ?? '').trim().slice(0, max);

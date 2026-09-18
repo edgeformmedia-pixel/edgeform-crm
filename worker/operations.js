@@ -430,7 +430,13 @@ async function updateOperation(request, env, headers, [id]) {
 
 async function deleteOperation(request, env, headers, [id]) {
   await requireAdmin(request, env);
-  const result = await env.DB.prepare('DELETE FROM operations WHERE id = ?').bind(id).run();
+  let result;
+  try {
+    result = await env.DB.prepare('DELETE FROM operations WHERE id = ?').bind(id).run();
+  } catch (error) {
+    if (/FOREIGN KEY/i.test(error.message)) throw new HttpError(409, 'A campaign in this operation has affiliate payouts on record, so it can’t be deleted.');
+    throw error;
+  }
   if (!result.meta.changes) throw new HttpError(404, 'Operation not found.');
   return json({ ok: true }, 200, headers);
 }

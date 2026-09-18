@@ -1,0 +1,63 @@
+/* Affiliate campaigns: section on marketing operations, campaign view, and the Affiliates page. */
+.cmp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.cmp-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; transition: border-color .15s; text-align: left; font: inherit; color: inherit; }
+.cmp-card:hover, .cmp-card:focus-visible { border-color: var(--accent); outline: none; }
+.cmp-card-name { font-size: 15px; font-weight: 600; color: var(--text); }
+.cmp-card-meta { font-family: var(--mono); font-size: 10px; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.cmp-card-top { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.cmp-alert { color: var(--orange); }
+
+.cmp-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+.cmp-bar .cmp-spacer { flex: 1; }
+.cmp-title h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; margin: 8px 0 4px; color: var(--text); }
+.cmp-sub { font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-bottom: 18px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.cmp-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+.cmp-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.cmp-kpi-label { font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); }
+.cmp-kpi-val { font-size: 20px; font-weight: 600; margin-top: 4px; color: var(--text); overflow-wrap: anywhere; }
+.cmp-kpi-sub { font-family: var(--mono); font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+.cmp-panel { margin-bottom: 18px; }
+.cmp-panel .panel-head { gap: 8px; flex-wrap: wrap; }
+.cmp-panel-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.cmp-table-wrap { overflow-x: auto; }
+.cmp-table { width: 100%; border-collapse: collapse; }
+.cmp-table th { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); background: var(--surface2); white-space: nowrap; }
+.cmp-table td { font-size: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-dim); vertical-align: middle; }
+.cmp-table tr:last-child td { border-bottom: none; }
+.cmp-table .num { text-align: right; white-space: nowrap; font-family: var(--mono); }
+.cmp-table .strong { color: var(--text); font-weight: 600; }
+.cmp-who { display: flex; flex-direction: column; gap: 2px; min-width: 150px; }
+.cmp-who b { color: var(--text); font-weight: 600; }
+.cmp-who span { font-family: var(--mono); font-size: 10px; color: var(--text-muted); overflow-wrap: anywhere; }
+.cmp-rate { display: flex; align-items: center; gap: 4px; min-width: 120px; }
+.cmp-rate .c-input { width: 84px; padding: 5px 8px; font-size: 12px; }
+.cmp-rate small { font-family: var(--mono); font-size: 9px; color: var(--text-muted); }
+.cmp-row-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.cmp-row-actions .action-btn { padding: 4px 9px; font-size: 10px; white-space: nowrap; }
+.cmp-brief { white-space: pre-wrap; font-size: 13px; line-height: 1.6; color: var(--text-dim); padding: 16px 18px; }
+.cmp-empty { padding: 28px 18px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+.cmp-placeholder { padding: 48px 20px; text-align: center; color: var(--text-muted); font-family: var(--mono); font-size: 12px; background: var(--surface); border: 1px dashed var(--border-hi); border-radius: 10px; }
+
+.cmp-platforms { display: flex; gap: 14px; flex-wrap: wrap; padding: 6px 0; }
+.cmp-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); cursor: pointer; }
+.cmp-money { position: relative; }
+.cmp-money::before { content: '$'; position: absolute; left: 11px; top: 50%; transform: translateY(-50%); font-family: var(--mono); font-size: 13px; color: var(--text-muted); pointer-events: none; }
+.cmp-money .c-input { padding-left: 22px; }
+
+.aff-tabs { margin-bottom: 14px; }
+.aff-results { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; margin-top: 10px; }
+.aff-result { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); }
+.aff-result .cmp-who { flex: 1; min-width: 0; }
+
+.cmp-video-url { display: flex; flex-direction: column; gap: 2px; min-width: 180px; max-width: 320px; }
+.cmp-video-url a { color: var(--accent-bright); text-decoration: none; overflow-wrap: anywhere; font-size: 12px; }
+.cmp-video-url span { font-family: var(--mono); font-size: 10px; color: var(--text-muted); }
+.cmp-flag { font-family: var(--mono); font-size: 10px; color: var(--orange); }
+.cmp-audit-json { font-family: var(--mono); font-size: 10px; color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 380px; }
+
+.cr-assigned { font-family: var(--mono); font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+.cr-assigned b { color: var(--accent-bright); font-weight: 500; }
+
+@media (max-width: 1100px) { .cmp-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .cmp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cmp-title h1 { font-size: 21px; } }
