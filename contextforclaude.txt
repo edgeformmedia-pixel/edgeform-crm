@@ -1,0 +1,31 @@
+CONTEXT FOR CLAUDE: edgeform-crm, affiliate view tracking (2026-09-18)
+
+PROJECT
+- Cloudflare Worker "edgeform-crm-api" + D1 "edgeform-crm" + admin UI (crm.edgeformmarketing.com).
+- Affiliate portal: affiliate.edgeformmarketing.com, served by the same Worker at /api/affiliate/v1.
+- Spec: CONTRACT.md (polling rules in section 3). Secrets and vars: ENVIRONMENT.md.
+- The user allows pushing to main and deploying the Worker without asking.
+
+HOW VIEWS ARE CHECKED AUTOMATICALLY (already built)
+- Affiliate submits a video, then an admin approves it (only "approved" videos are polled).
+- The every-minute scheduled() handler runs affiliateViewsCron(env) (worker/affiliate-views.js), up to 25 due videos per tick.
+- Schedule: every 6h for the first 72h, then daily, until tracking_ends_at.
+- Tracking end: final fetch, billable_views = latest count, status locked, earnings recalculated.
+- Flags: fetch_failed (3 failures in a row), video_unavailable (status removed), suspicious_spike.
+- Providers:
+  - YouTube: YouTube Data API v3 (secret YOUTUBE_API_KEY).
+  - TikTok/Instagram: the creator's connected account via OAuth when VIEW_PROVIDER_TIKTOK / VIEW_PROVIDER_INSTAGRAM = "oauth", with Apify as the fallback (worker/affiliate-scraper.js, secret APIFY_TOKEN). "scraper" = Apify only.
+  - Nothing available: the video waits and locks on manually entered views.
+
+WHAT WE DISCUSSED
+- The admin does NOT need to connect an account. "Connect TikTok/Instagram" is per creator, in the portal settings, and optional.
+- Free route the user wants:
+  1. YouTube: a free API key (10k units/day quota is plenty).
+  2. TikTok/IG: start on Apify's free plan (small monthly credit, fine for low volume).
+  3. Apply for TikTok Display API and Meta/Instagram Graph API developer apps (free, need review; IG needs Business/Creator accounts). Once approved, set VIEW_PROVIDER_*=oauth.
+- Direct scraping from the Worker was rejected: TikTok and Instagram block Cloudflare IPs.
+
+NEXT STEPS / OPEN
+- Not yet checked whether YOUTUBE_API_KEY and APIFY_TOKEN are set on the deployed Worker (npx wrangler secret list).
+- Confirm the every-minute cron trigger exists in wrangler.jsonc.
+- Possibly walk the user through getting the YouTube key and the Apify token.
