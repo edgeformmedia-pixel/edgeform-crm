@@ -1,6 +1,7 @@
 import { now } from './lib.js';
 import { addHours, normalizeHandle, recomputeCampaign, auditStatement, flagStatement } from './affiliate-lib.js';
-import { tiktokProvider, instagramProvider } from './affiliate-oauth.js';
+import { connectionsConfigured, oauthTiktok, oauthInstagram } from './affiliate-oauth.js';
+import { scrapeTiktok, scrapeInstagram } from './affiliate-scraper.js';
 
 // View polling (CONTRACT.md §3). Runs every minute from scheduled(): up to 25 approved videos per tick.
 // Every 6 hours for the first 72 hours after submission, then every 24 hours, until tracking ends;
@@ -75,7 +76,33 @@ export async function youtubeProvider(env, videos) {
   return results;
 }
 
-const PROVIDERS = { youtube: youtubeProvider, tiktok: tiktokProvider, instagram: instagramProvider };
+// ── TikTok and Instagram ──
+// VIEW_PROVIDER_TIKTOK / VIEW_PROVIDER_INSTAGRAM = oauth | scraper.
+// oauth: the creator's connected account, then Apify for anything it couldn't read. scraper: Apify only.
+// With neither available the video waits (and locks on manual views when tracking ends).
+
+function socialProvider(platform, oauth, scrape) {
+  return async (env, videos) => {
+    const mode = platform === 'tiktok' ? env.VIEW_PROVIDER_TIKTOK : env.VIEW_PROVIDER_INSTAGRAM;
+    const results = mode === 'oauth' && connectionsConfigured(env, platform) ? await oauth(env, videos) : new Map();
+    const rest = videos.filter(v => !results.get(v.id)?.ok && !results.get(v.id)?.unavailable);
+    if (rest.length && env.APIFY_TOKEN) {
+      try {
+        for (const [id, result] of await scrape(env, rest)) results.set(id, result);
+      } catch (error) {
+        for (const v of rest) results.set(v.id, { error: error.message });
+      }
+    }
+    for (const v of videos) if (!results.has(v.id)) results.set(v.id, { skip: true });
+    return results;
+  };
+}
+
+const PROVIDERS = {
+  youtube: youtubeProvider,
+  tiktok: socialProvider('tiktok', oauthTiktok, scrapeTiktok),
+  instagram: socialProvider('instagram', oauthInstagram, scrapeInstagram)
+};
 
 // ── Scheduling ──
 

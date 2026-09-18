@@ -8,7 +8,6 @@ import {
 // Admin side of affiliate campaigns (camelCase JSON, like the rest of the admin API).
 // Campaigns hang off marketing operations; each has an Email channel (placeholder) and an Affiliate channel.
 
-const MONEY_FIELDS = ['defaultCpmRateCents', 'maxPayoutPerVideoCents', 'maxPayoutPerAffiliateCents', 'totalBudgetCents', 'minViewsToQualify'];
 const dollars = (cents) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function wholeNumber(value, label, { nullable = true, max = 1e12 } = {}) {
@@ -95,14 +94,17 @@ function affiliateJson(a) {
     creator: {
       id: a.creator_id, name: a.creator_name, email: a.creator_email, instagram: a.instagram, tiktok: a.tiktok, youtube: a.youtube,
       payoutMethod: a.payout_method || '', payoutDetailsLast4: a.payout_details_last4 || '', taxFormReceived: a.tax_form_received === 1,
-      portalLastLoginAt: a.portal_last_login_at
+      portalLastLoginAt: a.portal_last_login_at,
+      connections: String(a.connections || '').split(',').filter(Boolean).map(x => { const [platform, ...name] = x.split(':'); return { platform, username: name.join(':') }; })
     },
     ...statsJson(a)
   };
 }
 
 const AFFILIATES_SQL = `SELECT ca.*, c.default_cpm_rate_cents, cr.name creator_name, cr.email creator_email, cr.instagram, cr.tiktok, cr.youtube,
-    cr.payout_method, cr.payout_details_last4, cr.tax_form_received, cr.portal_last_login_at, ${ASSIGNMENT_STATS_SQL}
+    cr.payout_method, cr.payout_details_last4, cr.tax_form_received, cr.portal_last_login_at,
+    (SELECT group_concat(pc.platform || ':' || pc.platform_username) FROM creator_platform_connections pc WHERE pc.creator_id = ca.creator_id AND pc.revoked_at IS NULL) connections,
+    ${ASSIGNMENT_STATS_SQL}
   FROM campaign_affiliates ca JOIN campaigns c ON c.id = ca.campaign_id JOIN creators cr ON cr.id = ca.creator_id`;
 
 async function loadCampaign(env, id) {
@@ -326,4 +328,3 @@ export const campaignRoutes = {
   'POST /api/campaign-affiliates/:id/invite': resendInvite
 };
 
-export { campaignJson, affiliateJson, AFFILIATES_SQL, MONEY_FIELDS };

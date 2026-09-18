@@ -47,3 +47,14 @@ npx wrangler secret put APIFY_TOKEN
 ```
 
 `VIEW_PROVIDER_TIKTOK` and `VIEW_PROVIDER_INSTAGRAM` in `wrangler.jsonc` choose `oauth` (the creator's connected account) or `scraper` (Apify) per platform.
+
+### TikTok and Instagram account connections
+
+Affiliates can connect their TikTok and Instagram accounts from the portal's settings page, so view counts come from the platforms' own APIs. Until an app's secrets are set, `POST /connections/:platform/start` returns `501 not_available`.
+
+| Secret | Where it comes from |
+|---|---|
+| `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` | TikTok for Developers app with Login Kit (web). Scopes: `user.info.basic`, `user.info.profile`, `video.list`. Redirect URI: `https://edgeform-crm-api.edgeformmedia.workers.dev/api/affiliate/v1/oauth/tiktok/callback` |
+| `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` | Meta app with the "Instagram API with Instagram Login" product. Scopes: `instagram_business_basic`, `instagram_business_manage_insights`. Redirect URI: `https://edgeform-crm-api.edgeformmedia.workers.dev/api/affiliate/v1/oauth/instagram/callback`. Only Business or Creator Instagram accounts can connect. |
+
+Once an app is live, set its `VIEW_PROVIDER_*` var to `oauth`. Videos from creators who haven't connected, or that aren't in the connected account, fall back to Apify when `APIFY_TOKEN` is set. With neither available, a video waits and locks on manually entered views.

@@ -290,8 +290,11 @@ async function startConnection(request, env, headers, [platform]) {
 
 async function deleteConnection(request, env, headers, [platform]) {
   const creator = await requireCreator(request, env);
-  await env.DB.prepare('UPDATE creator_platform_connections SET revoked_at = ? WHERE creator_id = ? AND platform = ? AND revoked_at IS NULL')
+  const result = await env.DB.prepare('UPDATE creator_platform_connections SET revoked_at = ? WHERE creator_id = ? AND platform = ? AND revoked_at IS NULL')
     .bind(now(), creator.id, platform).run();
+  if (result.meta.changes) {
+    await auditStatement(env, { actorType: 'creator', actorId: creator.id, entityType: 'creator', entityId: creator.id, action: 'platform_disconnected', after: { platform } }).run();
+  }
   return json({ ok: true }, 200, headers);
 }
 
