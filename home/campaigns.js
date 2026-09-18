@@ -719,3 +719,151 @@ async function loadAffiliateBadge() {
   if (document.body.classList.contains('ready')) { loadAffiliateBadge(); setInterval(loadAffiliateBadge, 5 * 60 * 1000); }
   else setTimeout(waitForSession, 500);
 })();
+
+// ── Payouts (Affiliates page) ──
+// Payouts are records: someone sends the money outside the CRM, then marks the payout paid with a reference.
+
+const PAYOUT_STATUS_CHIP = { pending: 'chip-orange', approved: 'chip-blue', paid: 'chip-green', failed: 'chip-red' };
+const PAYOUT_METHOD_LABEL = { paypal: 'PayPal', wise: 'Wise', bank: 'Bank transfer', manual: 'Manual' };
+let payoutFilter = '';
+let payoutsCache = [];
+const openPayouts = new Set();
+
+AFF_PAGE_TABS.splice(2, 0, ['payouts', 'Payouts']);
+
+window.renderPayoutsTab = async function renderPayoutsTab(box) {
+  const [{ creators }, { payouts }] = await Promise.all([cmpRequest('/api/payouts/owed'), cmpRequest('/api/payouts' + (payoutFilter ? `?status=${payoutFilter}` : ''))]);
+  payoutsCache = payouts;
+  const isAdmin = ['admin', 'owner'].includes(currentUser.role);
+  box.innerHTML = `
+    <div class="panel cmp-panel"><div class="panel-head"><span class="panel-title">Owed to affiliates</span>
+      <div class="cmp-panel-actions"><button class="action-btn" onclick="exportOwedCsv()">Export CSV</button><button class="panel-link" onclick="loadAffiliatesPage()">↻ Refresh</button></div></div>
+      ${creators.length ? `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr>
+        <th>Affiliate</th><th>Pays via</th><th>Tax form</th><th class="num">Earned</th><th class="num">Paid</th><th class="num">Owed</th><th class="num">On a payout</th><th class="num">Ready to pay</th><th class="num">Still counting</th><th></th>
+      </tr></thead><tbody>${creators.map(c => `<tr>
+        <td><div class="cmp-who"><b>${esc(c.name)}</b><span>${esc(c.email)}${c.country ? ' · ' + esc(c.country) : ''}</span></div></td>
+        <td>${c.payoutMethod ? `${esc(PAYOUT_METHOD_LABEL[c.payoutMethod] || c.payoutMethod)}${c.payoutDetailsLast4 ? ` <span class="feed-time">••${esc(c.payoutDetailsLast4)}</span>` : ''}` : '<span class="cmp-flag">not set</span>'}</td>
+        <td><label class="cmp-check"><input type="checkbox" ${c.taxFormReceived ? 'checked' : ''} data-id="${esc(c.id)}" onchange="setTaxForm(this)"> received</label></td>
+        <td class="num">${cmpMoney(c.earnedCents)}</td><td class="num">${cmpMoney(c.paidCents)}</td><td class="num strong">${cmpMoney(c.owedCents)}</td>
+        <td class="num">${cmpMoney(c.inProgressCents)}</td>
+        <td class="num strong">${cmpMoney(c.readyCents)}<div class="feed-time">${c.readyVideos} video${c.readyVideos === 1 ? '' : 's'}</div></td>
+        <td class="num">${cmpMoney(c.pendingCents)}</td>
+        <td><div class="cmp-row-actions">${c.readyCents > 0 && isAdmin ? `<button class="action-btn primary" data-id="${esc(c.id)}" onclick="createPayout(this.dataset.id, this)">Create payout</button>` : ''}</div></td>
+      </tr>`).join('')}</tbody></table></div>` : '<div class="cmp-empty">No affiliate earnings yet. Videos earn once approved and are payable once they lock.</div>'}
+      <div class="ops-hint" style="padding:0 18px 14px;">Owed = earned on locked videos − paid. "Ready to pay" is what a new payout would include.${isAdmin ? '' : ' Only admins can create or change payouts.'}</div>
+    </div>
+    <div class="panel cmp-panel"><div class="panel-head"><span class="panel-title">Payouts</span>
+      <div class="cmp-panel-actions">
+        ${[['', 'All'], ['pending', 'Pending'], ['approved', 'Approved'], ['paid', 'Paid'], ['failed', 'Failed']].map(([k, label]) => `<button class="action-btn${payoutFilter === k ? ' primary' : ''}" onclick="payoutFilter='${k}';loadAffiliatesPage()">${label}</button>`).join('')}
+        <button class="action-btn" onclick="exportPayoutsCsv()">Export CSV</button></div></div>
+      ${payouts.length ? `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr>
+        <th>Affiliate</th><th>Period</th><th class="num">Amount</th><th>Status</th><th>Method</th><th>Reference</th><th>Created</th><th></th>
+      </tr></thead><tbody>${payouts.map(p => payoutRowHtml(p, isAdmin)).join('')}</tbody></table></div>` : '<div class="cmp-empty">No payouts yet.</div>'}
+      <div class="email-msg" id="payout-msg" style="margin:0 18px 14px;"></div>
+    </div>`;
+  for (const id of openPayouts) showPayoutItems(id, true);
+};
+
+function payoutRowHtml(p, isAdmin) {
+  const id = esc(p.id);
+  const next = { pending: [['approved', 'Approve'], ['failed', 'Mark failed']], approved: [['paid', 'Mark paid'], ['failed', 'Mark failed'], ['pending', 'Back to pending']], failed: [['pending', 'Retry']], paid: [] }[p.status] || [];
+  return `<tr>
+    <td><div class="cmp-who"><b>${esc(p.creatorName)}</b><span>${esc(p.creatorEmail)}${p.creatorPayoutMethod ? ` · ${esc(PAYOUT_METHOD_LABEL[p.creatorPayoutMethod] || p.creatorPayoutMethod)}${p.creatorPayoutLast4 ? ' ••' + esc(p.creatorPayoutLast4) : ''}` : ''}</span>
+      ${p.taxFormReceived ? '' : '<span class="cmp-flag">no tax form</span>'}</div></td>
+    <td>${esc(p.periodStart || '')} → ${esc(p.periodEnd || '')}</td>
+    <td class="num strong">${cmpMoney(p.amountCents)}<div class="feed-time">${p.videoCount} video${p.videoCount === 1 ? '' : 's'}</div></td>
+    <td><span class="chip ${PAYOUT_STATUS_CHIP[p.status] || 'chip-muted'}">${esc(p.status)}</span>${p.paidAt ? `<div class="feed-time">${fmtDate(p.paidAt)}</div>` : ''}</td>
+    <td>${esc(PAYOUT_METHOD_LABEL[p.paymentMethod] || p.paymentMethod || '—')}</td>
+    <td><span class="cmp-audit-json">${esc(p.paymentReference || '—')}</span></td>
+    <td>${fmtDate(p.createdAt)}<div class="feed-time">${esc(p.createdByName || '')}</div></td>
+    <td><div class="cmp-row-actions">
+      <button class="action-btn" data-id="${id}" onclick="showPayoutItems(this.dataset.id)">Videos</button>
+      ${isAdmin ? next.map(([status, label]) => `<button class="action-btn${status === 'paid' ? ' primary' : ''}" data-id="${id}" onclick="setPayoutStatus(this.dataset.id, '${status}', this)">${label}</button>`).join('') : ''}
+      ${isAdmin && ['pending', 'failed'].includes(p.status) ? `<button class="action-btn" data-id="${id}" onclick="deletePayout(this.dataset.id)">Delete</button>` : ''}
+    </div></td>
+  </tr><tr id="payout-items-${id}" hidden><td colspan="8"></td></tr>`;
+}
+
+async function showPayoutItems(id, keepOpen) {
+  const row = document.getElementById('payout-items-' + id);
+  if (!row) return;
+  if (!keepOpen && !row.hidden) { row.hidden = true; openPayouts.delete(id); return; }
+  row.hidden = false;
+  openPayouts.add(id);
+  const cell = row.firstElementChild;
+  cell.innerHTML = '<div class="cmp-empty">Loading…</div>';
+  try {
+    const { payout } = await cmpRequest(`/api/payouts/${encodeURIComponent(id)}`);
+    cell.innerHTML = `<table class="cmp-table"><thead><tr><th>Campaign</th><th>Video</th><th class="num">Billable views</th><th class="num">CPM</th><th class="num">Amount</th></tr></thead><tbody>
+      ${payout.lineItems.map(li => `<tr><td>${esc(li.campaignName || '')}</td><td><a href="${safeUrl(li.canonicalUrl)}" target="_blank" rel="noopener">${esc(CMP_PLATFORMS[li.platform] || li.platform || 'Video')} ↗</a></td>
+        <td class="num">${cmpNum(li.billableViews)}</td><td class="num">${cmpMoney(li.cpmRateCents)}</td><td class="num">${cmpMoney(li.amountCents)}</td></tr>`).join('')}
+    </tbody></table>`;
+  } catch (err) { cell.innerHTML = `<div class="cmp-empty">${esc(err.message)}</div>`; }
+}
+
+async function createPayout(creatorId, btn) {
+  if (!confirm('Create a pending payout from all of this affiliate’s locked, unpaid videos? No money is sent. You mark it paid after paying them.')) return;
+  btn.disabled = true;
+  try {
+    const { payout } = await cmpRequest('/api/payouts', { method: 'POST', body: JSON.stringify({ creatorId }) });
+    openPayouts.add(payout.id);
+    await loadAffiliatesPage();
+    cmpMsg('payout-msg', `Payout of ${cmpMoney(payout.amountCents)} created for ${payout.creatorName}.`, 'success');
+  } catch (err) { alert('Not created: ' + err.message); btn.disabled = false; }
+}
+
+async function setPayoutStatus(id, status, btn) {
+  const p = payoutsCache.find(x => x.id === id);
+  const body = { status };
+  if (status === 'paid') {
+    const methods = Object.keys(PAYOUT_METHOD_LABEL);
+    const method = prompt(`Paid ${cmpMoney(p.amountCents)} to ${p.creatorName} how? (${methods.join(', ')})`, p.paymentMethod || p.creatorPayoutMethod || '');
+    if (method === null) return;
+    if (!methods.includes(method.trim().toLowerCase())) { alert(`Use one of: ${methods.join(', ')}`); return; }
+    const reference = prompt('Payment reference (transaction ID, transfer number…):', p.paymentReference || '');
+    if (reference === null) return;
+    if (!reference.trim()) { alert('A reference is required to mark a payout paid.'); return; }
+    Object.assign(body, { paymentMethod: method.trim().toLowerCase(), paymentReference: reference.trim() });
+  } else if (status === 'failed' && !confirm('Mark this payout failed? You can retry it or delete it afterwards.')) return;
+  btn.disabled = true;
+  try {
+    await cmpRequest(`/api/payouts/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) });
+    loadAffiliatesPage();
+  } catch (err) { alert('Not saved: ' + err.message); btn.disabled = false; }
+}
+
+async function deletePayout(id) {
+  if (!confirm('Delete this payout? Its videos go back to "ready to pay".')) return;
+  try {
+    await cmpRequest(`/api/payouts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    openPayouts.delete(id);
+    loadAffiliatesPage();
+  } catch (err) { alert('Not deleted: ' + err.message); }
+}
+
+async function setTaxForm(input) {
+  try {
+    await cmpRequest(`/api/creators/${encodeURIComponent(input.dataset.id)}`, { method: 'PATCH', body: JSON.stringify({ taxFormReceived: input.checked }) });
+  } catch (err) { input.checked = !input.checked; alert('Not saved: ' + err.message); }
+}
+
+async function exportOwedCsv() {
+  const { creators } = await cmpRequest('/api/payouts/owed');
+  const d = (cents) => (cents / 100).toFixed(2);
+  downloadCsv('affiliates-owed.csv', [
+    ['Affiliate', 'Email', 'Country', 'Payout method', 'Details (last 4)', 'Tax form', 'Earned (USD)', 'Paid (USD)', 'Owed (USD)', 'On a payout (USD)', 'Ready to pay (USD)', 'Still counting (USD)'],
+    ...creators.map(c => [c.name, c.email, c.country, c.payoutMethod, c.payoutDetailsLast4, c.taxFormReceived ? 'yes' : 'no', d(c.earnedCents), d(c.paidCents), d(c.owedCents), d(c.inProgressCents), d(c.readyCents), d(c.pendingCents)])
+  ]);
+}
+
+async function exportPayoutsCsv() {
+  const rows = [['Payout ID', 'Affiliate', 'Email', 'Status', 'Period start', 'Period end', 'Method', 'Reference', 'Paid at', 'Campaign', 'Video', 'Billable views', 'CPM (USD per 1K)', 'Amount (USD)']];
+  for (const p of payoutsCache) {
+    const { payout } = await cmpRequest(`/api/payouts/${encodeURIComponent(p.id)}`);
+    for (const li of payout.lineItems) {
+      rows.push([payout.id, payout.creatorName, payout.creatorEmail, payout.status, payout.periodStart, payout.periodEnd, payout.paymentMethod || '', payout.paymentReference || '',
+        payout.paidAt || '', li.campaignName || '', li.canonicalUrl || '', li.billableViews, (li.cpmRateCents / 100).toFixed(2), (li.amountCents / 100).toFixed(2)]);
+    }
+  }
+  downloadCsv('affiliate-payouts.csv', rows);
+}
