@@ -254,6 +254,15 @@ function closeCampaign() {
 
 const refreshCampaign = () => cmpCurrent && openCampaign(cmpCurrent.id);
 
+async function activateCampaign() {
+  try {
+    const { campaign } = await cmpRequest(`/api/campaigns/${encodeURIComponent(cmpCurrent.id)}`, { method: 'PATCH', body: JSON.stringify({ status: 'active' }) });
+    delete cmpCache[campaign.operationId];
+    cmpCurrent = campaign;
+    renderCampaignView();
+  } catch (err) { alert('Not saved: ' + err.message); }
+}
+
 function renderCampaignView() {
   const c = cmpCurrent;
   const op = allOperations.find(o => o.id === c.operationId);
@@ -278,6 +287,9 @@ function renderCampaignView() {
       ${c.totalBudgetCents !== null ? `<span>Budget ${cmpMoney(c.totalBudgetCents)}</span>` : ''}
       ${c.startDate || c.endDate ? `<span>${esc(c.startDate || '…')} → ${esc(c.endDate || '…')}</span>` : ''}
     </div>
+    ${c.status === 'draft' ? `<div class="email-msg show error" style="margin:0 0 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      This campaign is a draft, so affiliates can't see it in their portal yet.
+      <button class="action-btn primary" onclick="activateCampaign()">Make it active</button></div>` : ''}
     <div class="billing-tabs">
       <button class="billing-tab${cmpTab === 'affiliate' ? ' active' : ''}" onclick="cmpTab='affiliate';renderCampaignView()">Affiliate</button>
       <button class="billing-tab${cmpTab === 'email' ? ' active' : ''}" onclick="cmpTab='email';renderCampaignView()">Email</button>
