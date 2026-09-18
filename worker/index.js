@@ -10,7 +10,6 @@ import { campaignRoutes } from './campaigns.js';
 import { affiliateAdminRoutes } from './affiliate-admin.js';
 import { payoutRoutes } from './payouts.js';
 import { affiliateFetch, AFFILIATE_PREFIX } from './affiliate.js';
-import { affiliateViewsCron } from './affiliate-views.js';
 
 function cors(request, env) {
   const origin = request.headers.get('origin') || '';
@@ -76,11 +75,9 @@ export default {
     }
   },
 
-  // Every minute: scheduled sends, inbound mail sync, trash cleanup, background creator discovery runs,
-  // and affiliate video view checks.
+  // Every minute: scheduled sends, inbound mail sync, trash cleanup, and background creator discovery runs.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(mailCron(env));
     ctx.waitUntil(discoveryCron(env).catch(error => console.error('discovery cron failed', error?.message)));
-    ctx.waitUntil(affiliateViewsCron(env).catch(error => console.error('affiliate views cron failed', error?.message)));
   }
 };

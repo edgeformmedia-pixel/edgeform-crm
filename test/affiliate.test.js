@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseVideoUrl, resolveVideoUrl, normalizeHandle, computeEarnings, encryptText, decryptText } from '../worker/affiliate-lib.js';
+import { parseVideoUrl, resolveVideoUrl, normalizeHandle, computeEarnings, priceEvents, encryptText, decryptText, lastWeeklyCutoff } from '../worker/affiliate-lib.js';
 
 test('YouTube links: watch, shorts, youtu.be, live all give the same video', () => {
   for (const url of ['https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10', 'youtube.com/shorts/dQw4w9WgXcQ', 'https://youtu.be/dQw4w9WgXcQ?si=x', 'https://m.youtube.com/live/dQw4w9WgXcQ']) {
@@ -52,54 +52,76 @@ test('handles normalize from @handles and profile links', () => {
   assert.equal(normalizeHandle(''), '');
 });
 
-const video = (id, fields) => ({ id, campaign_affiliate_id: 'a1', creator_id: 'c1', status: 'approved', submitted_at: `2026-01-0${id.slice(1)}T00:00:00.000Z`, latest_view_count: 0, billable_views: 0, earned_cents: 0, ...fields });
+test('the weekly cutoff is the most recent past Sunday 10pm America/New_York, DST-safe', () => {
+  assert.equal(lastWeeklyCutoff('2026-09-18T12:00:00.000Z'), '2026-09-14T02:00:00.000Z');   // Friday -> last Sunday, EDT
+  assert.equal(lastWeeklyCutoff('2026-09-20T23:00:00.000Z'), '2026-09-14T02:00:00.000Z');   // Sunday 7pm ET, before this week's cutoff
+  assert.equal(lastWeeklyCutoff('2026-09-21T02:00:00.000Z'), '2026-09-21T02:00:00.000Z');   // Sunday 10pm ET exactly -> this week's cutoff
+  assert.equal(lastWeeklyCutoff('2026-01-05T00:00:00.000Z'), '2025-12-29T03:00:00.000Z');   // winter, EST
+  assert.equal(lastWeeklyCutoff('2026-11-01T12:00:00.000Z'), '2026-10-26T02:00:00.000Z');   // around fall-back
+  assert.equal(lastWeeklyCutoff('2026-03-08T12:00:00.000Z'), '2026-03-02T03:00:00.000Z');   // around spring-forward
+});
 
-test('earnings: floor(views × CPM / 1000), locked uses billable views, only approved/locked earn', () => {
+// A weekly view-check event: the delta since the last check, and the cumulative count at this check.
+const event = (id, fields) => ({ id, video_id: fields.video_id || id, campaign_affiliate_id: 'a1', video_status: 'approved', view_count: 0, delta_views: 0, ...fields });
+
+test('earnings: floor(delta views × CPM / 1000); only an approved video prices a new week', () => {
   const campaign = { default_cpm_rate_cents: 2500 };
   const earned = computeEarnings(campaign, [
-    video('v1', { latest_view_count: 12345 }),
-    video('v2', { status: 'locked', latest_view_count: 99999, billable_views: 1001 }),
-    video('v3', { status: 'pending_review', latest_view_count: 50000 }),
-    video('v4', { status: 'rejected', latest_view_count: 50000, earned_cents: 700 })
+    event('s1', { delta_views: 12345, view_count: 12345 }),
+    event('s2', { delta_views: 1001, view_count: 1001, video_status: 'locked' }),
+    event('s3', { delta_views: 50000, view_count: 50000, video_status: 'pending_review' }),
+    event('s4', { delta_views: 50000, view_count: 50000, video_status: 'rejected' })
   ]);
-  assert.equal(earned.get('v1'), 30862); // 12345 * 2500 / 1000 = 30862.5
-  assert.equal(earned.get('v2'), 2502);
-  assert.equal(earned.get('v3'), 0);
-  assert.equal(earned.get('v4'), 0);
+  assert.equal(earned.get('s1'), 30862); // 12345 * 2500 / 1000 = 30862.5
+  assert.equal(earned.get('s2'), 0);     // not approved: earns nothing new (defensive backstop; in practice this never happens)
+  assert.equal(earned.get('s3'), 0);
+  assert.equal(earned.get('s4'), 0);
 });
 
-test('earnings: override rate, minimum views, and removed videos keep their amount', () => {
+test('earnings: override rate, and a cumulative minimum views to qualify', () => {
   const campaign = { default_cpm_rate_cents: 1000, min_views_to_qualify: 1000 };
   const earned = computeEarnings(campaign, [
-    video('v1', { latest_view_count: 999 }),
-    video('v2', { latest_view_count: 2000 }),
-    video('v3', { status: 'removed', earned_cents: 1234 })
+    event('s1', { delta_views: 999, view_count: 999 }),    // cumulative views haven't crossed the bar yet
+    event('s2', { delta_views: 1001, view_count: 2000 }),  // this check crosses it; the whole week's delta counts
+    event('s3', { delta_views: 100, view_count: 100, video_status: 'removed' })
   ], new Map([['a1', 3000]]));
-  assert.equal(earned.get('v1'), 0);
-  assert.equal(earned.get('v2'), 6000);
-  assert.equal(earned.get('v3'), 1234);
+  assert.equal(earned.get('s1'), 0);
+  assert.equal(earned.get('s2'), 3003);
+  assert.equal(earned.get('s3'), 0);
 });
 
-test('earnings: per-video cap, then per-affiliate cap, then budget, oldest first', () => {
+test('earnings: per-video cap, then per-affiliate cap, then budget, in event order', () => {
   const campaign = { default_cpm_rate_cents: 1000, max_payout_per_video_cents: 5000, max_payout_per_affiliate_cents: 8000, total_budget_cents: 10000 };
+  // priceEvents doesn't sort its input — recomputeCampaign always passes events in fetched_at order.
   const earned = computeEarnings(campaign, [
-    video('v3', { latest_view_count: 10000, campaign_affiliate_id: 'a2', creator_id: 'c2' }), // 10000 → cap 5000; budget left 2000
-    video('v1', { latest_view_count: 10000 }),  // 10000 → 5000
-    video('v2', { latest_view_count: 4000 })    // 4000 → affiliate cap leaves 3000
+    event('s1', { video_id: 'v1', delta_views: 10000, view_count: 10000 }),                           // → video cap 5000
+    event('s2', { video_id: 'v2', delta_views: 4000, view_count: 4000 }),                              // → affiliate cap leaves 3000
+    event('s3', { video_id: 'v3', campaign_affiliate_id: 'a2', delta_views: 10000, view_count: 10000 }) // → video cap 5000; budget leaves 2000
   ]);
-  assert.equal(earned.get('v1'), 5000);
-  assert.equal(earned.get('v2'), 3000);
-  assert.equal(earned.get('v3'), 2000);
+  assert.equal(earned.get('s1'), 5000);
+  assert.equal(earned.get('s2'), 3000);
+  assert.equal(earned.get('s3'), 2000);
 });
 
-test('earnings: videos already on a payout keep their amount and count toward caps', () => {
-  const campaign = { default_cpm_rate_cents: 1000, total_budget_cents: 5000 };
-  const earned = computeEarnings(campaign, [
-    video('v1', { status: 'locked', billable_views: 10000 }),
-    video('v2', { latest_view_count: 10000 })
-  ], new Map(), new Map([['v1', 4000]]));
-  assert.equal(earned.get('v1'), 4000);
-  assert.equal(earned.get('v2'), 1000);
+test('earnings: committed totals from already-priced weeks reduce what a new week can earn', () => {
+  const campaign = { default_cpm_rate_cents: 1000, max_payout_per_video_cents: 8000, max_payout_per_affiliate_cents: 8000, total_budget_cents: 9000 };
+  // v1 already earned 4000 in an earlier, already-priced week — 4000 of its video/affiliate cap and 5000
+  // of the campaign budget remain, so this new week is capped by the video's remaining room.
+  const { priced } = priceEvents(campaign, [event('s2', { video_id: 'v1', delta_views: 10000, view_count: 10000 })],
+    new Map(), new Map([['v1', 4000]]), new Map([['a1', 4000]]), 4000);
+  assert.equal(priced[0].earned_cents, 4000);
+});
+
+test('priced weeks are never repriced: a later rate change only affects new weeks', () => {
+  const week1 = priceEvents({ default_cpm_rate_cents: 1000 }, [event('s1', { video_id: 'v1', delta_views: 10000, view_count: 10000 })]);
+  assert.equal(week1.priced[0].earned_cents, 10000); // 10000 * 1000 / 1000
+
+  // recomputeCampaign only ever prices an unpriced snapshot once, so a rate change and a second week only
+  // ever reach this function together with week1 already excluded — simulated here by starting week2's
+  // call from what week1 already committed, at the new rate.
+  const week2 = priceEvents({ default_cpm_rate_cents: 2000 }, [event('s2', { video_id: 'v1', delta_views: 5000, view_count: 15000 })],
+    new Map(), new Map([['v1', week1.priced[0].earned_cents]]));
+  assert.equal(week2.priced[0].earned_cents, 10000); // 5000 * 2000 / 1000 at the new rate; week1's price is untouched
 });
 
 test('payout details round-trip through AES-GCM', async () => {
@@ -109,42 +131,21 @@ test('payout details round-trip through AES-GCM', async () => {
   await assert.rejects(() => decryptText(stored, 'wrong'));
 });
 
-test('polling schedule: every 6h for 72h, then daily, never past the end of tracking', async () => {
-  const { nextFetchAt } = await import('../worker/affiliate-views.js');
-  const video = { submitted_at: '2026-01-01T00:00:00.000Z', tracking_ends_at: '2026-01-31T00:00:00.000Z' };
-  assert.equal(nextFetchAt(video, '2026-01-01T00:00:00.000Z'), '2026-01-01T06:00:00.000Z');
-  assert.equal(nextFetchAt(video, '2026-01-03T23:00:00.000Z'), '2026-01-04T05:00:00.000Z');
-  assert.equal(nextFetchAt(video, '2026-01-04T00:00:00.000Z'), '2026-01-05T00:00:00.000Z');
-  assert.equal(nextFetchAt(video, '2026-01-30T12:00:00.000Z'), '2026-01-31T00:00:00.000Z');
-});
-
-test('suspicious spike: views more than 4x in a day while likes barely move', async () => {
-  const { isSuspiciousSpike } = await import('../worker/affiliate-views.js');
-  const base = { view_count: 1000, like_count: 100 };
-  assert.equal(isSuspiciousSpike(base, 10000, 120), true);    // +9000 views, +20 likes < 45
-  assert.equal(isSuspiciousSpike(base, 10000, 200), false);   // +100 likes
-  assert.equal(isSuspiciousSpike(base, 4000, 100), false);    // exactly +300% is not "more than"
-  assert.equal(isSuspiciousSpike({ view_count: 0, like_count: 0 }, 10000, 0), false);
-  assert.equal(isSuspiciousSpike(base, 10000, null), false);
-});
-
-test('uplines: your example — rookie $1.50, upline $2.00', async () => {
-  const { computeCampaignEarnings } = await import('../worker/affiliate-lib.js');
+test('uplines: your example — rookie $1.50, upline $2.00', () => {
   const affiliates = new Map([['up', { cpm_rate_override_cents: 200, upline_id: null, status: 'active' }], ['rook', { cpm_rate_override_cents: 150, upline_id: 'up', status: 'active' }]]);
-  const { earned, overrides } = computeCampaignEarnings({ default_cpm_rate_cents: 0 }, [
-    video('v1', { campaign_affiliate_id: 'rook', latest_view_count: 1000 }),
-    video('v2', { campaign_affiliate_id: 'up', latest_view_count: 1000 })
+  const { priced, overrides } = priceEvents({ default_cpm_rate_cents: 0 }, [
+    event('s1', { video_id: 'v1', campaign_affiliate_id: 'rook', delta_views: 1000, view_count: 1000 }),
+    event('s2', { video_id: 'v2', campaign_affiliate_id: 'up', delta_views: 1000, view_count: 1000 })
   ], affiliates);
-  assert.equal(earned.get('v1'), 150);   // rookie: $1.50
-  assert.equal(earned.get('v2'), 200);   // upline's own 1K views: $2.00
+  assert.equal(priced.find(p => p.id === 's1').earned_cents, 150); // rookie: $1.50
+  assert.equal(priced.find(p => p.id === 's2').earned_cents, 200); // upline's own 1K views: $2.00
   assert.deepEqual(overrides.map(o => [o.video_id, o.campaign_affiliate_id, o.cpm_diff_cents, o.amount_cents]), [['v1', 'up', 50, 50]]); // upline: $0.50
 });
 
-test('uplines: same CPM earns nothing; chain pays each level its difference', async () => {
-  const { computeCampaignEarnings } = await import('../worker/affiliate-lib.js');
+test('uplines: same CPM earns nothing; chain pays each level its difference', () => {
   const a = (cpm, up, status = 'active') => ({ cpm_rate_override_cents: cpm, upline_id: up, status });
-  const run = (affiliates, budget = null) => computeCampaignEarnings({ default_cpm_rate_cents: 0, total_budget_cents: budget },
-    [video('v1', { campaign_affiliate_id: 'rook', latest_view_count: 100000 })], new Map(Object.entries(affiliates)));
+  const run = (affiliates, budget = null) => priceEvents({ default_cpm_rate_cents: 0, total_budget_cents: budget },
+    [event('s1', { video_id: 'v1', campaign_affiliate_id: 'rook', delta_views: 100000, view_count: 100000 })], new Map(Object.entries(affiliates)));
   const amounts = (r) => Object.fromEntries(r.overrides.map(o => [o.campaign_affiliate_id, o.amount_cents]));
 
   assert.deepEqual(amounts(run({ top: a(3000, null), master: a(2500, 'top'), general: a(2000, 'master'), rook: a(1500, 'general') })),
@@ -158,7 +159,7 @@ test('uplines: same CPM earns nothing; chain pays each level its difference', as
   assert.deepEqual(amounts(run({ top: a(3000, null), general: a(2000, 'top', 'removed'), rook: a(1500, 'general') })), { top: 150000 });
   // Overrides share the campaign budget with own earnings.
   const capped = run({ up: a(2000, null), rook: a(1500, 'up') }, 160000);
-  assert.equal(capped.earned.get('v1'), 150000);
+  assert.equal(capped.priced[0].earned_cents, 150000);
   assert.deepEqual(amounts(capped), { up: 10000 });
   // A loop in the tree can't hang or double pay.
   assert.deepEqual(amounts(run({ x: a(2000, 'rook'), rook: a(1500, 'x') })), { x: 50000 });

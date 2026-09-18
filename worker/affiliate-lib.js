@@ -8,7 +8,6 @@ export const CAMPAIGN_STATUSES = ['draft', 'active', 'paused', 'ended'];
 export const ASSIGNMENT_STATUSES = ['invited', 'active', 'removed'];
 export const PAYOUT_METHODS = ['paypal', 'wise', 'bank', 'manual'];
 export const PAYOUT_STATUSES = ['pending', 'approved', 'paid', 'failed'];
-export const EARNING_STATUSES = new Set(['approved', 'locked']);
 
 export const PORTAL_URL = 'https://affiliate.edgeformmarketing.com';
 
@@ -129,7 +128,11 @@ export function normalizeHandle(value) {
   return text.replace(/^@/, '').trim().toLowerCase();
 }
 
-// ── Earnings (CONTRACT.md §3) ───────────────────────────────────
+// ── Earnings (CONTRACT.md §3, v4) ───────────────────────────────────
+// Views are checked by hand, once a week. Each entry prices its own delta (this check's cumulative
+// view count minus the last one) and, once priced, that amount is never revisited — a later rate or
+// cap change only affects weeks priced after it. This is what lets creators be paid weekly instead of
+// waiting for a video to lock.
 
 export const videoViews = (v) => (v.status === 'locked' ? v.billable_views : v.latest_view_count);
 export const effectiveRate = (campaign, override) => (override === null || override === undefined ? campaign.default_cpm_rate_cents : override);
@@ -137,135 +140,168 @@ export const effectiveRate = (campaign, override) => (override === null || overr
 export const RANKS = ['top_creator', 'master', 'general', 'rookie'];
 const MAX_CHAIN = 50;
 
+/** The UTC instant for a given wall-clock date/time in an IANA zone, DST-safe (converges in 1-2 passes). */
+function zonedTimeToUtc(y, m, d, hh, mm, timeZone) {
+  let guess = Date.UTC(y, m - 1, d, hh, mm, 0);
+  const wanted = guess;
+  for (let i = 0; i < 2; i++) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
+    }).formatToParts(new Date(guess));
+    const get = (type) => Number(parts.find(p => p.type === type)?.value);
+    const asUtcIfLocalWereUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour') % 24, get('minute'), get('second'));
+    guess += wanted - asUtcIfLocalWereUtc;
+  }
+  return guess;
+}
+
+/** The most recent past Sunday 10pm America/New_York, as an ISO UTC string. Used for the weekly checklist. */
+export function lastWeeklyCutoff(nowIso) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date(nowIso));
+  const get = (type) => parts.find(p => p.type === type)?.value;
+  const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dow = weekdays.indexOf(get('weekday'));
+  const hour = Number(get('hour')) % 24;
+  // Days since the most recent Sunday; if it's Sunday but before 10pm, the cutoff is last week's Sunday.
+  const daysBack = dow === 0 && hour < 22 ? 7 : dow;
+  // Walk back by calendar days using the zone's own date, not a UTC-day subtraction, so a DST transition
+  // mid-week can't shift which calendar date "daysBack days ago" lands on.
+  const anchor = new Date(Date.UTC(Number(get('year')), Number(get('month')) - 1, Number(get('day'))) - daysBack * DAY_MS);
+  return new Date(zonedTimeToUtc(anchor.getUTCFullYear(), anchor.getUTCMonth() + 1, anchor.getUTCDate(), 22, 0, 'America/New_York')).toISOString();
+}
+
 /**
- * Earnings for one campaign: each video's own earnings, plus upline overrides.
- * - Only approved and locked videos earn. Removed videos keep whatever they had (never zeroed automatically)
- *   but, like every other non-earning status, don't count toward totals or caps.
- * - Own earnings: floor(views × poster's CPM / 1000), capped per video, then per affiliate.
- * - Overrides: walking up the poster's upline chain, each upline earns (their CPM − the highest CPM below them
- *   in the chain) × views / 1000, only when positive. Equal CPM earns nothing. Removed uplines are skipped.
- *   So everything paid on a video adds up to the highest CPM in its chain.
- * - The campaign budget covers own earnings and overrides, oldest video first.
- * - `frozen` (videoId → cents) and `frozenOverrides` ("videoId:affiliateId" → cents) are on payouts: they never change
- *   but still count toward caps and the budget.
+ * Prices a batch of new (unpriced) weekly events against a campaign's caps and budget, continuing from
+ * whatever's already committed. Once returned, these prices are final — recomputeCampaign never re-prices
+ * an event a second time.
  *
- * `affiliates`: Map id → { cpm_rate_override_cents, upline_id, status }.
- * Returns { earned: Map videoId → cents, overrides: [{ video_id, campaign_affiliate_id, source_campaign_affiliate_id, depth, cpm_diff_cents, amount_cents }] }.
+ * `events`: [{ id (view_snapshot id), video_id, campaign_affiliate_id, view_count (cumulative at this
+ *   check), delta_views, video_status }], in chronological order.
+ * `affiliates`: Map campaign_affiliate_id → { cpm_rate_override_cents, upline_id, status }.
+ * `perVideoCommitted` / `perAffiliateCommitted`: cents already earned before this batch (Map keyed by
+ *   video_id / campaign_affiliate_id). `campaignCommittedTotal`: the campaign's own + override total so far.
+ *
+ * Returns { priced: [{ id, video_id, earned_cents }], overrides: [{ view_snapshot_id, video_id,
+ *   campaign_affiliate_id, source_campaign_affiliate_id, depth, cpm_diff_cents, amount_cents }] }.
  */
-export function computeCampaignEarnings(campaign, videos, affiliates = new Map(), frozen = new Map(), frozenOverrides = new Map(), existingOverrides = []) {
-  const earned = new Map();
-  const overrides = [];
-  const perAffiliate = new Map();
-  let total = 0;
+export function priceEvents(campaign, events, affiliates = new Map(), perVideoCommitted = new Map(), perAffiliateCommitted = new Map(), campaignCommittedTotal = 0) {
   const cap = (n) => (n === null || n === undefined ? Infinity : n);
   const rateOf = (id) => effectiveRate(campaign, affiliates.get(id)?.cpm_rate_override_cents);
-  const ordered = [...videos].sort((a, b) => a.submitted_at.localeCompare(b.submitted_at) || a.id.localeCompare(b.id));
-  for (const v of ordered) {
-    if (!EARNING_STATUSES.has(v.status)) {
-      earned.set(v.id, v.status === 'removed' ? v.earned_cents || 0 : 0);
-      if (v.status === 'removed') overrides.push(...existingOverrides.filter(o => o.video_id === v.id));
-      continue;
-    }
-    const views = videoViews(v) || 0;
-    const qualifies = campaign.min_views_to_qualify === null || campaign.min_views_to_qualify === undefined || views >= campaign.min_views_to_qualify;
-    const soFar = perAffiliate.get(v.campaign_affiliate_id) || 0;
-    let cents;
-    if (frozen.has(v.id)) {
-      cents = frozen.get(v.id);
-    } else {
-      cents = qualifies ? Math.floor(views * rateOf(v.campaign_affiliate_id) / 1000) : 0;
-      cents = Math.min(cents, cap(campaign.max_payout_per_video_cents));
-      cents = Math.max(0, Math.min(cents, cap(campaign.max_payout_per_affiliate_cents) - soFar));
-      cents = Math.max(0, Math.min(cents, cap(campaign.total_budget_cents) - total));
-    }
-    perAffiliate.set(v.campaign_affiliate_id, soFar + cents);
-    total += cents;
-    earned.set(v.id, cents);
+  const perVideo = new Map(perVideoCommitted);
+  const perAffiliate = new Map(perAffiliateCommitted);
+  let total = campaignCommittedTotal;
+  const priced = [];
+  const overrides = [];
 
-    // Upline overrides.
-    let highest = rateOf(v.campaign_affiliate_id);
-    const seen = new Set([v.campaign_affiliate_id]);
-    let current = affiliates.get(v.campaign_affiliate_id)?.upline_id;
+  for (const e of events) {
+    // Only an actively-tracking video prices a new week. In normal operation this is the only status an
+    // unpriced event can belong to (entries are rejected once a video isn't approved), but recomputeCampaign
+    // doesn't filter by status, so this is the defensive backstop: anything else (removed, locked, rejected,
+    // pending_review) earns nothing new and keeps whatever it already had.
+    if (e.video_status !== 'approved') { priced.push({ id: e.id, video_id: e.video_id, earned_cents: 0 }); continue; }
+    const qualifies = campaign.min_views_to_qualify === null || campaign.min_views_to_qualify === undefined || e.view_count >= campaign.min_views_to_qualify;
+    const videoSoFar = perVideo.get(e.video_id) || 0;
+    const affSoFar = perAffiliate.get(e.campaign_affiliate_id) || 0;
+    let cents = qualifies ? Math.floor(e.delta_views * rateOf(e.campaign_affiliate_id) / 1000) : 0;
+    cents = Math.max(0, Math.min(cents, cap(campaign.max_payout_per_video_cents) - videoSoFar));
+    cents = Math.max(0, Math.min(cents, cap(campaign.max_payout_per_affiliate_cents) - affSoFar));
+    cents = Math.max(0, Math.min(cents, cap(campaign.total_budget_cents) - total));
+    perVideo.set(e.video_id, videoSoFar + cents);
+    perAffiliate.set(e.campaign_affiliate_id, affSoFar + cents);
+    total += cents;
+    priced.push({ id: e.id, video_id: e.video_id, earned_cents: cents });
+
+    // Upline overrides: each upline earns the gap between their CPM and the highest CPM below them so
+    // far in the chain, only capped by the remaining campaign budget (not the per-affiliate cap, which
+    // only limits a person's own posted-video earnings).
+    let highest = rateOf(e.campaign_affiliate_id);
+    const seen = new Set([e.campaign_affiliate_id]);
+    let current = affiliates.get(e.campaign_affiliate_id)?.upline_id;
     for (let depth = 1; current && !seen.has(current) && depth <= MAX_CHAIN; depth++) {
       seen.add(current);
       const upline = affiliates.get(current);
       if (!upline) break;
       const rate = rateOf(current);
-      const key = `${v.id}:${current}`;
-      if (upline.status !== 'removed' && (rate > highest || frozenOverrides.has(key))) {
-        const diff = Math.max(0, rate - highest);
-        let amount = frozenOverrides.has(key) ? frozenOverrides.get(key) : qualifies ? Math.floor(views * diff / 1000) : 0;
-        if (!frozenOverrides.has(key)) amount = Math.max(0, Math.min(amount, cap(campaign.total_budget_cents) - total));
+      if (upline.status !== 'removed' && rate > highest) {
+        const diff = rate - highest;
+        const amount = qualifies ? Math.max(0, Math.min(Math.floor(e.delta_views * diff / 1000), cap(campaign.total_budget_cents) - total)) : 0;
         total += amount;
-        overrides.push({ video_id: v.id, campaign_affiliate_id: current, source_campaign_affiliate_id: v.campaign_affiliate_id, depth, cpm_diff_cents: diff, amount_cents: amount });
+        overrides.push({ view_snapshot_id: e.id, video_id: e.video_id, campaign_affiliate_id: current, source_campaign_affiliate_id: e.campaign_affiliate_id, depth, cpm_diff_cents: diff, amount_cents: amount });
       }
       if (upline.status !== 'removed') highest = Math.max(highest, rate);
       current = upline.upline_id;
     }
   }
-  return { earned, overrides };
+  return { priced, overrides };
 }
 
-/** Own earnings only, with per-affiliate rate overrides (id → cents) and no uplines. */
-export function computeEarnings(campaign, videos, rates = new Map(), frozen = new Map()) {
+/** Test/tool convenience: prices a list of {campaign_affiliate_id, view_count, delta_views} events with flat per-affiliate rates and no uplines. Returns Map eventId → cents. */
+export function computeEarnings(campaign, events, rates = new Map()) {
   const affiliates = new Map([...rates].map(([id, cpm]) => [id, { cpm_rate_override_cents: cpm, upline_id: null, status: 'active' }]));
-  return computeCampaignEarnings(campaign, videos, affiliates, frozen).earned;
+  const { priced } = priceEvents(campaign, events, affiliates);
+  return new Map(priced.map(p => [p.id, p.earned_cents]));
 }
 
 async function runInChunks(env, statements) {
   for (let i = 0; i < statements.length; i += 50) await env.DB.batch(statements.slice(i, i + 50));
 }
 
-/** Recomputes and stores videos.earned_cents and override_earnings for a campaign. Returns the number of rows changed. */
+/**
+ * Prices every unpriced weekly entry (view_snapshots with delta_views set and earned_cents still NULL)
+ * for a campaign, against its current caps and budget, continuing from what's already committed. Stores
+ * the results on view_snapshots.earned_cents, videos.earned_cents, and override_earnings. Returns the
+ * number of rows written.
+ */
 export async function recomputeCampaign(env, campaignId) {
-  const [campaign, affiliates, videos, frozen, frozenOv, stored] = await env.DB.batch([
+  const [campaignRes, affiliatesRes, videosRes, eventsRes, overrideTotalRes] = await env.DB.batch([
     env.DB.prepare('SELECT * FROM campaigns WHERE id = ?').bind(campaignId),
     env.DB.prepare('SELECT id, creator_id, cpm_rate_override_cents, upline_id, status FROM campaign_affiliates WHERE campaign_id = ?').bind(campaignId),
-    env.DB.prepare('SELECT id, campaign_affiliate_id, creator_id, status, submitted_at, latest_view_count, billable_views, earned_cents FROM videos WHERE campaign_id = ?').bind(campaignId),
-    env.DB.prepare('SELECT video_id, amount_cents FROM payout_line_items WHERE campaign_id = ?').bind(campaignId),
-    env.DB.prepare('SELECT video_id, campaign_affiliate_id, amount_cents FROM payout_override_items WHERE campaign_id = ?').bind(campaignId),
-    env.DB.prepare('SELECT * FROM override_earnings WHERE campaign_id = ?').bind(campaignId)
+    env.DB.prepare('SELECT id, campaign_affiliate_id, status, earned_cents FROM videos WHERE campaign_id = ?').bind(campaignId),
+    env.DB.prepare(`SELECT s.id, s.video_id, s.view_count, s.delta_views, s.fetched_at, v.campaign_affiliate_id, v.status video_status
+      FROM view_snapshots s JOIN videos v ON v.id = s.video_id
+      WHERE v.campaign_id = ? AND s.delta_views IS NOT NULL AND s.earned_cents IS NULL
+      ORDER BY s.fetched_at, s.id`).bind(campaignId),
+    env.DB.prepare('SELECT COALESCE(SUM(amount_cents), 0) cents FROM override_earnings WHERE campaign_id = ?').bind(campaignId)
   ]);
-  const c = campaign.results[0];
+  const c = campaignRes.results[0];
   if (!c) return 0;
-  const byId = new Map(affiliates.results.map(a => [a.id, a]));
-  const { earned, overrides } = computeCampaignEarnings(c, videos.results, byId,
-    new Map(frozen.results.map(f => [f.video_id, f.amount_cents])),
-    new Map(frozenOv.results.map(f => [`${f.video_id}:${f.campaign_affiliate_id}`, f.amount_cents])),
-    stored.results);
+  const events = eventsRes.results;
+  if (!events.length) return 0;
 
-  const statements = videos.results.filter(v => earned.get(v.id) !== v.earned_cents)
-    .map(v => env.DB.prepare('UPDATE videos SET earned_cents = ? WHERE id = ?').bind(earned.get(v.id), v.id));
-  const key = (o) => `${o.video_id}:${o.campaign_affiliate_id}`;
-  const old = new Map(stored.results.map(o => [key(o), o]));
-  const next = new Map(overrides.map(o => [key(o), o]));
-  for (const [k, o] of old) if (!next.has(k)) statements.push(env.DB.prepare('DELETE FROM override_earnings WHERE id = ?').bind(o.id));
-  for (const [k, o] of next) {
-    const was = old.get(k);
-    if (was && was.amount_cents === o.amount_cents && was.cpm_diff_cents === o.cpm_diff_cents && was.depth === o.depth && was.source_campaign_affiliate_id === o.source_campaign_affiliate_id) continue;
-    statements.push(was
-      ? env.DB.prepare('UPDATE override_earnings SET amount_cents = ?, cpm_diff_cents = ?, depth = ?, source_campaign_affiliate_id = ? WHERE id = ?')
-        .bind(o.amount_cents, o.cpm_diff_cents, o.depth, o.source_campaign_affiliate_id, was.id)
-      : env.DB.prepare(`INSERT INTO override_earnings (id, video_id, campaign_id, campaign_affiliate_id, creator_id, source_campaign_affiliate_id, depth, cpm_diff_cents, amount_cents)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), o.video_id, campaignId, o.campaign_affiliate_id, byId.get(o.campaign_affiliate_id).creator_id,
-          o.source_campaign_affiliate_id, o.depth, o.cpm_diff_cents, o.amount_cents));
+  const affiliates = new Map(affiliatesRes.results.map(a => [a.id, a]));
+  const perVideoCommitted = new Map(videosRes.results.map(v => [v.id, v.earned_cents]));
+  const perAffiliateCommitted = new Map();
+  for (const v of videosRes.results) perAffiliateCommitted.set(v.campaign_affiliate_id, (perAffiliateCommitted.get(v.campaign_affiliate_id) || 0) + v.earned_cents);
+  const ownTotal = videosRes.results.reduce((n, v) => n + v.earned_cents, 0);
+  const campaignCommittedTotal = ownTotal + (overrideTotalRes.results[0]?.cents || 0);
+
+  const { priced, overrides } = priceEvents(c, events, affiliates, perVideoCommitted, perAffiliateCommitted, campaignCommittedTotal);
+
+  const videoDelta = new Map();
+  for (const p of priced) videoDelta.set(p.video_id, (videoDelta.get(p.video_id) || 0) + p.earned_cents);
+
+  const statements = priced.map(p => env.DB.prepare('UPDATE view_snapshots SET earned_cents = ? WHERE id = ?').bind(p.earned_cents, p.id));
+  for (const [videoId, delta] of videoDelta) statements.push(env.DB.prepare('UPDATE videos SET earned_cents = earned_cents + ? WHERE id = ?').bind(delta, videoId));
+  for (const o of overrides) {
+    if (!o.amount_cents) continue;
+    const upline = affiliates.get(o.campaign_affiliate_id);
+    statements.push(env.DB.prepare(`INSERT INTO override_earnings (id, view_snapshot_id, video_id, campaign_id, campaign_affiliate_id, creator_id, source_campaign_affiliate_id, depth, cpm_diff_cents, amount_cents)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), o.view_snapshot_id, o.video_id, campaignId, o.campaign_affiliate_id, upline.creator_id, o.source_campaign_affiliate_id, o.depth, o.cpm_diff_cents, o.amount_cents));
   }
   await runInChunks(env, statements);
   return statements.length;
 }
 
 // Per-assignment totals, joined onto campaign_affiliates `ca`. Used by the portal and the admin tables.
-// owed = earned + override_earned − paid.
+// Everything approved is immediately earned (paid weekly, no more "pending" bucket). owed = earned + override_earned − paid.
 export const ASSIGNMENT_STATS_SQL = `
   (SELECT COUNT(*) FROM videos v WHERE v.campaign_affiliate_id = ca.id) video_count,
-  (SELECT COALESCE(SUM(CASE v.status WHEN 'locked' THEN v.billable_views WHEN 'approved' THEN v.latest_view_count ELSE 0 END), 0)
-     FROM videos v WHERE v.campaign_affiliate_id = ca.id) total_views,
-  (SELECT COALESCE(SUM(v.earned_cents), 0) FROM videos v WHERE v.campaign_affiliate_id = ca.id AND v.status = 'locked') earned_cents,
-  (SELECT COALESCE(SUM(v.earned_cents), 0) FROM videos v WHERE v.campaign_affiliate_id = ca.id AND v.status = 'approved') pending_cents,
-  (SELECT COALESCE(SUM(oe.amount_cents), 0) FROM override_earnings oe JOIN videos v ON v.id = oe.video_id
-     WHERE oe.campaign_affiliate_id = ca.id AND v.status = 'locked') override_earned_cents,
-  (SELECT COALESCE(SUM(oe.amount_cents), 0) FROM override_earnings oe JOIN videos v ON v.id = oe.video_id
-     WHERE oe.campaign_affiliate_id = ca.id AND v.status = 'approved') override_pending_cents,
+  (SELECT COALESCE(SUM(v.latest_view_count), 0) FROM videos v WHERE v.campaign_affiliate_id = ca.id) total_views,
+  (SELECT COALESCE(SUM(v.earned_cents), 0) FROM videos v WHERE v.campaign_affiliate_id = ca.id) earned_cents,
+  (SELECT COALESCE(SUM(oe.amount_cents), 0) FROM override_earnings oe WHERE oe.campaign_affiliate_id = ca.id) override_earned_cents,
   (SELECT COALESCE(SUM(li.amount_cents), 0) FROM payout_line_items li JOIN payouts p ON p.id = li.payout_id
      WHERE p.status = 'paid' AND li.campaign_id = ca.campaign_id AND p.creator_id = ca.creator_id)
   + (SELECT COALESCE(SUM(poi.amount_cents), 0) FROM payout_override_items poi JOIN payouts p ON p.id = poi.payout_id

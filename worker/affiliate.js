@@ -4,7 +4,6 @@ import {
   PLATFORMS, PAYOUT_METHODS, PORTAL_URL, ASSIGNMENT_STATS_SQL, orNull, parseJson, addDays, resolveVideoUrl, normalizeHandle,
   encryptText, auditStatement, flagStatement
 } from './affiliate-lib.js';
-import { connectionStart, connectionCallback, connectionsConfigured } from './affiliate-oauth.js';
 
 // Affiliate portal API (CONTRACT.md §4), served at /api/affiliate/v1 to affiliate.edgeformmarketing.com.
 // snake_case JSON; errors are { ok: false, error, code }. The creator always comes from the session.
@@ -30,13 +29,13 @@ const campaignSummary = (r) => ({
   id: r.id, name: r.name, status: r.status, start_date: orNull(r.start_date), end_date: orNull(r.end_date),
   platforms_allowed: parseJson(r.platforms_allowed, []), cpm_rate_cents: r.cpm_rate_cents, currency: r.currency,
   assignment_status: r.assignment_status, video_count: r.video_count, total_views: r.total_views,
-  earned_cents: r.earned_cents, pending_cents: r.pending_cents,
+  earned_cents: r.earned_cents,
   // Added with uplines (CONTRACT.md §6).
-  rank: r.rank, override_earned_cents: r.override_earned_cents, override_pending_cents: r.override_pending_cents
+  rank: r.rank, override_earned_cents: r.override_earned_cents
 });
 
 const campaignDetail = (r) => ({
-  ...campaignSummary(r), brief: r.brief, view_tracking_window_days: r.view_tracking_window_days,
+  ...campaignSummary(r), brief: r.brief,
   min_views_to_qualify: r.min_views_to_qualify, max_payout_per_video_cents: r.max_payout_per_video_cents,
   requires_video_approval: r.requires_video_approval === 1
 });
@@ -44,7 +43,7 @@ const campaignDetail = (r) => ({
 export const videoJson = (v) => ({
   id: v.id, campaign_id: v.campaign_id, submitted_url: v.submitted_url, canonical_url: v.canonical_url, platform: v.platform,
   thumbnail_url: orNull(v.thumbnail_url), caption: orNull(v.caption), posted_at: orNull(v.posted_at), status: v.status,
-  rejection_reason: orNull(v.rejection_reason), submitted_at: v.submitted_at, tracking_ends_at: v.tracking_ends_at,
+  rejection_reason: orNull(v.rejection_reason), submitted_at: v.submitted_at,
   locked_at: orNull(v.locked_at), latest_view_count: v.latest_view_count, billable_views: v.billable_views,
   earned_cents: v.earned_cents, last_fetched_at: orNull(v.last_fetched_at)
 });
@@ -241,8 +240,11 @@ async function submitVideo(request, env, headers, [id]) {
     id: crypto.randomUUID(), campaign_affiliate_id: row.assignment_id, campaign_id: row.id, creator_id: creator.id,
     submitted_url: clean(body.url, 2000), platform: parsed.platform, platform_video_id: parsed.platform_video_id,
     canonical_url: parsed.canonical_url, status: approved ? 'approved' : 'pending_review', submitted_at: stamp,
-    approved_at: approved ? stamp : null, tracking_ends_at: addDays(stamp, row.view_tracking_window_days),
-    next_fetch_at: approved ? stamp : null
+    approved_at: approved ? stamp : null,
+    // Retired (views are now checked weekly by hand, for as long as the campaign stays active), but the
+    // column is still NOT NULL with no default — a distant sentinel keeps the insert valid without giving
+    // it real meaning.
+    tracking_ends_at: addDays(stamp, 36500)
   };
   const statements = [
     env.DB.prepare(`INSERT INTO videos (${Object.keys(video).join(', ')}) VALUES (${Object.keys(video).map(() => '?').join(', ')})`).bind(...Object.values(video)),
@@ -274,32 +276,6 @@ async function deleteVideo(request, env, headers, [id]) {
   return json({ ok: true }, 200, headers);
 }
 
-// ── Platform connections ──
-
-async function listConnections(request, env, headers) {
-  const creator = await requireCreator(request, env);
-  const rows = await env.DB.prepare(`SELECT platform, platform_username, connected_at FROM creator_platform_connections
-    WHERE creator_id = ? AND revoked_at IS NULL ORDER BY connected_at`).bind(creator.id).all();
-  return json({ ok: true, data: rows.results }, 200, headers);
-}
-
-async function startConnection(request, env, headers, [platform]) {
-  const creator = await requireCreator(request, env);
-  if (!['tiktok', 'instagram'].includes(platform)) throw fail(404, 'Only TikTok and Instagram can be connected.', 'not_found');
-  if (!connectionsConfigured(env, platform)) throw fail(501, 'Connecting accounts isn’t available yet.', 'not_available');
-  return json({ ok: true, authorize_url: await connectionStart(env, creator, platform) }, 200, headers);
-}
-
-async function deleteConnection(request, env, headers, [platform]) {
-  const creator = await requireCreator(request, env);
-  const result = await env.DB.prepare('UPDATE creator_platform_connections SET revoked_at = ? WHERE creator_id = ? AND platform = ? AND revoked_at IS NULL')
-    .bind(now(), creator.id, platform).run();
-  if (result.meta.changes) {
-    await auditStatement(env, { actorType: 'creator', actorId: creator.id, entityType: 'creator', entityId: creator.id, action: 'platform_disconnected', after: { platform } }).run();
-  }
-  return json({ ok: true }, 200, headers);
-}
-
 // ── Earnings and payouts ──
 
 async function earnings(request, env, headers) {
@@ -311,11 +287,11 @@ async function earnings(request, env, headers) {
   ]);
   // Drafts and removed assignments only show once they have money in them.
   const byCampaign = rows.results
-    .filter(r => (r.status !== 'draft' && r.assignment_status !== 'removed') || r.earned_cents || r.pending_cents || r.paid_cents || r.override_earned_cents || r.override_pending_cents)
+    .filter(r => (r.status !== 'draft' && r.assignment_status !== 'removed') || r.earned_cents || r.paid_cents || r.override_earned_cents)
     .map(r => ({
-      campaign_id: r.campaign_id, campaign_name: r.campaign_name, earned_cents: r.earned_cents, pending_cents: r.pending_cents,
+      campaign_id: r.campaign_id, campaign_name: r.campaign_name, earned_cents: r.earned_cents,
       paid_cents: r.paid_cents, owed_cents: r.earned_cents + r.override_earned_cents - r.paid_cents,
-      override_earned_cents: r.override_earned_cents, override_pending_cents: r.override_pending_cents
+      override_earned_cents: r.override_earned_cents
     }));
   const sum = (key) => rows.results.reduce((n, r) => n + r[key], 0);
   const paidCents = paid.results[0].n;
@@ -323,9 +299,9 @@ async function earnings(request, env, headers) {
   return json({
     ok: true,
     earnings: {
-      currency: 'USD', earned_cents: sum('earned_cents'), pending_cents: sum('pending_cents'),
+      currency: 'USD', earned_cents: sum('earned_cents'),
       paid_cents: paidCents, owed_cents: sum('earned_cents') + sum('override_earned_cents') - paidCents, by_campaign: byCampaign,
-      override_earned_cents: sum('override_earned_cents'), override_pending_cents: sum('override_pending_cents')
+      override_earned_cents: sum('override_earned_cents')
     }
   }, 200, headers);
 }
@@ -372,10 +348,8 @@ async function team(request, env, headers, [id]) {
       FROM campaign_affiliates ca JOIN campaigns c ON c.id = ca.campaign_id JOIN creators cr ON cr.id = ca.creator_id
       WHERE ca.campaign_id = ? AND ca.status <> 'removed'`).bind(id),
     // What the caller earned from each downline member's own videos.
-    env.DB.prepare(`SELECT oe.source_campaign_affiliate_id id,
-        COALESCE(SUM(CASE v.status WHEN 'locked' THEN oe.amount_cents ELSE 0 END), 0) earned,
-        COALESCE(SUM(CASE v.status WHEN 'approved' THEN oe.amount_cents ELSE 0 END), 0) pending
-      FROM override_earnings oe JOIN videos v ON v.id = oe.video_id WHERE oe.campaign_affiliate_id = ? GROUP BY oe.source_campaign_affiliate_id`).bind(campaign.assignment_id)
+    env.DB.prepare(`SELECT oe.source_campaign_affiliate_id id, COALESCE(SUM(oe.amount_cents), 0) earned
+      FROM override_earnings oe WHERE oe.campaign_affiliate_id = ? GROUP BY oe.source_campaign_affiliate_id`).bind(campaign.assignment_id)
   ]);
   const children = new Map();
   for (const m of members.results) if (m.upline_id) children.set(m.upline_id, [...(children.get(m.upline_id) || []), m]);
@@ -384,7 +358,6 @@ async function team(request, env, headers, [id]) {
     id: m.id, name: m.name, rank: m.rank, cpm_rate_cents: m.cpm_rate_cents, status: m.status, level: depth,
     video_count: m.video_count, total_views: m.total_views,
     your_override_earned_cents: depth ? mine.get(m.id)?.earned || 0 : 0,
-    your_override_pending_cents: depth ? mine.get(m.id)?.pending || 0 : 0,
     downline: depth < 50 ? (children.get(m.id) || []).sort((a, b) => a.name.localeCompare(b.name)).map(c => node(c, depth + 1)) : []
   });
   const me = members.results.find(m => m.id === campaign.assignment_id);
@@ -405,10 +378,6 @@ const routes = {
   'GET /campaigns/:id/team': team,
   'POST /campaigns/:id/videos': submitVideo,
   'DELETE /videos/:id': deleteVideo,
-  'GET /connections': listConnections,
-  'POST /connections/:platform/start': startConnection,
-  'DELETE /connections/:platform': deleteConnection,
-  'GET /oauth/:platform/callback': connectionCallback,
   'GET /earnings': earnings,
   'GET /payouts': payouts
 };

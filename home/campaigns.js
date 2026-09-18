@@ -75,7 +75,7 @@ async function renderOpCampaigns(operationId, refetch = true) {
         <div class="cmp-card-name">${esc(c.name)}</div>
         <div class="cmp-card-meta"><span>${cmpMoney(c.defaultCpmRateCents)} / 1K views</span><span>${c.affiliateCount} affiliate${c.affiliateCount === 1 ? '' : 's'}</span>
           <span>${c.videoCount} video${c.videoCount === 1 ? '' : 's'}</span><span>${cmpNum(c.views)} views</span></div>
-        <div class="cmp-card-meta"><span>Earned ${cmpMoney(c.earnedCents)}</span><span>Still counting ${cmpMoney(c.pendingCents)}</span></div>
+        <div class="cmp-card-meta"><span>Earned ${cmpMoney(c.earnedCents)}</span>${c.overrideEarnedCents ? `<span>+ ${cmpMoney(c.overrideEarnedCents)} team</span>` : ''}</div>
       </button>`).join('')}</div>` : '<div class="state-box opd-empty">No campaigns yet. A campaign gets an Affiliate tab (creators paid per 1,000 views) and an Email tab.</div>'}
     <div class="opd-add"><button class="action-btn primary" data-op="${esc(operationId)}" onclick="openCampaignForm(null, this.dataset.op)">+ New campaign</button></div>`;
 }
@@ -99,8 +99,7 @@ function ensureCampaignModals() {
         <div class="c-field"><label>Max payout per video</label><div class="cmp-money"><input class="c-input" id="cmpf-max-video" inputmode="decimal" placeholder="No limit"></div></div>
         <div class="c-field"><label>Max payout per affiliate</label><div class="cmp-money"><input class="c-input" id="cmpf-max-affiliate" inputmode="decimal" placeholder="No limit"></div></div>
         <div class="c-field"><label>Total budget</label><div class="cmp-money"><input class="c-input" id="cmpf-budget" inputmode="decimal" placeholder="No limit"></div></div>
-        <div class="c-field"><label>Minimum views to earn</label><input class="c-input" id="cmpf-min-views" inputmode="numeric" placeholder="None"></div>
-        <div class="c-field"><label>Track views for (days)</label><input class="c-input" id="cmpf-window" inputmode="numeric" placeholder="30"><div class="ops-hint">Counted from when a video is submitted. After that its views freeze and it can be paid.</div></div>
+        <div class="c-field"><label>Minimum views to earn</label><input class="c-input" id="cmpf-min-views" inputmode="numeric" placeholder="None"><div class="ops-hint">Cumulative lifetime views. Weeks before a video crosses this stay unpaid; every week after counts.</div></div>
         <div class="c-field"><label>Review videos first?</label><label class="cmp-check" style="padding:9px 0;"><input type="checkbox" id="cmpf-approval"> Approve each video before it earns</label></div>
         <div class="c-field full"><label>Brief (shown to affiliates)</label><textarea class="c-input" id="cmpf-brief" style="min-height:140px;" placeholder="What to post, talking points, hashtags, dos and don'ts…"></textarea></div>
       </div>
@@ -156,7 +155,7 @@ function openCampaignForm(id, operationId) {
   set('name', c?.name); set('status', c?.status || 'draft'); set('cpm', cmpDollarInput(c?.defaultCpmRateCents));
   set('start', c?.startDate); set('end', c?.endDate); set('brief', c?.brief);
   set('max-video', cmpDollarInput(c?.maxPayoutPerVideoCents)); set('max-affiliate', cmpDollarInput(c?.maxPayoutPerAffiliateCents));
-  set('budget', cmpDollarInput(c?.totalBudgetCents)); set('min-views', c?.minViewsToQualify ?? ''); set('window', c?.viewTrackingWindowDays ?? 30);
+  set('budget', cmpDollarInput(c?.totalBudgetCents)); set('min-views', c?.minViewsToQualify ?? '');
   document.getElementById('cmpf-approval').checked = c ? c.requiresVideoApproval : true;
   document.querySelectorAll('#cmp-modal [data-platform]').forEach(el => { el.checked = c ? c.platformsAllowed.includes(el.dataset.platform) : true; });
   document.getElementById('cmp-modal-title').textContent = c ? 'Edit campaign' : 'New campaign';
@@ -182,7 +181,6 @@ async function saveCampaign() {
       maxPayoutPerAffiliateCents: cmpCents(v('max-affiliate'), 'Max per affiliate'),
       totalBudgetCents: cmpCents(v('budget'), 'Total budget'),
       minViewsToQualify: cmpWhole(v('min-views'), 'Minimum views'),
-      viewTrackingWindowDays: cmpWhole(v('window'), 'Tracking days') ?? 30,
       requiresVideoApproval: document.getElementById('cmpf-approval').checked
     };
     if (!body.name) throw new Error('Campaign name is required.');
@@ -279,7 +277,6 @@ function renderCampaignView() {
     <div class="cmp-sub">
       <span>${cmpMoney(c.defaultCpmRateCents)} per 1K views</span>
       <span>${c.platformsAllowed.map(p => CMP_PLATFORMS[p]).join(' · ')}</span>
-      <span>Views tracked ${c.viewTrackingWindowDays} days</span>
       ${c.requiresVideoApproval ? '<span>Videos need approval</span>' : '<span>Videos earn right away</span>'}
       ${c.minViewsToQualify ? `<span>Min ${cmpNum(c.minViewsToQualify)} views</span>` : ''}
       ${c.maxPayoutPerVideoCents !== null ? `<span>Max ${cmpMoney(c.maxPayoutPerVideoCents)}/video</span>` : ''}
@@ -298,9 +295,9 @@ function renderCampaignView() {
     <div class="cmp-kpis">
       <div class="cmp-kpi"><div class="cmp-kpi-label">Affiliates</div><div class="cmp-kpi-val">${active.length}</div><div class="cmp-kpi-sub">${active.filter(a => a.status === 'invited').length} haven't signed in</div></div>
       <div class="cmp-kpi"><div class="cmp-kpi-label">Videos</div><div class="cmp-kpi-val">${cmpNum(c.videoCount)}</div><div class="cmp-kpi-sub">${c.pendingReview} to review</div></div>
-      <div class="cmp-kpi"><div class="cmp-kpi-label">Views</div><div class="cmp-kpi-val">${cmpNum(c.views)}</div><div class="cmp-kpi-sub">approved + locked</div></div>
-      <div class="cmp-kpi"><div class="cmp-kpi-label">Earned</div><div class="cmp-kpi-val">${cmpMoney(c.earnedCents)}</div><div class="cmp-kpi-sub">locked videos</div></div>
-      <div class="cmp-kpi"><div class="cmp-kpi-label">Still counting</div><div class="cmp-kpi-val">${cmpMoney(c.pendingCents)}</div><div class="cmp-kpi-sub">estimated</div></div>
+      <div class="cmp-kpi"><div class="cmp-kpi-label">Views</div><div class="cmp-kpi-val">${cmpNum(c.views)}</div><div class="cmp-kpi-sub">all tracked videos</div></div>
+      <div class="cmp-kpi"><div class="cmp-kpi-label">Earned</div><div class="cmp-kpi-val">${cmpMoney(c.earnedCents)}</div><div class="cmp-kpi-sub">paid weekly, as checked</div></div>
+      <div class="cmp-kpi"><div class="cmp-kpi-label">Team overrides</div><div class="cmp-kpi-val">${cmpMoney(c.overrideEarnedCents)}</div><div class="cmp-kpi-sub">upline earnings</div></div>
       <div class="cmp-kpi"><div class="cmp-kpi-label">Owed</div><div class="cmp-kpi-val">${cmpMoney(owed)}</div><div class="cmp-kpi-sub">earned − paid</div></div>
     </div>
     ${pyramidPanelHtml(c)}
@@ -316,8 +313,7 @@ function affiliatesPanelHtml(c) {
     const removed = a.status === 'removed';
     return `<tr${removed ? ' style="opacity:.55"' : ''}>
       <td><div class="cmp-who"><b>${esc(a.creator.name)}</b><span>${esc(a.creator.email || 'no email')}</span>
-        ${a.creator.payoutMethod ? `<span>Pays via ${esc(a.creator.payoutMethod)}${a.creator.payoutDetailsLast4 ? ' ••' + esc(a.creator.payoutDetailsLast4) : ''}</span>` : ''}
-        ${a.creator.connections.length ? `<span>Connected: ${a.creator.connections.map(x => `${esc(CMP_PLATFORMS[x.platform] || x.platform)} @${esc(x.username)}`).join(', ')}</span>` : ''}</div></td>
+        ${a.creator.payoutMethod ? `<span>Pays via ${esc(a.creator.payoutMethod)}${a.creator.payoutDetailsLast4 ? ' ••' + esc(a.creator.payoutDetailsLast4) : ''}</span>` : ''}</div></td>
       <td><span class="chip ${RANK_CHIP[a.rank] || 'chip-muted'}">${esc(RANK_LABEL[a.rank] || a.rank)}</span>
         <div class="feed-time">${a.uplineId ? 'under ' + esc(c.affiliates.find(x => x.id === a.uplineId)?.creator.name || '—') : 'top of tree'}</div></td>
       <td><span class="chip ${AFF_STATUS_CHIP[a.status] || 'chip-muted'}">${esc(a.status)}</span>
@@ -326,8 +322,7 @@ function affiliatesPanelHtml(c) {
       <td class="num">${cmpNum(a.videoCount)}</td>
       <td class="num">${cmpNum(a.views)}</td>
       <td class="num">${cmpMoney(a.earnedCents)}</td>
-      <td class="num">${cmpMoney(a.pendingCents)}</td>
-      <td class="num">${cmpMoney(a.overrideEarnedCents)}<div class="feed-time">+${cmpMoney(a.overridePendingCents)} counting</div></td>
+      <td class="num">${cmpMoney(a.overrideEarnedCents)}</td>
       <td class="num">${cmpMoney(a.paidCents)}</td>
       <td class="num strong">${cmpMoney(a.owedCents)}</td>
       <td><div class="cmp-row-actions">
@@ -342,7 +337,7 @@ function affiliatesPanelHtml(c) {
     <div class="panel-head"><span class="panel-title">Affiliates</span>
       <div class="cmp-panel-actions"><button class="action-btn" onclick="exportCampaignCsv()">Export CSV</button><button class="action-btn primary" onclick="openAffiliateForm()">+ Add affiliate</button></div></div>
     ${c.affiliates.length ? `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr>
-      <th>Affiliate</th><th>Rank</th><th>Status</th><th>CPM</th><th class="num">Videos</th><th class="num">Views</th><th class="num">Earned</th><th class="num">Pending</th><th class="num">Team overrides</th><th class="num">Paid</th><th class="num">Owed</th><th></th>
+      <th>Affiliate</th><th>Rank</th><th>Status</th><th>CPM</th><th class="num">Videos</th><th class="num">Views</th><th class="num">Earned</th><th class="num">Team overrides</th><th class="num">Paid</th><th class="num">Owed</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="cmp-empty">No affiliates yet. Add a creator to send them an invite.</div>'}
     <div class="email-msg" id="cmp-aff-msg" style="margin:0 18px 14px;"></div>
   </div>`;
@@ -391,9 +386,9 @@ function exportCampaignCsv() {
   const c = cmpCurrent;
   const d = (cents) => (cents / 100).toFixed(2);
   downloadCsv(`${c.name.replace(/[^\w-]+/g, '-').toLowerCase()}-affiliates.csv`, [
-    ['Affiliate', 'Email', 'Rank', 'Upline', 'Status', 'CPM (USD per 1K)', 'Videos', 'Views', 'Earned (USD)', 'Pending (USD)', 'Team overrides earned (USD)', 'Team overrides pending (USD)', 'Paid (USD)', 'Owed (USD)', 'Payout method', 'Joined'],
+    ['Affiliate', 'Email', 'Rank', 'Upline', 'Status', 'CPM (USD per 1K)', 'Videos', 'Views', 'Earned (USD)', 'Team overrides earned (USD)', 'Paid (USD)', 'Owed (USD)', 'Payout method', 'Joined'],
     ...c.affiliates.map(a => [a.creator.name, a.creator.email, RANK_LABEL[a.rank] || a.rank, c.affiliates.find(x => x.id === a.uplineId)?.creator.name || '', a.status,
-      d(a.effectiveCpmRateCents), a.videoCount, a.views, d(a.earnedCents), d(a.pendingCents), d(a.overrideEarnedCents), d(a.overridePendingCents),
+      d(a.effectiveCpmRateCents), a.videoCount, a.views, d(a.earnedCents), d(a.overrideEarnedCents),
       d(a.paidCents), d(a.owedCents), a.creator.payoutMethod, a.joinedAt || ''])
   ]);
 }
@@ -485,14 +480,12 @@ let videoDetail = null;     // { video, snapshots, flags, audit } in the video m
 
 function videoRowHtml(v, { showCampaign = false } = {}) {
   const id = esc(v.id);
-  const ends = v.status === 'approved' ? `Tracking until ${fmtDate(v.trackingEndsAt)}` : v.lockedAt ? `Locked ${fmtDate(v.lockedAt)}` : '';
+  const checked = v.lockedAt ? `Locked ${fmtDate(v.lockedAt)}` : v.lastFetchedAt ? `Checked ${fmtDate(v.lastFetchedAt)}` : 'Not checked yet';
   const actions = [];
-  if (!v.payoutId) {
-    if (['pending_review', 'rejected', 'removed'].includes(v.status)) actions.push(`<button class="action-btn primary" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'approve', this)">${v.status === 'pending_review' ? 'Approve' : 'Restore'}</button>`);
-    if (['pending_review', 'approved', 'removed'].includes(v.status)) actions.push(`<button class="action-btn" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'reject', this)">Reject</button>`);
-    if (['approved', 'locked'].includes(v.status)) actions.push(`<button class="action-btn" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'remove', this)">Remove</button>`);
-  }
-  actions.push(`<button class="action-btn" data-id="${id}" onclick="openVideoDetail(this.dataset.id)">Views…</button>`);
+  if (['pending_review', 'rejected', 'removed'].includes(v.status)) actions.push(`<button class="action-btn primary" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'approve', this)">${v.status === 'pending_review' ? 'Approve' : 'Restore'}</button>`);
+  if (['pending_review', 'approved', 'removed'].includes(v.status)) actions.push(`<button class="action-btn" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'reject', this)">Reject</button>`);
+  if (['pending_review', 'approved', 'locked'].includes(v.status)) actions.push(`<button class="action-btn" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'remove', this)">Remove</button>`);
+  actions.push(`<button class="action-btn" data-id="${id}" onclick="openVideoDetail(this.dataset.id)">Weekly views…</button>`);
   return `<tr>
     <td><div class="cmp-video-url"><a href="${safeUrl(v.canonicalUrl)}" target="_blank" rel="noopener">${esc(CMP_PLATFORMS[v.platform] || v.platform)} · ${esc(v.platformVideoId)} ↗</a>
       <span>Submitted ${fmtDate(v.submittedAt)}${v.caption ? ' · ' + esc(v.caption.slice(0, 60)) : ''}</span>
@@ -500,16 +493,15 @@ function videoRowHtml(v, { showCampaign = false } = {}) {
     <td><div class="cmp-who"><b>${esc(v.creator.name)}</b>${showCampaign ? `<span>${esc(v.campaignName)}</span>` : ''}</div></td>
     <td><span class="chip ${VIDEO_STATUS_CHIP[v.status] || 'chip-muted'}">${esc(VIDEO_STATUS_LABEL[v.status] || v.status)}</span>
       ${v.rejectionReason && v.status !== 'approved' ? `<div class="feed-time" title="${esc(v.rejectionReason)}">${esc(v.rejectionReason.slice(0, 50))}</div>` : ''}
-      ${v.payoutId ? '<div class="feed-time">on a payout</div>' : ''}</td>
-    <td class="num">${cmpNum(v.status === 'locked' ? v.billableViews : v.latestViewCount)}<div class="feed-time">${v.lastFetchedAt ? 'checked ' + fmtDate(v.lastFetchedAt) : 'not checked yet'}</div></td>
+      ${v.unpaidEarnedCents > 0 ? `<div class="feed-time">${cmpMoney(v.unpaidEarnedCents)} ready to pay</div>` : ''}</td>
+    <td class="num">${cmpNum(v.status === 'locked' ? v.billableViews : v.latestViewCount)}<div class="feed-time">${checked}</div></td>
     <td class="num">${cmpMoney(v.earnedCents)}<div class="feed-time">${cmpMoney(v.cpmRateCents)}/1K</div></td>
-    <td><span class="feed-time">${ends}</span></td>
     <td><div class="cmp-row-actions">${actions.join('')}</div></td>
   </tr>`;
 }
 
 const videoTableHtml = (videos, opts) => `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr>
-    <th>Video</th><th>Affiliate</th><th>Status</th><th class="num">Views</th><th class="num">Earned</th><th>Tracking</th><th></th>
+    <th>Video</th><th>Affiliate</th><th>Status</th><th class="num">Views</th><th class="num">Earned</th><th></th>
   </tr></thead><tbody>${videos.map(v => videoRowHtml(v, opts)).join('')}</tbody></table></div>`;
 
 function campaignVideosPanelHtml(c) {
@@ -598,14 +590,12 @@ async function openVideoDetail(id) {
       ${detailField('Campaign', esc(v.campaignName))}
       ${detailField('Status', `<span class="chip ${VIDEO_STATUS_CHIP[v.status]}">${esc(VIDEO_STATUS_LABEL[v.status])}</span>`)}
       ${detailField('Latest views', cmpNum(v.latestViewCount))}
-      ${detailField('Billable views', v.status === 'locked' ? cmpNum(v.billableViews) : 'Set when it locks')}
+      ${detailField('Billable views', v.status === 'locked' ? cmpNum(v.billableViews) : 'Set when the campaign ends')}
       ${detailField('Earned', `${cmpMoney(v.earnedCents)} at ${cmpMoney(v.cpmRateCents)}/1K`)}
-      ${detailField('Tracking ends', fmtDateTime(v.trackingEndsAt))}
-      ${detailField('Next check', v.nextFetchAt ? fmtDateTime(v.nextFetchAt) : '—')}
-      ${detailField('Failed checks in a row', String(v.consecutiveFetchFailures))}
+      ${detailField('Ready to pay', cmpMoney(v.unpaidEarnedCents))}
     </div>
-    ${v.status === 'approved' ? `<button class="action-btn" onclick="checkVideoNow(this)">↻ Check views now</button><div class="email-msg" id="vc-msg"></div>` : ''}
-    ${v.payoutId ? '' : `<div class="detail-section-title">Enter views by hand</div>
+    ${v.status === 'approved' ? `<button class="action-btn" onclick="markVideoUnavailable(this)">Mark post unavailable</button>` : ''}
+    ${v.status === 'locked' ? '<div class="ops-hint">This video is locked (its campaign ended) — no more weekly entries.</div>' : `<div class="detail-section-title">This week's views</div>
     <div class="ops-form-grid">
       <div class="c-field"><label>Views *</label><input class="c-input" id="mv-views" inputmode="numeric" placeholder="${v.latestViewCount}"></div>
       <div class="c-field"><label>Likes</label><input class="c-input" id="mv-likes" inputmode="numeric"></div>
@@ -613,25 +603,28 @@ async function openVideoDetail(id) {
       <div class="c-field full"><label>Note * (where the number came from)</label><input class="c-input" id="mv-note" placeholder="Screenshot from creator's insights, 9/18"></div>
     </div>
     <button class="action-btn primary" style="margin-top:10px;" onclick="saveManualViews()">Save views</button>
-    <div class="ops-hint">${v.status === 'locked' ? 'This video is locked, so this also changes its billable views.' : 'Replaces the latest count. Automatic checks only ever raise it.'} Logged in the audit log.</div>
+    <div class="ops-hint">The cumulative total, not this week's gain — the delta since the last check is priced automatically. Logged in the audit log.</div>
     <div class="email-msg" id="mv-msg"></div>`}
     ${flags.length ? `<div class="detail-section-title">Flags</div>${flags.map(f => `<div class="aff-result"><div class="cmp-who"><b>${esc(FLAG_LABEL[f.type] || f.type)}</b><span>${esc(f.details)} · ${fmtDateTime(f.createdAt)}</span>
       ${f.resolvedAt ? `<span>Resolved ${fmtDateTime(f.resolvedAt)}${f.resolvedByName ? ' by ' + esc(f.resolvedByName) : ''}</span>` : ''}</div>
       ${f.resolvedAt ? '<span class="chip chip-muted">resolved</span>' : `<button class="action-btn" data-id="${esc(f.id)}" onclick="resolveFlag(this.dataset.id)">Resolve</button>`}</div>`).join('')}` : ''}
     <div class="detail-section-title">View history (${snapshots.length})</div>
-    ${snapshots.length ? `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>When</th><th class="num">Views</th><th class="num">Likes</th><th class="num">Comments</th><th>Source</th><th>Note</th></tr></thead><tbody>
-      ${snapshots.map(s => `<tr><td>${fmtDateTime(s.fetchedAt)}</td><td class="num">${cmpNum(s.viewCount)}</td><td class="num">${s.likeCount === null ? '—' : cmpNum(s.likeCount)}</td>
-        <td class="num">${s.commentCount === null ? '—' : cmpNum(s.commentCount)}</td><td>${esc(s.source)}${s.enteredByName ? ' · ' + esc(s.enteredByName) : ''}</td><td>${esc(s.note || '')}</td></tr>`).join('')}
+    ${snapshots.length ? `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>When</th><th class="num">Views</th><th class="num">New views</th><th class="num">Earned</th><th>Note</th><th>Payout</th></tr></thead><tbody>
+      ${snapshots.map(s => `<tr><td>${fmtDateTime(s.fetchedAt)}<div class="feed-time">${esc(s.enteredByName || s.source)}</div></td><td class="num">${cmpNum(s.viewCount)}</td>
+        <td class="num">${s.deltaViews === null ? '—' : cmpNum(s.deltaViews)}</td><td class="num">${s.earnedCents === null ? '—' : cmpMoney(s.earnedCents)}</td>
+        <td>${esc(s.note || '')}</td><td>${s.payoutId ? `<button class="action-btn" onclick="closeVideoDetail();affPageTab='payouts';loadAffiliatesPage().then(()=>showPayoutItems('${esc(s.payoutId)}',true))">Paid</button>` : s.earnedCents ? 'Unpaid' : '—'}</td></tr>`).join('')}
     </tbody></table></div>` : '<div class="cmp-empty">No view counts yet.</div>'}
     ${audit.length ? `<div class="detail-section-title">Audit</div>${auditRowsHtml(audit)}` : ''}`;
 }
 
-async function checkVideoNow(btn) {
+async function markVideoUnavailable(btn) {
+  const reason = prompt('Why is this video unavailable? (e.g. the post was deleted or made private)');
+  if (reason === null) return;
   btn.disabled = true;
   try {
-    const { video } = await cmpRequest(`/api/affiliate-videos/${encodeURIComponent(videoDetail.video.id)}/check`, { method: 'POST' });
+    const { video } = await cmpRequest(`/api/affiliate-videos/${encodeURIComponent(videoDetail.video.id)}/review`, { method: 'POST', body: JSON.stringify({ action: 'mark_unavailable', reason }) });
     afterVideoChange(video);
-  } catch (err) { cmpMsg('vc-msg', err.message); btn.disabled = false; }
+  } catch (err) { alert('Not saved: ' + err.message); btn.disabled = false; }
 }
 
 function closeVideoDetail() {
@@ -664,7 +657,7 @@ async function resolveFlag(id) {
 // ── Affiliates page: review queue, flags, payouts, audit log ──
 
 let affPageTab = 'review';
-const AFF_PAGE_TABS = [['review', 'Review queue'], ['flags', 'Flags'], ['audit', 'Audit log']];
+const AFF_PAGE_TABS = [['review', 'Review queue'], ['due', 'This week'], ['flags', 'Flags'], ['audit', 'Audit log']];
 
 const originalShowPageCampaigns = window.showPage;
 window.showPage = function(name) {
@@ -680,7 +673,7 @@ function renderAffiliateTabs() {
 async function loadAffiliatesPage() {
   renderAffiliateTabs();
   const box = document.getElementById('aff-page-body');
-  const loaders = { review: renderReviewQueue, flags: renderFlagsQueue, audit: renderAuditLog, payouts: window.renderPayoutsTab };
+  const loaders = { review: renderReviewQueue, due: renderDueQueue, flags: renderFlagsQueue, audit: renderAuditLog, payouts: window.renderPayoutsTab };
   try {
     await loaders[affPageTab](box);
   } catch (err) {
@@ -692,6 +685,12 @@ async function renderReviewQueue(box) {
   const { videos } = await cmpRequest('/api/affiliate-videos?status=pending_review');
   box.innerHTML = `<div class="panel cmp-panel"><div class="panel-head"><span class="panel-title">Waiting for review · oldest first</span><button class="panel-link" onclick="loadAffiliatesPage()">↻ Refresh</button></div>
     ${videos.length ? videoTableHtml(videos, { showCampaign: true }) : '<div class="cmp-empty">Nothing to review. New submissions on campaigns that need approval show up here.</div>'}</div>`;
+}
+
+async function renderDueQueue(box) {
+  const { videos } = await cmpRequest('/api/affiliate-videos?due=1');
+  box.innerHTML = `<div class="panel cmp-panel"><div class="panel-head"><span class="panel-title">This week's checklist · not checked since the cutoff</span><button class="panel-link" onclick="loadAffiliatesPage()">↻ Refresh</button></div>
+    ${videos.length ? videoTableHtml(videos, { showCampaign: true }) : '<div class="cmp-empty">Everything’s checked for this week.</div>'}</div>`;
 }
 
 async function renderFlagsQueue(box) {
@@ -710,9 +709,9 @@ async function renderFlagsQueue(box) {
 const AUDIT_ACTIONS = {
   rate_changed: 'Rate changed', caps_changed: 'Caps changed', status_changed: 'Status changed', campaign_created: 'Campaign created', campaign_deleted: 'Campaign deleted',
   affiliate_added: 'Affiliate added', video_approved: 'Video approved', video_rejected: 'Video rejected', video_removed: 'Video removed',
-  manual_views_entered: 'Views entered by hand', flag_resolved: 'Flag resolved', payout_details_changed: 'Payout details changed',
+  manual_views_entered: 'Views entered by hand', weekly_views_entered: 'Weekly views entered', flag_resolved: 'Flag resolved', payout_details_changed: 'Payout details changed',
   payout_created: 'Payout created', payout_status_changed: 'Payout status changed', payout_deleted: 'Payout deleted', video_locked: 'Video locked',
-  video_unavailable: 'Video unavailable', promoted: 'Promoted', rank_changed: 'Rank changed', upline_changed: 'Moved to a new upline',
+  video_unavailable: 'Video unavailable', video_marked_unavailable: 'Marked unavailable', promoted: 'Promoted', rank_changed: 'Rank changed', upline_changed: 'Moved to a new upline',
   recruits_rolled_up: 'Recruits moved up', platform_connected: 'Account connected', platform_disconnected: 'Account disconnected', payout_updated: 'Payout updated'
 };
 
@@ -768,18 +767,17 @@ window.renderPayoutsTab = async function renderPayoutsTab(box) {
     <div class="panel cmp-panel"><div class="panel-head"><span class="panel-title">Owed to affiliates</span>
       <div class="cmp-panel-actions"><button class="action-btn" onclick="exportOwedCsv()">Export CSV</button><button class="panel-link" onclick="loadAffiliatesPage()">↻ Refresh</button></div></div>
       ${creators.length ? `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr>
-        <th>Affiliate</th><th>Pays via</th><th>Tax form</th><th class="num">Earned</th><th class="num">Paid</th><th class="num">Owed</th><th class="num">On a payout</th><th class="num">Ready to pay</th><th class="num">Still counting</th><th></th>
+        <th>Affiliate</th><th>Pays via</th><th>Tax form</th><th class="num">Earned</th><th class="num">Paid</th><th class="num">Owed</th><th class="num">On a payout</th><th class="num">Ready to pay</th><th></th>
       </tr></thead><tbody>${creators.map(c => `<tr>
         <td><div class="cmp-who"><b>${esc(c.name)}</b><span>${esc(c.email)}${c.country ? ' · ' + esc(c.country) : ''}</span></div></td>
         <td>${c.payoutMethod ? `${esc(PAYOUT_METHOD_LABEL[c.payoutMethod] || c.payoutMethod)}${c.payoutDetailsLast4 ? ` <span class="feed-time">••${esc(c.payoutDetailsLast4)}</span>` : ''}` : '<span class="cmp-flag">not set</span>'}</td>
         <td><label class="cmp-check"><input type="checkbox" ${c.taxFormReceived ? 'checked' : ''} data-id="${esc(c.id)}" onchange="setTaxForm(this)"> received</label></td>
         <td class="num">${cmpMoney(c.earnedCents)}</td><td class="num">${cmpMoney(c.paidCents)}</td><td class="num strong">${cmpMoney(c.owedCents)}</td>
         <td class="num">${cmpMoney(c.inProgressCents)}</td>
-        <td class="num strong">${cmpMoney(c.readyCents)}<div class="feed-time">${c.readyVideos} video${c.readyVideos === 1 ? '' : 's'}</div></td>
-        <td class="num">${cmpMoney(c.pendingCents)}</td>
+        <td class="num strong">${cmpMoney(c.readyCents)}<div class="feed-time">${c.readyWeeks} week${c.readyWeeks === 1 ? '' : 's'}</div></td>
         <td><div class="cmp-row-actions">${c.readyCents > 0 && isAdmin ? `<button class="action-btn primary" data-id="${esc(c.id)}" onclick="createPayout(this.dataset.id, this)">Create payout</button>` : ''}</div></td>
-      </tr>`).join('')}</tbody></table></div>` : '<div class="cmp-empty">No affiliate earnings yet. Videos earn once approved and are payable once they lock.</div>'}
-      <div class="ops-hint" style="padding:0 18px 14px;">Owed = earned on locked videos − paid. "Ready to pay" is what a new payout would include.${isAdmin ? '' : ' Only admins can create or change payouts.'}</div>
+      </tr>`).join('')}</tbody></table></div>` : '<div class="cmp-empty">No affiliate earnings yet. Videos are paid weekly, as soon as their views are checked.</div>'}
+      <div class="ops-hint" style="padding:0 18px 14px;">Owed = earned (paid weekly, as soon as checked) − paid. "Ready to pay" is what a new payout would include.${isAdmin ? '' : ' Only admins can create or change payouts.'}</div>
     </div>
     <div class="panel cmp-panel"><div class="panel-head"><span class="panel-title">Payouts</span>
       <div class="cmp-panel-actions">
@@ -823,17 +821,17 @@ async function showPayoutItems(id, keepOpen) {
   cell.innerHTML = '<div class="cmp-empty">Loading…</div>';
   try {
     const { payout } = await cmpRequest(`/api/payouts/${encodeURIComponent(id)}`);
-    cell.innerHTML = `<table class="cmp-table"><thead><tr><th>Campaign</th><th>Video</th><th class="num">Billable views</th><th class="num">CPM</th><th class="num">Amount</th></tr></thead><tbody>
+    cell.innerHTML = `<table class="cmp-table"><thead><tr><th>Campaign</th><th>Video</th><th>Week of</th><th class="num">Views that week</th><th class="num">CPM</th><th class="num">Amount</th></tr></thead><tbody>
       ${payout.lineItems.map(li => `<tr><td>${esc(li.campaignName || '')}</td><td><a href="${safeUrl(li.canonicalUrl)}" target="_blank" rel="noopener">${esc(CMP_PLATFORMS[li.platform] || li.platform || 'Video')} ↗</a></td>
-        <td class="num">${cmpNum(li.billableViews)}</td><td class="num">${cmpMoney(li.cpmRateCents)}</td><td class="num">${cmpMoney(li.amountCents)}</td></tr>`).join('')}
+        <td>${fmtDate(li.weekOf)}</td><td class="num">${cmpNum(li.billableViews)}</td><td class="num">${cmpMoney(li.cpmRateCents)}</td><td class="num">${cmpMoney(li.amountCents)}</td></tr>`).join('')}
       ${payout.overrideItems.map(o => `<tr><td>${esc(o.campaignName || '')}</td><td>Team override from <b>${esc(o.fromName || '—')}</b> · <a href="${safeUrl(o.canonicalUrl)}" target="_blank" rel="noopener">${esc(CMP_PLATFORMS[o.platform] || 'Video')} ↗</a></td>
-        <td class="num">${cmpNum(o.billableViews)}</td><td class="num">+${cmpMoney(o.cpmDiffCents)}</td><td class="num">${cmpMoney(o.amountCents)}</td></tr>`).join('')}
+        <td>${fmtDate(o.weekOf)}</td><td class="num">${cmpNum(o.billableViews)}</td><td class="num">+${cmpMoney(o.cpmDiffCents)}</td><td class="num">${cmpMoney(o.amountCents)}</td></tr>`).join('')}
     </tbody></table>`;
   } catch (err) { cell.innerHTML = `<div class="cmp-empty">${esc(err.message)}</div>`; }
 }
 
 async function createPayout(creatorId, btn) {
-  if (!confirm('Create a pending payout from all of this affiliate’s locked, unpaid videos? No money is sent. You mark it paid after paying them.')) return;
+  if (!confirm('Create a pending payout from all of this affiliate’s priced, unpaid weeks? No money is sent. You mark it paid after paying them.')) return;
   btn.disabled = true;
   try {
     const { payout } = await cmpRequest('/api/payouts', { method: 'POST', body: JSON.stringify({ creatorId }) });
@@ -882,18 +880,18 @@ async function exportOwedCsv() {
   const { creators } = await cmpRequest('/api/payouts/owed');
   const d = (cents) => (cents / 100).toFixed(2);
   downloadCsv('affiliates-owed.csv', [
-    ['Affiliate', 'Email', 'Country', 'Payout method', 'Details (last 4)', 'Tax form', 'Earned (USD)', 'Paid (USD)', 'Owed (USD)', 'On a payout (USD)', 'Ready to pay (USD)', 'Still counting (USD)'],
-    ...creators.map(c => [c.name, c.email, c.country, c.payoutMethod, c.payoutDetailsLast4, c.taxFormReceived ? 'yes' : 'no', d(c.earnedCents), d(c.paidCents), d(c.owedCents), d(c.inProgressCents), d(c.readyCents), d(c.pendingCents)])
+    ['Affiliate', 'Email', 'Country', 'Payout method', 'Details (last 4)', 'Tax form', 'Earned (USD)', 'Paid (USD)', 'Owed (USD)', 'On a payout (USD)', 'Ready to pay (USD)'],
+    ...creators.map(c => [c.name, c.email, c.country, c.payoutMethod, c.payoutDetailsLast4, c.taxFormReceived ? 'yes' : 'no', d(c.earnedCents), d(c.paidCents), d(c.owedCents), d(c.inProgressCents), d(c.readyCents)])
   ]);
 }
 
 async function exportPayoutsCsv() {
-  const rows = [['Payout ID', 'Affiliate', 'Email', 'Status', 'Period start', 'Period end', 'Method', 'Reference', 'Paid at', 'Type', 'From (downline)', 'Campaign', 'Video', 'Billable views', 'CPM or CPM difference (USD per 1K)', 'Amount (USD)']];
+  const rows = [['Payout ID', 'Affiliate', 'Email', 'Status', 'Period start', 'Period end', 'Method', 'Reference', 'Paid at', 'Type', 'From (downline)', 'Campaign', 'Video', 'Week of', 'Views that week', 'CPM or CPM difference (USD per 1K)', 'Amount (USD)']];
   for (const p of payoutsCache) {
     const { payout } = await cmpRequest(`/api/payouts/${encodeURIComponent(p.id)}`);
     const head = [payout.id, payout.creatorName, payout.creatorEmail, payout.status, payout.periodStart, payout.periodEnd, payout.paymentMethod || '', payout.paymentReference || '', payout.paidAt || ''];
-    for (const li of payout.lineItems) rows.push([...head, 'own video', '', li.campaignName || '', li.canonicalUrl || '', li.billableViews, (li.cpmRateCents / 100).toFixed(2), (li.amountCents / 100).toFixed(2)]);
-    for (const o of payout.overrideItems) rows.push([...head, 'team override', o.fromName || '', o.campaignName || '', o.canonicalUrl || '', o.billableViews, (o.cpmDiffCents / 100).toFixed(2), (o.amountCents / 100).toFixed(2)]);
+    for (const li of payout.lineItems) rows.push([...head, 'own video', '', li.campaignName || '', li.canonicalUrl || '', li.weekOf || '', li.billableViews, (li.cpmRateCents / 100).toFixed(2), (li.amountCents / 100).toFixed(2)]);
+    for (const o of payout.overrideItems) rows.push([...head, 'team override', o.fromName || '', o.campaignName || '', o.canonicalUrl || '', o.weekOf || '', o.billableViews, (o.cpmDiffCents / 100).toFixed(2), (o.amountCents / 100).toFixed(2)]);
   }
   downloadCsv('affiliate-payouts.csv', rows);
 }
@@ -937,7 +935,7 @@ function pyramidPanelHtml(c) {
         return `<button class="pyr-node rank-${a.rank}${a.status === 'invited' ? ' invited' : ''}${warn ? ' warn' : ''}" data-id="${esc(a.id)}" onclick="openPerson(this.dataset.id)"
           title="${warn ? esc(`${up.creator.name} earns $0 on ${a.creator.name}: same or lower CPM`) : ''}">
           <b>${esc(a.creator.name)}</b><div class="pyr-cpm">${cmpMoney(rateOfAff(a))} / 1K</div>
-          <div class="pyr-sub">${cmpNum(a.views)} views · ${cmpMoney(a.earnedCents + a.pendingCents)}${a.overrideEarnedCents + a.overridePendingCents ? ` + ${cmpMoney(a.overrideEarnedCents + a.overridePendingCents)} team` : ''}</div>
+          <div class="pyr-sub">${cmpNum(a.views)} views · ${cmpMoney(a.earnedCents)}${a.overrideEarnedCents ? ` + ${cmpMoney(a.overrideEarnedCents)} team` : ''}</div>
         </button>`;
       }).join('') || '<span class="pyr-empty">Nobody at this rank</span>'}
     </div></div>`;
@@ -1013,9 +1011,7 @@ function openPerson(id) {
       <div><span>CPM</span><b>${cmpMoney(rateOfAff(a))}</b></div>
       <div><span>Views</span><b>${cmpNum(a.views)}</b></div>
       <div><span>Own earned</span><b>${cmpMoney(a.earnedCents)}</b></div>
-      <div><span>Own counting</span><b>${cmpMoney(a.pendingCents)}</b></div>
       <div><span>Team earned</span><b>${cmpMoney(a.overrideEarnedCents)}</b></div>
-      <div><span>Team counting</span><b>${cmpMoney(a.overridePendingCents)}</b></div>
       <div><span>Paid</span><b>${cmpMoney(a.paidCents)}</b></div>
       <div><span>Owed</span><b>${cmpMoney(a.owedCents)}</b></div>
     </div>

@@ -1,4 +1,4 @@
-# Edgeform Affiliate System — Shared Contract (v2)
+# Edgeform Affiliate System — Shared Contract (v4)
 
 Source of truth for BOTH builds. An identical copy lives in both repos:
 - **CRM agent** → `edgeform-crm` (Cloudflare Worker `edgeform-crm-api` + D1 `edgeform-crm` + static admin UI at crm.edgeformmarketing.com). Owns the database, admin UI, view polling, earnings, payouts, and the affiliate API.
@@ -34,10 +34,10 @@ channel_type:       email | affiliate
 platform:           tiktok | instagram | youtube
 assignment_status:  invited | active | removed
 video_status:       pending_review | approved | rejected | removed | locked
-view_source:        api | oauth | scraper | manual
+view_source:        manual (api / oauth / scraper are retired, v4 — see §3. Historical rows keep them.)
 payout_status:      pending | approved | paid | failed
 payout_method:      paypal | wise | bank | manual
-flag_type:          handle_mismatch | fetch_failed | video_unavailable | suspicious_spike
+flag_type:          handle_mismatch | video_unavailable | suspicious_spike (fetch_failed retired, v4 — automated-fetch only. Historical rows keep it.)
 ```
 
 ---
@@ -82,8 +82,7 @@ Portal login key = `creators.email`, matched case-insensitively. `email` isn't u
 | max_payout_per_video_cents | INTEGER NULL | |
 | max_payout_per_affiliate_cents | INTEGER NULL | |
 | total_budget_cents | INTEGER NULL | |
-| view_tracking_window_days | INTEGER NOT NULL DEFAULT 30 | |
-| min_views_to_qualify | INTEGER NULL | |
+| min_views_to_qualify | INTEGER NULL | cumulative lifetime views a video must reach before ANY week counts (see §3) |
 | requires_video_approval | INTEGER NOT NULL DEFAULT 1 | |
 | created_by | TEXT NULL → users.id | |
 | created_at / updated_at | TEXT NOT NULL | |
@@ -111,20 +110,6 @@ New campaigns get both channels. `email` is a placeholder tab with no logic yet.
 
 `effective_cpm_rate_cents = COALESCE(cpm_rate_override_cents, campaigns.default_cpm_rate_cents)`
 
-### creator_platform_connections (OAuth for TikTok and Instagram, built in phase 4)
-| column | type |
-|---|---|
-| id | TEXT PK |
-| creator_id | TEXT NOT NULL → creators.id CASCADE |
-| platform | TEXT NOT NULL (UNIQUE with creator_id) |
-| platform_user_id | TEXT NOT NULL |
-| platform_username | TEXT NOT NULL |
-| access_token_encrypted | TEXT NOT NULL |
-| refresh_token_encrypted | TEXT NULL |
-| token_expires_at | TEXT NULL |
-| connected_at | TEXT NOT NULL |
-| revoked_at | TEXT NULL |
-
 ### videos
 | column | type | notes |
 |---|---|---|
@@ -144,17 +129,18 @@ New campaigns get both channels. `email` is a placeholder tab with no logic yet.
 | submitted_at | TEXT NOT NULL | |
 | approved_at | TEXT NULL | |
 | approved_by | TEXT NULL → users.id | |
-| tracking_ends_at | TEXT NOT NULL | submitted_at + view_tracking_window_days |
-| locked_at | TEXT NULL | |
-| latest_view_count | INTEGER NOT NULL DEFAULT 0 | |
-| billable_views | INTEGER NOT NULL DEFAULT 0 | frozen when the video locks |
-| earned_cents | INTEGER NOT NULL DEFAULT 0 | cached, can always be recomputed |
-| last_fetched_at | TEXT NULL | |
-| next_fetch_at | TEXT NULL | used by the scheduled job |
-| consecutive_fetch_failures | INTEGER NOT NULL DEFAULT 0 | |
+| locked_at | TEXT NULL | set when the campaign ends (see §3) |
+| latest_view_count | INTEGER NOT NULL DEFAULT 0 | cumulative total as of the last weekly check; also next week's baseline |
+| billable_views | INTEGER NOT NULL DEFAULT 0 | frozen copy of latest_view_count when the video locks |
+| earned_cents | INTEGER NOT NULL DEFAULT 0 | running total of its own priced weeks (see §3); cached, never decreases |
+| last_fetched_at | TEXT NULL | last weekly check |
+
+No more per-video tracking window and no automated retries: `tracking_ends_at`, `next_fetch_at`, `consecutive_fetch_failures` are retired (v4). The CRM's own DB still carries these columns, unused, rather than risk a schema rebuild on a live table — nothing reads or writes them.
 
 ### view_snapshots (append-only, never update or delete)
-`id TEXT PK, video_id TEXT NOT NULL → videos.id CASCADE, view_count INTEGER NOT NULL, like_count INTEGER NULL, comment_count INTEGER NULL, source TEXT NOT NULL (view_source), fetched_at TEXT NOT NULL, raw_response TEXT NULL (JSON), entered_by TEXT NULL → users.id, note TEXT NULL`
+`id TEXT PK, video_id TEXT NOT NULL → videos.id CASCADE, view_count INTEGER NOT NULL, like_count INTEGER NULL, comment_count INTEGER NULL, source TEXT NOT NULL (view_source), fetched_at TEXT NOT NULL, raw_response TEXT NULL (JSON, always NULL going forward), entered_by TEXT NULL → users.id, note TEXT NULL, delta_views INTEGER NULL, earned_cents INTEGER NULL`
+
+`delta_views` = `view_count` − the video's `latest_view_count` before this check, floored at 0, set the moment the row is inserted. `earned_cents` is set once, by the same pricing pass that updates `videos.earned_cents` (§3), and is never changed again — a row with `earned_cents IS NULL` is an unpriced week still waiting to be priced. Rows from before v4 have both columns `NULL` and are simply invisible to pricing; the videos they belong to keep whatever `earned_cents` they already had.
 
 ### video_flags
 `id TEXT PK, video_id TEXT NOT NULL → videos.id CASCADE, type TEXT NOT NULL (flag_type), details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, resolved_at TEXT NULL, resolved_by TEXT NULL → users.id`
@@ -163,8 +149,8 @@ New campaigns get both channels. `email` is a placeholder tab with no logic yet.
 `id TEXT PK, creator_id TEXT NOT NULL → creators.id, period_start TEXT, period_end TEXT, amount_cents INTEGER NOT NULL, currency TEXT NOT NULL DEFAULT 'USD', status TEXT NOT NULL DEFAULT 'pending' (payout_status), payment_method TEXT NULL (payout_method), payment_reference TEXT NULL, paid_at TEXT NULL, created_by TEXT NULL → users.id, created_at TEXT NOT NULL, updated_at TEXT NOT NULL`
 
 ### payout_line_items
-`id TEXT PK, payout_id TEXT NOT NULL → payouts.id CASCADE, video_id TEXT NOT NULL → videos.id, campaign_id TEXT NOT NULL, billable_views INTEGER NOT NULL, cpm_rate_cents INTEGER NOT NULL, amount_cents INTEGER NOT NULL`
-A video is paid at most once: UNIQUE(video_id).
+`id TEXT PK, payout_id TEXT NOT NULL → payouts.id CASCADE, view_snapshot_id TEXT NULL → view_snapshots.id, video_id TEXT NOT NULL → videos.id, campaign_id TEXT NOT NULL, billable_views INTEGER NOT NULL, cpm_rate_cents INTEGER NOT NULL, amount_cents INTEGER NOT NULL`
+A priced week is paid at most once: UNIQUE(view_snapshot_id). A video can be on many payouts over its life — one per paid week (v4; was one payout ever, per video, in v3). `view_snapshot_id` is NULL on rows from before v4, which predate the concept.
 
 ### affiliate_login_tokens
 `token_hash TEXT PK (sha256), creator_id TEXT NOT NULL → creators.id CASCADE, expires_at TEXT NOT NULL (15 min), used_at TEXT NULL, created_at TEXT NOT NULL`
@@ -178,30 +164,64 @@ Log: rate changes, manual view entries, approvals and rejections, payout status 
 
 ---
 
-## 3. Formulas (only the CRM computes these; the portal just displays them)
-```
-earning_statuses = approved, locked       (everything else earns 0)
-views            = status == locked ? billable_views : latest_view_count
-if min_views_to_qualify is set and views < min_views_to_qualify → 0
-raw_cents        = floor(views * effective_cpm_rate_cents / 1000)
-video_cents      = min(raw_cents, max_payout_per_video_cents ?? ∞)
-then cap the creator's total in the campaign at max_payout_per_affiliate_cents (oldest videos fill first)
-then cap all creators in the campaign at total_budget_cents (oldest videos fill first)
-→ store the result in videos.earned_cents
+## 3. Weekly manual entry and formulas (v4 — only the CRM computes these; the portal just displays them)
 
-earned_cents   (per creator) = Σ earned_cents of locked videos
-pending_cents                = Σ earned_cents of approved videos that aren't locked yet ("estimated, still counting")
+Views are no longer polled automatically. Staff check each actively-tracking video's view count by hand,
+once a week, and enter the new cumulative total. There's a single global weekly cutoff — the most recent
+past **Sunday 10pm America/New_York** — used only to build the admin's "this week's checklist" of videos
+not yet checked since then; nothing about pricing itself depends on hitting that exact time.
+
+### Pricing a weekly entry (`POST /api/affiliate-videos/:id/views`, CRM admin only)
+```
+delta_views  = max(0, entered_view_count − video.latest_view_count)   // floored at 0, never negative
+→ append a view_snapshots row (view_count = entered_view_count, delta_views), video.latest_view_count = entered_view_count
+→ price it (below), store the result on that row's earned_cents, add it to video.earned_cents
+```
+A video only takes new entries while its campaign is `active` or `paused` and the video itself is
+`approved`. Once a video is `locked` (its campaign ended), entries are rejected — locking is a hard stop,
+not a data-correction point.
+
+### Pricing (per week, walking every campaign's still-unpriced weeks oldest-first)
+```
+qualifies   = min_views_to_qualify is unset OR this week's cumulative view_count >= min_views_to_qualify
+              (cumulative, not per-week: weeks before a video crosses the bar earn 0; the crossing week
+              and every week after earn normally on their own delta)
+raw_cents   = qualifies ? floor(delta_views * effective_cpm_rate_cents / 1000) : 0
+week_cents  = raw_cents, capped so the VIDEO's running total (across all its priced weeks) never exceeds
+              max_payout_per_video_cents, then so the AFFILIATE's running total of their OWN videos never
+              exceeds max_payout_per_affiliate_cents (uplines' override earnings don't count against this
+              cap — only their own posted videos), then so the CAMPAIGN's running total (own earnings +
+              overrides) never exceeds total_budget_cents
+→ add week_cents to videos.earned_cents; store it on the view_snapshots row (earned_cents)
+```
+**Once a week is priced, it's permanent** — a later CPM rate change, cap change, or budget change only
+ever affects weeks priced after it. Nothing ever re-prices an already-priced week. This is what makes
+weekly payment ("creators get paid weekly") safe: money already told to a creator never moves.
+Uplines: identical rule as v3 (below), applied per week instead of per video's lifetime.
+
+### Campaign ending (locks tracking, permanent)
+Setting a campaign's `status` to `ended` immediately locks every one of its still-`approved` videos:
+`status = locked`, `billable_views = latest_view_count`, `locked_at = now`. No more weekly entries are
+possible for them. Setting a campaign to `paused` does **nothing** to its videos — it's a temporary hold:
+paused videos simply drop off the weekly checklist (staff naturally skip them) and pick back up exactly
+where they left off once the campaign is `active` again. There's no reverse cascade if an `ended` campaign
+is somehow reactivated — locked videos stay locked.
+
+### Removed and rejected videos
+A video moved to `removed` (by staff, including the "mark unavailable" action for a deleted/private post)
+keeps whatever `earned_cents` it already has — frozen, exactly like a priced week — and takes no further
+entries. A `rejected` video never earned anything and can't be rejected once any week of it has been paid
+(remove it instead).
+
+### Totals
+```
+earned_cents   (per creator) = Σ videos.earned_cents + Σ override_earnings.amount_cents
+                                (everything approved is immediately earned — paid weekly, no "pending" bucket)
 paid_cents                   = Σ payouts.amount_cents where status = paid
 owed_cents                   = earned_cents − paid_cents
 ```
-
-### Polling (runs inside the existing every-minute `scheduled()` as `affiliateViewsCron(env)`)
-- Each tick picks up to 25 videos with status `approved`, `next_fetch_at <= now`, and `tracking_ends_at > now`.
-- Schedule: every 6 hours for the first 72 hours after submission, then every 24 hours.
-- Once `tracking_ends_at` has passed: take a final fetch, then set `billable_views = latest_view_count`, `status = locked`, `locked_at = now`, and recompute earnings.
-- 3 failures in a row → add a `fetch_failed` flag. If the video is deleted or private → status `removed` and a `video_unavailable` flag. Never zero out earnings automatically.
-- If views jump more than 300% in 24 hours while likes grow less than 0.5% of the new views → add a `suspicious_spike` flag.
-- Providers: YouTube Data API v3 (`YOUTUBE_API_KEY` secret), TikTok and Instagram through OAuth, with Apify as the fallback (`APIFY_TOKEN` secret). Choose the provider per platform with vars `VIEW_PROVIDER_TIKTOK`, `VIEW_PROVIDER_INSTAGRAM` = `oauth` | `scraper`.
+A payout can be created from any priced, unpaid week on an `approved` or `locked` video — not only once a
+video locks. This is what lets a creator be paid every week their videos are checked.
 
 ---
 
@@ -237,11 +257,9 @@ The invite email (sent when an admin adds an affiliate to a campaign) links to `
 POST error codes: `invalid_url`, `unsupported_platform`, `platform_not_allowed`, `duplicate_video`, `campaign_not_active`, `not_assigned`.
 The server follows short links (vm.tiktok.com, youtu.be, instagram share links) before it reads the ID.
 
-### Platform connections (phase 4. Until then `GET` returns `data: []` and `/start` returns `501` with code `not_available`)
-| GET | /connections | → `{ ok, data: [{ platform, platform_username, connected_at }] }` |
-| POST | /connections/:platform/start | → `{ ok, authorize_url }`. The portal sends the browser to that URL |
-| DELETE | /connections/:platform | → `{ ok: true }` |
-The OAuth callback lands on the Worker, which then redirects to `https://affiliate.edgeformmarketing.com/settings.html?connected=<platform>` or `?error=<code>`.
+Platform connections (OAuth for TikTok/Instagram) are retired (v4) — there was never a live provider
+behind them. `/connections`, `/oauth/:platform/*`, and the `creator_platform_connections` table are gone;
+nobody should still be calling them.
 
 ### Earnings and payouts
 | GET | /earnings | → `{ ok, earnings: Earnings }` |
@@ -257,27 +275,28 @@ The OAuth callback lands on the Worker, which then redirects to `https://affilia
 { "id", "name", "status", "start_date", "end_date", "platforms_allowed",
   "cpm_rate_cents",            // effective rate for THIS creator
   "currency", "assignment_status",
-  "video_count", "total_views", "earned_cents", "pending_cents" }
+  "video_count", "total_views", "earned_cents" }   // no more pending_cents (v4): everything approved is already earned
 
 // CampaignDetail = CampaignSummary plus
-{ "brief", "view_tracking_window_days", "min_views_to_qualify",
+{ "brief", "min_views_to_qualify",
   "max_payout_per_video_cents", "requires_video_approval" }
 
 // Video
 { "id", "campaign_id", "submitted_url", "canonical_url", "platform", "thumbnail_url", "caption",
-  "posted_at", "status", "rejection_reason", "submitted_at", "tracking_ends_at", "locked_at",
+  "posted_at", "status", "rejection_reason", "submitted_at", "locked_at",
   "latest_view_count", "billable_views", "earned_cents", "last_fetched_at" }
 
 // Earnings
-{ "currency", "earned_cents", "pending_cents", "paid_cents", "owed_cents",
-  "by_campaign": [ { "campaign_id", "campaign_name", "earned_cents", "pending_cents", "paid_cents", "owed_cents" } ] }
+{ "currency", "earned_cents", "paid_cents", "owed_cents",
+  "by_campaign": [ { "campaign_id", "campaign_name", "earned_cents", "paid_cents", "owed_cents" } ] }
 
 // Payout
 { "id", "period_start", "period_end", "amount_cents", "currency", "status", "payment_method",
   "payment_reference", "paid_at",
-  "line_items": [ { "video_id", "campaign_id", "campaign_name", "canonical_url", "billable_views", "cpm_rate_cents", "amount_cents" } ] }
+  "line_items": [ { "video_id", "campaign_id", "campaign_name", "canonical_url", "billable_views", "cpm_rate_cents", "amount_cents", "week_of" } ] }
 ```
-Never sent to the portal: creator notes, `roster_status`, `payout_details_encrypted`, OAuth tokens, `raw_response`, flags, audit log, other creators' data.
+`week_of` (added v4) is when that week's check happened — each line item is one priced week, not a whole video.
+Never sent to the portal: creator notes, `roster_status`, `payout_details_encrypted`, `raw_response`, flags, audit log, other creators' data.
 
 ---
 
@@ -288,10 +307,10 @@ Never sent to the portal: creator notes, `roster_status`, `payout_details_encryp
 | Campaigns section on marketing operations (Email tab placeholder, Affiliate tab) | Magic-link login and session in localStorage |
 | Add affiliate: choose from Creators, or create one inline (which adds them to Creators) + invite email | Campaign list and detail pages |
 | "Assigned to" column and campaign filter on the Creators list | Add Video flow, with a clear message for every error code |
-| `worker/affiliate.js` serving all of §4 | Video table: status, views, earnings, tracking countdown |
+| `worker/affiliate.js` serving all of §4 | Video table: status, views, earnings |
 | URL parsing, short-link resolving, duplicate check | Earnings dashboard and payout history |
-| View providers + `affiliateViewsCron` + earnings calculation + locking + flags | Settings: profile, payout method, Connect TikTok/Instagram |
-| Admin: video review queue, flags, manual view entry, payouts, CSV export, audit log | `mock-api.js` that follows §4 exactly, turned on with `?mock=1`, so the portal can be built before the CRM API is live |
+| Weekly view entry, pricing, campaign-end locking, flags (all CRM-only, v4 — no portal work here) | Settings: profile, payout method (no account connections, v4) |
+| Admin: video review queue, weekly checklist, flags, payouts, CSV export, audit log | `mock-api.js` that follows §4 exactly, turned on with `?mock=1`, so the portal can be built before the CRM API is live |
 
 **Sync point:** once the CRM's `/api/affiliate/v1` is deployed, the portal's `API_BASE` in `config.js` points at it and nothing else changes.
 
@@ -306,37 +325,37 @@ Each campaign can be an MLM-style tree. Nothing above was renamed or removed. Th
 rank: top_creator | master | general | rookie
 ```
 
-### D1 (migration `0020_affiliate_uplines.sql`)
+### D1 (migration `0020_affiliate_uplines.sql`, `0021_affiliate_manual_views.sql`)
 - `campaign_affiliates.upline_id` TEXT NULL → campaign_affiliates.id (same campaign). NULL = top of a tree.
 - `campaign_affiliates.rank` TEXT NOT NULL DEFAULT 'rookie' (rank enum). Rank is a label; money comes from each person's CPM.
-- `override_earnings`: `id, video_id, campaign_id, campaign_affiliate_id` (the upline who earns), `creator_id, source_campaign_affiliate_id` (who posted), `depth, cpm_diff_cents, amount_cents`. UNIQUE(video_id, campaign_affiliate_id).
-- `payout_override_items`: `id, payout_id, video_id, campaign_affiliate_id, campaign_id, source_campaign_affiliate_id, billable_views, cpm_diff_cents, amount_cents`. UNIQUE(video_id, campaign_affiliate_id).
+- `override_earnings`: `id, view_snapshot_id, video_id, campaign_id, campaign_affiliate_id` (the upline who earns), `creator_id, source_campaign_affiliate_id` (who posted), `depth, cpm_diff_cents, amount_cents`. UNIQUE(view_snapshot_id, campaign_affiliate_id) (v4; was UNIQUE(video_id, campaign_affiliate_id) — an upline now earns an override per priced WEEK of a downline's video, not once per video). `view_snapshot_id` is NULL on rows from before v4.
+- `payout_override_items`: `id, payout_id, view_snapshot_id, video_id, campaign_affiliate_id, campaign_id, source_campaign_affiliate_id, billable_views, cpm_diff_cents, amount_cents`. UNIQUE(view_snapshot_id, campaign_affiliate_id) (v4, same reason).
 
-### Override formula
+### Override formula (v4: priced per week, alongside the poster's own earnings in §3)
 ```
-for each earning video, walk up the poster's upline chain (removed uplines are skipped):
+for each priced week, walk up the poster's upline chain (removed uplines are skipped):
   highest = poster's effective CPM
-  for each upline: diff = upline CPM − highest; if diff > 0 the upline earns floor(views × diff / 1000)
+  for each upline: diff = upline CPM − highest; if diff > 0 the upline earns floor(delta_views × diff / 1000)
                    highest = max(highest, upline CPM)
-→ equal (or lower) CPM earns $0; everything paid on a video adds up to the highest CPM in its chain
-min_views_to_qualify applies to overrides too; overrides count toward total_budget_cents (oldest video first).
-Status follows the video: locked = earned, approved = pending.
+→ equal (or lower) CPM earns $0; everything paid on a week adds up to the highest CPM in its chain
+min_views_to_qualify applies to overrides too (cumulative, per §3); overrides count toward total_budget_cents,
+oldest week first, alongside own earnings — but NOT toward max_payout_per_affiliate_cents (that only caps a
+person's own posted videos). Once priced, an override is permanent, same as own earnings (§3).
 
-override_earned_cents  = Σ overrides on locked videos
-override_pending_cents = Σ overrides on approved videos
-owed_cents             = earned_cents + override_earned_cents − paid_cents     (changed: now includes overrides)
+override_earned_cents = Σ override_earnings.amount_cents   (no more locked/approved split — always earned once priced)
+owed_cents             = earned_cents + override_earned_cents − paid_cents
 ```
-Example: rookie at $1.50, upline at $2.00. The rookie's 1K views pay the rookie $1.50 and the upline $0.50. The upline's own 1K views pay the upline $2.00.
+Example: rookie at $1.50, upline at $2.00. The rookie's 1K new views this week pay the rookie $1.50 and the upline $0.50. The upline's own 1K views pay the upline $2.00.
 
 ### API additions
-- `CampaignSummary` / `CampaignDetail` add: `rank`, `override_earned_cents`, `override_pending_cents`.
-- `Earnings` adds: `override_earned_cents`, `override_pending_cents` (top level and in each `by_campaign` row). `owed_cents` uses the formula above.
-- `Payout` adds `override_items: [ { video_id, campaign_id, campaign_name, canonical_url, from_name, billable_views, cpm_diff_cents, amount_cents } ]`. `from_name` = the downline member who posted. `amount_cents` of the payout = Σ line_items + Σ override_items.
+- `CampaignSummary` / `CampaignDetail` add: `rank`, `override_earned_cents`.
+- `Earnings` adds: `override_earned_cents` (top level and in each `by_campaign` row). `owed_cents` uses the formula above.
+- `Payout` adds `override_items: [ { video_id, campaign_id, campaign_name, canonical_url, from_name, billable_views, cpm_diff_cents, amount_cents, week_of } ]`. `from_name` = the downline member who posted. `amount_cents` of the payout = Σ line_items + Σ override_items.
 - New: `GET /campaigns/:id/team` → `{ ok, team: TeamNode }`: the caller and their downline only (never their upline, never contact details).
 ```jsonc
 // TeamNode (the root is the caller, level 0)
 { "id", "name", "rank", "cpm_rate_cents", "status", "level", "video_count", "total_views",
-  "your_override_earned_cents", "your_override_pending_cents",   // what the CALLER earned from this person's own videos (0 on the root)
+  "your_override_earned_cents",   // what the CALLER earned from this person's own videos (0 on the root)
   "downline": [ TeamNode ] }
 ```
 Errors: same as `GET /campaigns/:id` (`not_found` when not assigned).

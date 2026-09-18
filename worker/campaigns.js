@@ -48,19 +48,17 @@ function readCampaign(body, existing = {}) {
     max_payout_per_video_cents: wholeNumber(pick('maxPayoutPerVideoCents', 'max_payout_per_video_cents'), 'Max per video'),
     max_payout_per_affiliate_cents: wholeNumber(pick('maxPayoutPerAffiliateCents', 'max_payout_per_affiliate_cents'), 'Max per affiliate'),
     total_budget_cents: wholeNumber(pick('totalBudgetCents', 'total_budget_cents'), 'Total budget'),
-    view_tracking_window_days: wholeNumber(pick('viewTrackingWindowDays', 'view_tracking_window_days') ?? 30, 'Tracking window', { nullable: false, max: 365 }),
     min_views_to_qualify: wholeNumber(pick('minViewsToQualify', 'min_views_to_qualify'), 'Minimum views'),
     requires_video_approval: (body.requiresVideoApproval === undefined ? existing.requires_video_approval ?? 1 : body.requiresVideoApproval) ? 1 : 0
   };
-  if (fields.view_tracking_window_days < 1) throw new HttpError(400, 'Tracking window must be at least 1 day.');
   if (fields.start_date && fields.end_date && fields.end_date < fields.start_date) throw new HttpError(400, 'End date is before the start date.');
   return fields;
 }
 
-// owed = own earned + overrides earned − paid.
+// owed = own earned + overrides earned − paid. Everything approved is immediately earned (paid weekly).
 const statsJson = (r) => ({
-  videoCount: r.video_count, views: r.total_views, earnedCents: r.earned_cents, pendingCents: r.pending_cents,
-  overrideEarnedCents: r.override_earned_cents, overridePendingCents: r.override_pending_cents,
+  videoCount: r.video_count, views: r.total_views, earnedCents: r.earned_cents,
+  overrideEarnedCents: r.override_earned_cents,
   paidCents: r.paid_cents, owedCents: r.earned_cents + r.override_earned_cents - r.paid_cents
 });
 
@@ -69,12 +67,12 @@ function campaignJson(c) {
     id: c.id, operationId: c.operation_id, name: c.name, brief: c.brief, status: c.status, startDate: c.start_date, endDate: c.end_date,
     platformsAllowed: parseJson(c.platforms_allowed, []), defaultCpmRateCents: c.default_cpm_rate_cents, currency: c.currency,
     maxPayoutPerVideoCents: c.max_payout_per_video_cents, maxPayoutPerAffiliateCents: c.max_payout_per_affiliate_cents,
-    totalBudgetCents: c.total_budget_cents, viewTrackingWindowDays: c.view_tracking_window_days, minViewsToQualify: c.min_views_to_qualify,
+    totalBudgetCents: c.total_budget_cents, minViewsToQualify: c.min_views_to_qualify,
     requiresVideoApproval: c.requires_video_approval === 1, createdBy: c.created_by, createdAt: c.created_at, updatedAt: c.updated_at,
     channels: parseJson(c.channels, []).filter(Boolean),
     affiliateCount: c.affiliate_count ?? 0, videoCount: c.video_count ?? 0, pendingReview: c.pending_review ?? 0, openFlags: c.open_flags ?? 0,
-    views: c.total_views ?? 0, earnedCents: c.earned_cents ?? 0, pendingCents: c.pending_cents ?? 0,
-    overrideEarnedCents: c.override_earned_cents ?? 0, overridePendingCents: c.override_pending_cents ?? 0
+    views: c.total_views ?? 0, earnedCents: c.earned_cents ?? 0,
+    overrideEarnedCents: c.override_earned_cents ?? 0
   };
 }
 
@@ -84,11 +82,9 @@ const CAMPAIGN_SQL = `SELECT c.*,
     (SELECT COUNT(*) FROM videos v WHERE v.campaign_id = c.id) video_count,
     (SELECT COUNT(*) FROM videos v WHERE v.campaign_id = c.id AND v.status = 'pending_review') pending_review,
     (SELECT COUNT(*) FROM video_flags f JOIN videos v ON v.id = f.video_id WHERE v.campaign_id = c.id AND f.resolved_at IS NULL) open_flags,
-    (SELECT COALESCE(SUM(CASE v.status WHEN 'locked' THEN v.billable_views WHEN 'approved' THEN v.latest_view_count ELSE 0 END), 0) FROM videos v WHERE v.campaign_id = c.id) total_views,
-    (SELECT COALESCE(SUM(v.earned_cents), 0) FROM videos v WHERE v.campaign_id = c.id AND v.status = 'locked') earned_cents,
-    (SELECT COALESCE(SUM(v.earned_cents), 0) FROM videos v WHERE v.campaign_id = c.id AND v.status = 'approved') pending_cents,
-    (SELECT COALESCE(SUM(oe.amount_cents), 0) FROM override_earnings oe JOIN videos v ON v.id = oe.video_id WHERE oe.campaign_id = c.id AND v.status = 'locked') override_earned_cents,
-    (SELECT COALESCE(SUM(oe.amount_cents), 0) FROM override_earnings oe JOIN videos v ON v.id = oe.video_id WHERE oe.campaign_id = c.id AND v.status = 'approved') override_pending_cents
+    (SELECT COALESCE(SUM(v.latest_view_count), 0) FROM videos v WHERE v.campaign_id = c.id) total_views,
+    (SELECT COALESCE(SUM(v.earned_cents), 0) FROM videos v WHERE v.campaign_id = c.id) earned_cents,
+    (SELECT COALESCE(SUM(oe.amount_cents), 0) FROM override_earnings oe WHERE oe.campaign_id = c.id) override_earned_cents
   FROM campaigns c`;
 
 function affiliateJson(a) {
@@ -99,8 +95,7 @@ function affiliateJson(a) {
     creator: {
       id: a.creator_id, name: a.creator_name, email: a.creator_email, instagram: a.instagram, tiktok: a.tiktok, youtube: a.youtube,
       payoutMethod: a.payout_method || '', payoutDetailsLast4: a.payout_details_last4 || '', taxFormReceived: a.tax_form_received === 1,
-      portalLastLoginAt: a.portal_last_login_at,
-      connections: String(a.connections || '').split(',').filter(Boolean).map(x => { const [platform, ...name] = x.split(':'); return { platform, username: name.join(':') }; })
+      portalLastLoginAt: a.portal_last_login_at
     },
     ...statsJson(a)
   };
@@ -108,7 +103,6 @@ function affiliateJson(a) {
 
 const AFFILIATES_SQL = `SELECT ca.*, c.default_cpm_rate_cents, cr.name creator_name, cr.email creator_email, cr.instagram, cr.tiktok, cr.youtube,
     cr.payout_method, cr.payout_details_last4, cr.tax_form_received, cr.portal_last_login_at,
-    (SELECT group_concat(pc.platform || ':' || pc.platform_username) FROM creator_platform_connections pc WHERE pc.creator_id = ca.creator_id AND pc.revoked_at IS NULL) connections,
     ${ASSIGNMENT_STATS_SQL}
   FROM campaign_affiliates ca JOIN campaigns c ON c.id = ca.campaign_id JOIN creators cr ON cr.id = ca.creator_id`;
 
@@ -178,10 +172,17 @@ async function updateCampaign(request, env, headers, [id]) {
   audit('rate_changed', ['default_cpm_rate_cents']);
   audit('caps_changed', ['max_payout_per_video_cents', 'max_payout_per_affiliate_cents', 'total_budget_cents', 'min_views_to_qualify']);
   audit('status_changed', ['status']);
+  // Ending a campaign permanently locks its still-tracking videos: final views frozen, no more weekly
+  // entries taken. Pausing is a temporary hold and doesn't touch videos at all.
+  const justEnded = existing.status !== 'ended' && fields.status === 'ended';
+  if (justEnded) {
+    statements.push(env.DB.prepare(`UPDATE videos SET status = 'locked', billable_views = latest_view_count, locked_at = ?
+      WHERE campaign_id = ? AND status = 'approved'`).bind(now(), id));
+  }
   await env.DB.batch(statements);
   const moneyChanged = ['default_cpm_rate_cents', 'max_payout_per_video_cents', 'max_payout_per_affiliate_cents', 'total_budget_cents', 'min_views_to_qualify']
     .some(k => existing[k] !== fields[k]);
-  if (moneyChanged) await recomputeCampaign(env, id);
+  if (moneyChanged || justEnded) await recomputeCampaign(env, id);
   return json({ ok: true, campaign: await campaignDetail(env, id) }, 200, headers);
 }
 
