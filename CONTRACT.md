@@ -294,3 +294,49 @@ Never sent to the portal: creator notes, `roster_status`, `payout_details_encryp
 | Admin: video review queue, flags, manual view entry, payouts, CSV export, audit log | `mock-api.js` that follows §4 exactly, turned on with `?mock=1`, so the portal can be built before the CRM API is live |
 
 **Sync point:** once the CRM's `/api/affiliate/v1` is deployed, the portal's `API_BASE` in `config.js` points at it and nothing else changes.
+
+---
+
+## 6. Uplines and ranks (added in v3, additive only)
+
+Each campaign can be an MLM-style tree. Nothing above was renamed or removed. These are new keys, a new endpoint, and one formula change: `owed_cents` now includes overrides.
+
+### New enum
+```
+rank: top_creator | master | general | rookie
+```
+
+### D1 (migration `0020_affiliate_uplines.sql`)
+- `campaign_affiliates.upline_id` TEXT NULL → campaign_affiliates.id (same campaign). NULL = top of a tree.
+- `campaign_affiliates.rank` TEXT NOT NULL DEFAULT 'rookie' (rank enum). Rank is a label; money comes from each person's CPM.
+- `override_earnings`: `id, video_id, campaign_id, campaign_affiliate_id` (the upline who earns), `creator_id, source_campaign_affiliate_id` (who posted), `depth, cpm_diff_cents, amount_cents`. UNIQUE(video_id, campaign_affiliate_id).
+- `payout_override_items`: `id, payout_id, video_id, campaign_affiliate_id, campaign_id, source_campaign_affiliate_id, billable_views, cpm_diff_cents, amount_cents`. UNIQUE(video_id, campaign_affiliate_id).
+
+### Override formula
+```
+for each earning video, walk up the poster's upline chain (removed uplines are skipped):
+  highest = poster's effective CPM
+  for each upline: diff = upline CPM − highest; if diff > 0 the upline earns floor(views × diff / 1000)
+                   highest = max(highest, upline CPM)
+→ equal (or lower) CPM earns $0; everything paid on a video adds up to the highest CPM in its chain
+min_views_to_qualify applies to overrides too; overrides count toward total_budget_cents (oldest video first).
+Status follows the video: locked = earned, approved = pending.
+
+override_earned_cents  = Σ overrides on locked videos
+override_pending_cents = Σ overrides on approved videos
+owed_cents             = earned_cents + override_earned_cents − paid_cents     (changed: now includes overrides)
+```
+Example: rookie at $1.50, upline at $2.00. The rookie's 1K views pay the rookie $1.50 and the upline $0.50. The upline's own 1K views pay the upline $2.00.
+
+### API additions
+- `CampaignSummary` / `CampaignDetail` add: `rank`, `override_earned_cents`, `override_pending_cents`.
+- `Earnings` adds: `override_earned_cents`, `override_pending_cents` (top level and in each `by_campaign` row). `owed_cents` uses the formula above.
+- `Payout` adds `override_items: [ { video_id, campaign_id, campaign_name, canonical_url, from_name, billable_views, cpm_diff_cents, amount_cents } ]`. `from_name` = the downline member who posted. `amount_cents` of the payout = Σ line_items + Σ override_items.
+- New: `GET /campaigns/:id/team` → `{ ok, team: TeamNode }`: the caller and their downline only (never their upline, never contact details).
+```jsonc
+// TeamNode (the root is the caller, level 0)
+{ "id", "name", "rank", "cpm_rate_cents", "status", "level", "video_count", "total_views",
+  "your_override_earned_cents", "your_override_pending_cents",   // what the CALLER earned from this person's own videos (0 on the root)
+  "downline": [ TeamNode ] }
+```
+Errors: same as `GET /campaigns/:id` (`not_found` when not assigned).

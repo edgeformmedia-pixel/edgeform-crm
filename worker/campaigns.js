@@ -2,7 +2,7 @@ import { json, HttpError, clean, now, readJson, isEmail } from './lib.js';
 import { requireUser, requireAdmin } from './auth.js';
 import { sendEmail } from './email.js';
 import {
-  PLATFORMS, CAMPAIGN_STATUSES, ASSIGNMENT_STATUSES, PORTAL_URL, ASSIGNMENT_STATS_SQL, parseJson, recomputeCampaign, auditStatement
+  PLATFORMS, CAMPAIGN_STATUSES, ASSIGNMENT_STATUSES, RANKS, PORTAL_URL, ASSIGNMENT_STATS_SQL, parseJson, recomputeCampaign, auditStatement
 } from './affiliate-lib.js';
 
 // Admin side of affiliate campaigns (camelCase JSON, like the rest of the admin API).
@@ -57,9 +57,11 @@ function readCampaign(body, existing = {}) {
   return fields;
 }
 
+// owed = own earned + overrides earned − paid.
 const statsJson = (r) => ({
   videoCount: r.video_count, views: r.total_views, earnedCents: r.earned_cents, pendingCents: r.pending_cents,
-  paidCents: r.paid_cents, owedCents: r.earned_cents - r.paid_cents
+  overrideEarnedCents: r.override_earned_cents, overridePendingCents: r.override_pending_cents,
+  paidCents: r.paid_cents, owedCents: r.earned_cents + r.override_earned_cents - r.paid_cents
 });
 
 function campaignJson(c) {
@@ -71,7 +73,8 @@ function campaignJson(c) {
     requiresVideoApproval: c.requires_video_approval === 1, createdBy: c.created_by, createdAt: c.created_at, updatedAt: c.updated_at,
     channels: parseJson(c.channels, []).filter(Boolean),
     affiliateCount: c.affiliate_count ?? 0, videoCount: c.video_count ?? 0, pendingReview: c.pending_review ?? 0, openFlags: c.open_flags ?? 0,
-    views: c.total_views ?? 0, earnedCents: c.earned_cents ?? 0, pendingCents: c.pending_cents ?? 0
+    views: c.total_views ?? 0, earnedCents: c.earned_cents ?? 0, pendingCents: c.pending_cents ?? 0,
+    overrideEarnedCents: c.override_earned_cents ?? 0, overridePendingCents: c.override_pending_cents ?? 0
   };
 }
 
@@ -83,12 +86,14 @@ const CAMPAIGN_SQL = `SELECT c.*,
     (SELECT COUNT(*) FROM video_flags f JOIN videos v ON v.id = f.video_id WHERE v.campaign_id = c.id AND f.resolved_at IS NULL) open_flags,
     (SELECT COALESCE(SUM(CASE v.status WHEN 'locked' THEN v.billable_views WHEN 'approved' THEN v.latest_view_count ELSE 0 END), 0) FROM videos v WHERE v.campaign_id = c.id) total_views,
     (SELECT COALESCE(SUM(v.earned_cents), 0) FROM videos v WHERE v.campaign_id = c.id AND v.status = 'locked') earned_cents,
-    (SELECT COALESCE(SUM(v.earned_cents), 0) FROM videos v WHERE v.campaign_id = c.id AND v.status = 'approved') pending_cents
+    (SELECT COALESCE(SUM(v.earned_cents), 0) FROM videos v WHERE v.campaign_id = c.id AND v.status = 'approved') pending_cents,
+    (SELECT COALESCE(SUM(oe.amount_cents), 0) FROM override_earnings oe JOIN videos v ON v.id = oe.video_id WHERE oe.campaign_id = c.id AND v.status = 'locked') override_earned_cents,
+    (SELECT COALESCE(SUM(oe.amount_cents), 0) FROM override_earnings oe JOIN videos v ON v.id = oe.video_id WHERE oe.campaign_id = c.id AND v.status = 'approved') override_pending_cents
   FROM campaigns c`;
 
 function affiliateJson(a) {
   return {
-    id: a.id, campaignId: a.campaign_id, creatorId: a.creator_id, status: a.status,
+    id: a.id, campaignId: a.campaign_id, creatorId: a.creator_id, status: a.status, rank: a.rank, uplineId: a.upline_id,
     cpmRateOverrideCents: a.cpm_rate_override_cents, effectiveCpmRateCents: a.cpm_rate_override_cents ?? a.default_cpm_rate_cents,
     invitedAt: a.invited_at, joinedAt: a.joined_at, createdAt: a.created_at,
     creator: {
@@ -198,6 +203,26 @@ async function deleteCampaign(request, env, headers, [id]) {
 
 // ── Affiliates ──
 
+// An upline must be in the same campaign, not removed, and not below this affiliate in the tree.
+async function checkUpline(env, campaignId, uplineId, selfId = null) {
+  if (uplineId === null || uplineId === undefined || uplineId === '') return null;
+  const rows = (await env.DB.prepare('SELECT id, upline_id, status FROM campaign_affiliates WHERE campaign_id = ?').bind(campaignId).all()).results;
+  const byId = new Map(rows.map(r => [r.id, r]));
+  const upline = byId.get(uplineId);
+  if (!upline) throw new HttpError(400, 'That upline isn’t in this campaign.');
+  if (upline.status === 'removed') throw new HttpError(400, 'That upline was removed from the campaign.');
+  for (let cur = upline, hops = 0; cur && hops < 100; cur = byId.get(cur.upline_id), hops++) {
+    if (cur.id === selfId) throw new HttpError(400, 'Someone can’t be placed under their own downline.');
+  }
+  return uplineId;
+}
+
+function readRank(value, fallback = 'rookie') {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (!RANKS.includes(value)) throw new HttpError(400, `Rank must be one of: ${RANKS.join(', ')}.`);
+  return value;
+}
+
 async function sendInvite(env, creator, campaign, rateCents) {
   const first = String(creator.name || '').split(' ')[0] || 'there';
   await sendEmail(env, {
@@ -234,6 +259,8 @@ async function addAffiliate(request, env, headers, [campaignId]) {
   if (!campaign) throw new HttpError(404, 'Campaign not found.');
   const body = await readJson(request);
   const override = wholeNumber(body.cpmRateOverrideCents, 'CPM override');
+  const rank = readRank(body.rank);
+  const uplineId = await checkUpline(env, campaignId, body.uplineId);
 
   let creator;
   if (body.creatorId) {
@@ -250,14 +277,15 @@ async function addAffiliate(request, env, headers, [campaignId]) {
   const id = existing?.id || crypto.randomUUID();
   await env.DB.batch([
     existing
-      ? env.DB.prepare("UPDATE campaign_affiliates SET status = 'invited', cpm_rate_override_cents = ?, updated_at = ? WHERE id = ?").bind(override, stamp, id)
-      : env.DB.prepare(`INSERT INTO campaign_affiliates (id, campaign_id, creator_id, cpm_rate_override_cents, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, 'invited', ?, ?)`).bind(id, campaignId, creator.id, override, stamp, stamp),
+      ? env.DB.prepare("UPDATE campaign_affiliates SET status = 'invited', cpm_rate_override_cents = ?, rank = ?, upline_id = ?, updated_at = ? WHERE id = ?").bind(override, rank, uplineId, stamp, id)
+      : env.DB.prepare(`INSERT INTO campaign_affiliates (id, campaign_id, creator_id, cpm_rate_override_cents, rank, upline_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, 'invited', ?, ?)`).bind(id, campaignId, creator.id, override, rank, uplineId, stamp, stamp),
     auditStatement(env, {
       actorType: 'user', actorId: user.id, entityType: 'campaign_affiliate', entityId: id, action: 'affiliate_added',
-      after: { campaign_id: campaignId, creator_id: creator.id, cpm_rate_override_cents: override }
+      after: { campaign_id: campaignId, creator_id: creator.id, cpm_rate_override_cents: override, rank, upline_id: uplineId }
     })
   ]);
+  if (uplineId) await recomputeCampaign(env, campaignId);
 
   let inviteError = null;
   try {
@@ -281,6 +309,8 @@ async function updateAffiliate(request, env, headers, [id]) {
     if (!ASSIGNMENT_STATUSES.includes(body.status)) throw new HttpError(400, 'Invalid affiliate status.');
     fields.status = body.status;
   }
+  if (body.rank !== undefined) fields.rank = readRank(body.rank);
+  if (body.uplineId !== undefined) fields.upline_id = await checkUpline(env, existing.campaign_id, body.uplineId, id);
   if (!Object.keys(fields).length) throw new HttpError(400, 'Nothing to update.');
   const statements = [env.DB.prepare(`UPDATE campaign_affiliates SET ${Object.keys(fields).map(k => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
     .bind(...Object.values(fields), now(), id)];
@@ -297,8 +327,37 @@ async function updateAffiliate(request, env, headers, [id]) {
       before: { status: existing.status }, after: { status: fields.status }
     }));
   }
+  if ('rank' in fields && fields.rank !== existing.rank) {
+    const up = RANKS.indexOf(fields.rank) < RANKS.indexOf(existing.rank);
+    statements.push(auditStatement(env, {
+      actorType: 'user', actorId: user.id, entityType: 'campaign_affiliate', entityId: id, action: up ? 'promoted' : 'rank_changed',
+      before: { rank: existing.rank }, after: { rank: fields.rank }
+    }));
+  }
+  // Removing someone rolls their recruits up to that person's upline, so nobody is left hanging off a removed node.
+  if (fields.status === 'removed' && existing.status !== 'removed') {
+    const recruits = (await env.DB.prepare('SELECT id FROM campaign_affiliates WHERE upline_id = ?').bind(id).all()).results;
+    if (recruits.length) {
+      const newUpline = 'upline_id' in fields ? fields.upline_id : existing.upline_id;
+      statements.push(
+        env.DB.prepare('UPDATE campaign_affiliates SET upline_id = ?, updated_at = ? WHERE upline_id = ?').bind(newUpline, now(), id),
+        auditStatement(env, {
+          actorType: 'user', actorId: user.id, entityType: 'campaign_affiliate', entityId: id, action: 'recruits_rolled_up',
+          after: { recruits: recruits.map(r => r.id), new_upline_id: newUpline }
+        })
+      );
+    }
+  }
+  const uplineChanged = 'upline_id' in fields && fields.upline_id !== existing.upline_id;
+  if (uplineChanged) {
+    statements.push(auditStatement(env, {
+      actorType: 'user', actorId: user.id, entityType: 'campaign_affiliate', entityId: id, action: 'upline_changed',
+      before: { upline_id: existing.upline_id }, after: { upline_id: fields.upline_id }
+    }));
+  }
   await env.DB.batch(statements);
-  if (rateChanged) await recomputeCampaign(env, existing.campaign_id);
+  // Status matters too: removed uplines are skipped in the chain.
+  if (rateChanged || uplineChanged || ('status' in fields && fields.status !== existing.status)) await recomputeCampaign(env, existing.campaign_id);
   const affiliate = await env.DB.prepare(`${AFFILIATES_SQL} WHERE ca.id = ?`).bind(id).first();
   return json({ ok: true, affiliate: affiliateJson(affiliate) }, 200, headers);
 }

@@ -61,3 +61,38 @@
 
 @media (max-width: 1100px) { .cmp-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .cmp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cmp-title h1 { font-size: 21px; } }
+
+/* ── Team pyramid ── */
+.pyr { position: relative; padding: 18px 12px 22px; overflow-x: auto; }
+.pyr-lines { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 1; }
+.pyr-band { position: relative; margin: 0 auto 10px; padding: 26px 16px 14px; min-height: 92px; }
+.pyr-band::before { content: ''; position: absolute; inset: 0; background: var(--band); opacity: .5; clip-path: polygon(6% 0, 94% 0, 100% 100%, 0 100%); border-radius: 6px; }
+.pyr-band-top_creator { width: 46%; --band: rgba(212,160,23,.18); }
+.pyr-band-master { width: 64%; --band: rgba(123,108,255,.14); }
+.pyr-band-general { width: 82%; --band: rgba(61,200,255,.13); }
+.pyr-band-rookie { width: 100%; --band: rgba(61,255,160,.11); }
+.pyr-band-label { position: absolute; top: 7px; left: 0; right: 0; text-align: center; font-family: var(--mono); font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); z-index: 2; }
+.pyr-row { position: relative; z-index: 2; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.pyr-empty { font-family: var(--mono); font-size: 10px; color: var(--text-muted); padding: 10px; }
+.pyr-node { position: relative; min-width: 128px; max-width: 170px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--border-hi); background: var(--surface); cursor: pointer; text-align: center; font: inherit; color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); transition: transform .12s, border-color .12s; }
+.pyr-node:hover, .pyr-node:focus-visible { transform: translateY(-2px); border-color: var(--accent); outline: none; }
+.pyr-node b { display: block; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pyr-node .pyr-cpm { font-family: var(--mono); font-size: 11px; color: var(--accent-bright); margin-top: 2px; }
+.pyr-node .pyr-sub { font-family: var(--mono); font-size: 9px; color: var(--text-muted); margin-top: 3px; }
+.pyr-node.invited { border-style: dashed; }
+.pyr-node.rank-top_creator { border-top: 3px solid #d4a017; }
+.pyr-node.rank-master { border-top: 3px solid var(--accent); }
+.pyr-node.rank-general { border-top: 3px solid var(--blue); }
+.pyr-node.rank-rookie { border-top: 3px solid var(--green); }
+.pyr-node.warn::after { content: '!'; position: absolute; top: -7px; right: -7px; width: 16px; height: 16px; border-radius: 50%; background: var(--orange); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; }
+.pyr-legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 0 18px 14px; font-family: var(--mono); font-size: 10px; color: var(--text-muted); }
+.pyr-legend i { display: inline-block; width: 22px; height: 0; border-top: 2px solid var(--accent); vertical-align: middle; margin-right: 6px; }
+.pyr-legend i.zero { border-top: 2px dashed var(--text-muted); }
+.rank-chip-top_creator { color: #b8860b; border-color: rgba(212,160,23,.4); background: rgba(212,160,23,.1); }
+.person-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.person-stats div { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; }
+.person-stats span { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.person-stats b { font-size: 15px; }
+.person-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.person-row .c-field { flex: 1; min-width: 150px; margin: 0; }
+@media (max-width: 700px) { .pyr-band { width: 100% !important; } .pyr-band::before { clip-path: none; } .pyr-node { min-width: 110px; } }

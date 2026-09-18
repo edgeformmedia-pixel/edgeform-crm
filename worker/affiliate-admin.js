@@ -12,7 +12,8 @@ const VIDEO_SQL = `SELECT v.*, cr.name creator_name, cr.email creator_email, cr.
     COALESCE(ca.cpm_rate_override_cents, c.default_cpm_rate_cents) cpm_rate_cents,
     (SELECT json_group_array(json_object('id', f.id, 'type', f.type, 'details', f.details, 'createdAt', f.created_at))
        FROM video_flags f WHERE f.video_id = v.id AND f.resolved_at IS NULL) open_flags,
-    (SELECT li.payout_id FROM payout_line_items li WHERE li.video_id = v.id) payout_id,
+    COALESCE((SELECT li.payout_id FROM payout_line_items li WHERE li.video_id = v.id),
+      (SELECT poi.payout_id FROM payout_override_items poi WHERE poi.video_id = v.id LIMIT 1)) payout_id,
     u.name approved_by_name
   FROM videos v JOIN creators cr ON cr.id = v.creator_id JOIN campaigns c ON c.id = v.campaign_id
   JOIN campaign_affiliates ca ON ca.id = v.campaign_affiliate_id LEFT JOIN users u ON u.id = v.approved_by`;

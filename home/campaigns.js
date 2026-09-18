@@ -134,6 +134,10 @@ function ensureCampaignModals() {
         <div class="ops-hint">Saved to Creators too (added by hand).</div>
         <button class="action-btn primary" style="margin-top:12px;" onclick="addAffiliate()">Add and send invite</button>
       </div>
+      <div class="ops-form-grid" style="margin-top:14px;">
+        <div class="c-field"><label>Rank</label><select class="c-input" id="aff-rank"><option value="top_creator">Top Creator</option><option value="master">Master</option><option value="general">General</option><option value="rookie">Rookie</option></select></div>
+        <div class="c-field"><label>Upline (who recruited them)</label><select class="c-input" id="aff-upline"></select></div>
+      </div>
       <div class="c-field" style="margin-top:14px;"><label>Their pay per 1,000 views (optional)</label><div class="cmp-money"><input class="c-input" id="aff-override" inputmode="decimal" placeholder="Campaign rate"></div>
         <div class="ops-hint">Leave blank to use the campaign's rate. Adding someone emails them an invite to affiliate.edgeformmarketing.com.</div></div>
       <div class="email-msg" id="aff-msg"></div>
@@ -287,6 +291,7 @@ function renderCampaignView() {
       <div class="cmp-kpi"><div class="cmp-kpi-label">Still counting</div><div class="cmp-kpi-val">${cmpMoney(c.pendingCents)}</div><div class="cmp-kpi-sub">estimated</div></div>
       <div class="cmp-kpi"><div class="cmp-kpi-label">Owed</div><div class="cmp-kpi-val">${cmpMoney(owed)}</div><div class="cmp-kpi-sub">earned − paid</div></div>
     </div>
+    ${pyramidPanelHtml(c)}
     ${affiliatesPanelHtml(c)}
     ${typeof campaignVideosPanelHtml === 'function' ? campaignVideosPanelHtml(c) : ''}
     <div class="panel cmp-panel"><div class="panel-head"><span class="panel-title">Brief</span></div>
@@ -301,6 +306,8 @@ function affiliatesPanelHtml(c) {
       <td><div class="cmp-who"><b>${esc(a.creator.name)}</b><span>${esc(a.creator.email || 'no email')}</span>
         ${a.creator.payoutMethod ? `<span>Pays via ${esc(a.creator.payoutMethod)}${a.creator.payoutDetailsLast4 ? ' ••' + esc(a.creator.payoutDetailsLast4) : ''}</span>` : ''}
         ${a.creator.connections.length ? `<span>Connected: ${a.creator.connections.map(x => `${esc(CMP_PLATFORMS[x.platform] || x.platform)} @${esc(x.username)}`).join(', ')}</span>` : ''}</div></td>
+      <td><span class="chip ${RANK_CHIP[a.rank] || 'chip-muted'}">${esc(RANK_LABEL[a.rank] || a.rank)}</span>
+        <div class="feed-time">${a.uplineId ? 'under ' + esc(c.affiliates.find(x => x.id === a.uplineId)?.creator.name || '—') : 'top of tree'}</div></td>
       <td><span class="chip ${AFF_STATUS_CHIP[a.status] || 'chip-muted'}">${esc(a.status)}</span>
         ${a.status === 'invited' ? `<div class="feed-time">${a.invitedAt ? 'Invited ' + fmtDate(a.invitedAt) : 'Invite not sent'}</div>` : ''}</td>
       <td><div class="cmp-rate"><div class="cmp-money"><input class="c-input" inputmode="decimal" value="${esc(cmpDollarInput(a.cpmRateOverrideCents))}" placeholder="${esc(cmpDollarInput(c.defaultCpmRateCents))}" data-id="${id}" onchange="setAffiliateRate(this)" title="Blank = campaign rate"></div><small>${a.cpmRateOverrideCents === null ? 'default' : 'custom'}</small></div></td>
@@ -308,6 +315,7 @@ function affiliatesPanelHtml(c) {
       <td class="num">${cmpNum(a.views)}</td>
       <td class="num">${cmpMoney(a.earnedCents)}</td>
       <td class="num">${cmpMoney(a.pendingCents)}</td>
+      <td class="num">${cmpMoney(a.overrideEarnedCents)}<div class="feed-time">+${cmpMoney(a.overridePendingCents)} counting</div></td>
       <td class="num">${cmpMoney(a.paidCents)}</td>
       <td class="num strong">${cmpMoney(a.owedCents)}</td>
       <td><div class="cmp-row-actions">
@@ -322,7 +330,7 @@ function affiliatesPanelHtml(c) {
     <div class="panel-head"><span class="panel-title">Affiliates</span>
       <div class="cmp-panel-actions"><button class="action-btn" onclick="exportCampaignCsv()">Export CSV</button><button class="action-btn primary" onclick="openAffiliateForm()">+ Add affiliate</button></div></div>
     ${c.affiliates.length ? `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr>
-      <th>Affiliate</th><th>Status</th><th>CPM</th><th class="num">Videos</th><th class="num">Views</th><th class="num">Earned</th><th class="num">Pending</th><th class="num">Paid</th><th class="num">Owed</th><th></th>
+      <th>Affiliate</th><th>Rank</th><th>Status</th><th>CPM</th><th class="num">Videos</th><th class="num">Views</th><th class="num">Earned</th><th class="num">Pending</th><th class="num">Team overrides</th><th class="num">Paid</th><th class="num">Owed</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="cmp-empty">No affiliates yet. Add a creator to send them an invite.</div>'}
     <div class="email-msg" id="cmp-aff-msg" style="margin:0 18px 14px;"></div>
   </div>`;
@@ -371,16 +379,23 @@ function exportCampaignCsv() {
   const c = cmpCurrent;
   const d = (cents) => (cents / 100).toFixed(2);
   downloadCsv(`${c.name.replace(/[^\w-]+/g, '-').toLowerCase()}-affiliates.csv`, [
-    ['Affiliate', 'Email', 'Status', 'CPM (USD per 1K)', 'Videos', 'Views', 'Earned (USD)', 'Pending (USD)', 'Paid (USD)', 'Owed (USD)', 'Payout method', 'Joined'],
-    ...c.affiliates.map(a => [a.creator.name, a.creator.email, a.status, d(a.effectiveCpmRateCents), a.videoCount, a.views,
-      d(a.earnedCents), d(a.pendingCents), d(a.paidCents), d(a.owedCents), a.creator.payoutMethod, a.joinedAt || ''])
+    ['Affiliate', 'Email', 'Rank', 'Upline', 'Status', 'CPM (USD per 1K)', 'Videos', 'Views', 'Earned (USD)', 'Pending (USD)', 'Team overrides earned (USD)', 'Team overrides pending (USD)', 'Paid (USD)', 'Owed (USD)', 'Payout method', 'Joined'],
+    ...c.affiliates.map(a => [a.creator.name, a.creator.email, RANK_LABEL[a.rank] || a.rank, c.affiliates.find(x => x.id === a.uplineId)?.creator.name || '', a.status,
+      d(a.effectiveCpmRateCents), a.videoCount, a.views, d(a.earnedCents), d(a.pendingCents), d(a.overrideEarnedCents), d(a.overridePendingCents),
+      d(a.paidCents), d(a.owedCents), a.creator.payoutMethod, a.joinedAt || ''])
   ]);
 }
 
 // ── Add affiliate ──
 
-async function openAffiliateForm() {
+async function openAffiliateForm(preset = {}) {
   ensureCampaignModals();
+  document.getElementById('aff-rank').value = preset.rank || 'rookie';
+  document.getElementById('aff-upline').innerHTML = '<option value="">No upline (top of a tree)</option>' + teamMembers(cmpCurrent)
+    .map(a => `<option value="${esc(a.id)}">${esc(a.creator.name)} · ${esc(RANK_LABEL[a.rank])} · ${cmpMoney(rateOfAff(a))}</option>`).join('');
+  document.getElementById('aff-upline').value = preset.uplineId || '';
+  const up = preset.uplineId && cmpCurrent.affiliates.find(a => a.id === preset.uplineId);
+  document.getElementById('aff-modal-title').textContent = up ? `Add recruit under ${up.creator.name}` : 'Add affiliate';
   ['name', 'email', 'phone', 'tiktok', 'instagram', 'youtube'].forEach(f => { document.getElementById('affn-' + f).value = ''; });
   document.getElementById('aff-search').value = '';
   document.getElementById('aff-override').value = '';
@@ -423,7 +438,7 @@ function renderAffiliateSearch() {
 async function addAffiliate(creatorId, btn) {
   let override;
   try { override = cmpCents(document.getElementById('aff-override').value, 'Their pay per 1,000 views'); } catch (err) { cmpMsg('aff-msg', err.message); return; }
-  const body = { cpmRateOverrideCents: override };
+  const body = { cpmRateOverrideCents: override, rank: document.getElementById('aff-rank').value, uplineId: document.getElementById('aff-upline').value || null };
   if (creatorId) body.creatorId = creatorId;
   else {
     const v = (f) => document.getElementById('affn-' + f).value.trim();
@@ -685,7 +700,8 @@ const AUDIT_ACTIONS = {
   affiliate_added: 'Affiliate added', video_approved: 'Video approved', video_rejected: 'Video rejected', video_removed: 'Video removed',
   manual_views_entered: 'Views entered by hand', flag_resolved: 'Flag resolved', payout_details_changed: 'Payout details changed',
   payout_created: 'Payout created', payout_status_changed: 'Payout status changed', payout_deleted: 'Payout deleted', video_locked: 'Video locked',
-  video_unavailable: 'Video unavailable'
+  video_unavailable: 'Video unavailable', promoted: 'Promoted', rank_changed: 'Rank changed', upline_changed: 'Moved to a new upline',
+  recruits_rolled_up: 'Recruits moved up', platform_connected: 'Account connected', platform_disconnected: 'Account disconnected', payout_updated: 'Payout updated'
 };
 
 function auditRowsHtml(entries) {
@@ -772,7 +788,7 @@ function payoutRowHtml(p, isAdmin) {
     <td><div class="cmp-who"><b>${esc(p.creatorName)}</b><span>${esc(p.creatorEmail)}${p.creatorPayoutMethod ? ` · ${esc(PAYOUT_METHOD_LABEL[p.creatorPayoutMethod] || p.creatorPayoutMethod)}${p.creatorPayoutLast4 ? ' ••' + esc(p.creatorPayoutLast4) : ''}` : ''}</span>
       ${p.taxFormReceived ? '' : '<span class="cmp-flag">no tax form</span>'}</div></td>
     <td>${esc(p.periodStart || '')} → ${esc(p.periodEnd || '')}</td>
-    <td class="num strong">${cmpMoney(p.amountCents)}<div class="feed-time">${p.videoCount} video${p.videoCount === 1 ? '' : 's'}</div></td>
+    <td class="num strong">${cmpMoney(p.amountCents)}<div class="feed-time">${p.videoCount} video${p.videoCount === 1 ? '' : 's'}${p.overrideCount ? ` + ${p.overrideCount} override${p.overrideCount === 1 ? '' : 's'}` : ''}</div></td>
     <td><span class="chip ${PAYOUT_STATUS_CHIP[p.status] || 'chip-muted'}">${esc(p.status)}</span>${p.paidAt ? `<div class="feed-time">${fmtDate(p.paidAt)}</div>` : ''}</td>
     <td>${esc(PAYOUT_METHOD_LABEL[p.paymentMethod] || p.paymentMethod || '—')}</td>
     <td><span class="cmp-audit-json">${esc(p.paymentReference || '—')}</span></td>
@@ -798,6 +814,8 @@ async function showPayoutItems(id, keepOpen) {
     cell.innerHTML = `<table class="cmp-table"><thead><tr><th>Campaign</th><th>Video</th><th class="num">Billable views</th><th class="num">CPM</th><th class="num">Amount</th></tr></thead><tbody>
       ${payout.lineItems.map(li => `<tr><td>${esc(li.campaignName || '')}</td><td><a href="${safeUrl(li.canonicalUrl)}" target="_blank" rel="noopener">${esc(CMP_PLATFORMS[li.platform] || li.platform || 'Video')} ↗</a></td>
         <td class="num">${cmpNum(li.billableViews)}</td><td class="num">${cmpMoney(li.cpmRateCents)}</td><td class="num">${cmpMoney(li.amountCents)}</td></tr>`).join('')}
+      ${payout.overrideItems.map(o => `<tr><td>${esc(o.campaignName || '')}</td><td>Team override from <b>${esc(o.fromName || '—')}</b> · <a href="${safeUrl(o.canonicalUrl)}" target="_blank" rel="noopener">${esc(CMP_PLATFORMS[o.platform] || 'Video')} ↗</a></td>
+        <td class="num">${cmpNum(o.billableViews)}</td><td class="num">+${cmpMoney(o.cpmDiffCents)}</td><td class="num">${cmpMoney(o.amountCents)}</td></tr>`).join('')}
     </tbody></table>`;
   } catch (err) { cell.innerHTML = `<div class="cmp-empty">${esc(err.message)}</div>`; }
 }
@@ -858,13 +876,199 @@ async function exportOwedCsv() {
 }
 
 async function exportPayoutsCsv() {
-  const rows = [['Payout ID', 'Affiliate', 'Email', 'Status', 'Period start', 'Period end', 'Method', 'Reference', 'Paid at', 'Campaign', 'Video', 'Billable views', 'CPM (USD per 1K)', 'Amount (USD)']];
+  const rows = [['Payout ID', 'Affiliate', 'Email', 'Status', 'Period start', 'Period end', 'Method', 'Reference', 'Paid at', 'Type', 'From (downline)', 'Campaign', 'Video', 'Billable views', 'CPM or CPM difference (USD per 1K)', 'Amount (USD)']];
   for (const p of payoutsCache) {
     const { payout } = await cmpRequest(`/api/payouts/${encodeURIComponent(p.id)}`);
-    for (const li of payout.lineItems) {
-      rows.push([payout.id, payout.creatorName, payout.creatorEmail, payout.status, payout.periodStart, payout.periodEnd, payout.paymentMethod || '', payout.paymentReference || '',
-        payout.paidAt || '', li.campaignName || '', li.canonicalUrl || '', li.billableViews, (li.cpmRateCents / 100).toFixed(2), (li.amountCents / 100).toFixed(2)]);
-    }
+    const head = [payout.id, payout.creatorName, payout.creatorEmail, payout.status, payout.periodStart, payout.periodEnd, payout.paymentMethod || '', payout.paymentReference || '', payout.paidAt || ''];
+    for (const li of payout.lineItems) rows.push([...head, 'own video', '', li.campaignName || '', li.canonicalUrl || '', li.billableViews, (li.cpmRateCents / 100).toFixed(2), (li.amountCents / 100).toFixed(2)]);
+    for (const o of payout.overrideItems) rows.push([...head, 'team override', o.fromName || '', o.campaignName || '', o.canonicalUrl || '', o.billableViews, (o.cpmDiffCents / 100).toFixed(2), (o.amountCents / 100).toFixed(2)]);
   }
   downloadCsv('affiliate-payouts.csv', rows);
+}
+
+// ── Team pyramid (uplines and ranks) ──
+// Each rank is a band of the pyramid; lines connect every affiliate to their upline. A solid line means the
+// upline earns on that person (their CPM is higher); dashed means $0 (same or lower CPM).
+
+const RANKS = [['top_creator', 'Top Creator'], ['master', 'Master'], ['general', 'General'], ['rookie', 'Rookie']];
+const RANK_LABEL = Object.fromEntries(RANKS);
+const RANK_CHIP = { top_creator: 'rank-chip-top_creator', master: 'chip-purple', general: 'chip-blue', rookie: 'chip-green' };
+let pyramidPerson = null;   // affiliate id open in the person modal
+
+const teamMembers = (c) => c.affiliates.filter(a => a.status !== 'removed');
+const rateOfAff = (a) => a.effectiveCpmRateCents;
+
+// Depth-first order so recruits sit under their uplines and lines cross as little as possible.
+function pyramidOrder(c) {
+  const members = teamMembers(c);
+  const ids = new Set(members.map(a => a.id));
+  const kids = new Map();
+  for (const a of members) if (a.uplineId && ids.has(a.uplineId)) kids.set(a.uplineId, [...(kids.get(a.uplineId) || []), a]);
+  const order = new Map();
+  const visit = (a) => { if (order.has(a.id)) return; order.set(a.id, order.size); (kids.get(a.id) || []).sort((x, y) => x.creator.name.localeCompare(y.creator.name)).forEach(visit); };
+  members.filter(a => !a.uplineId || !ids.has(a.uplineId)).sort((x, y) => RANKS.findIndex(r => r[0] === x.rank) - RANKS.findIndex(r => r[0] === y.rank) || x.creator.name.localeCompare(y.creator.name)).forEach(visit);
+  members.forEach(visit);
+  return order;
+}
+
+function pyramidPanelHtml(c) {
+  const members = teamMembers(c);
+  const order = pyramidOrder(c);
+  const byId = new Map(c.affiliates.map(a => [a.id, a]));
+  const band = ([rank, label]) => {
+    const people = members.filter(a => a.rank === rank).sort((x, y) => order.get(x.id) - order.get(y.id));
+    return `<div class="pyr-band pyr-band-${rank}"><div class="pyr-band-label">${label} · ${people.length}</div><div class="pyr-row">
+      ${people.map(a => {
+        const up = a.uplineId && byId.get(a.uplineId);
+        // Upline ranked below or at a lower CPM than this person: they earn nothing on them.
+        const warn = up && up.status !== 'removed' && rateOfAff(up) <= rateOfAff(a);
+        return `<button class="pyr-node rank-${a.rank}${a.status === 'invited' ? ' invited' : ''}${warn ? ' warn' : ''}" data-id="${esc(a.id)}" onclick="openPerson(this.dataset.id)"
+          title="${warn ? esc(`${up.creator.name} earns $0 on ${a.creator.name}: same or lower CPM`) : ''}">
+          <b>${esc(a.creator.name)}</b><div class="pyr-cpm">${cmpMoney(rateOfAff(a))} / 1K</div>
+          <div class="pyr-sub">${cmpNum(a.views)} views · ${cmpMoney(a.earnedCents + a.pendingCents)}${a.overrideEarnedCents + a.overridePendingCents ? ` + ${cmpMoney(a.overrideEarnedCents + a.overridePendingCents)} team` : ''}</div>
+        </button>`;
+      }).join('') || '<span class="pyr-empty">Nobody at this rank</span>'}
+    </div></div>`;
+  };
+  setTimeout(drawPyramidLines, 0);
+  return `<div class="panel cmp-panel"><div class="panel-head"><span class="panel-title">Team pyramid</span>
+      <div class="cmp-panel-actions"><button class="action-btn primary" onclick="openAffiliateForm({ rank: 'top_creator', uplineId: null })">+ New node</button></div></div>
+    ${members.length ? `<div class="pyr" id="pyr"><svg class="pyr-lines" id="pyr-lines"></svg>${RANKS.map(band).join('')}</div>
+      <div class="pyr-legend"><span><i></i>upline earns the CPM difference</span><span><i class="zero"></i>same or lower CPM, upline earns $0</span><span>Dashed card = hasn't signed in yet · click anyone to promote, recruit, or move</span></div>`
+      : '<div class="cmp-empty">No team yet. Start with "+ New node", then add recruits under them.</div>'}
+  </div>`;
+}
+
+function drawPyramidLines() {
+  const box = document.getElementById('pyr');
+  const svg = document.getElementById('pyr-lines');
+  if (!box || !svg || !cmpCurrent) return;
+  const origin = box.getBoundingClientRect();
+  svg.setAttribute('width', box.scrollWidth);
+  svg.setAttribute('height', box.scrollHeight);
+  const nodes = new Map([...box.querySelectorAll('.pyr-node')].map(el => [el.dataset.id, el.getBoundingClientRect()]));
+  const byId = new Map(cmpCurrent.affiliates.map(a => [a.id, a]));
+  const x = (r) => r.left - origin.left + box.scrollLeft + r.width / 2;
+  svg.innerHTML = teamMembers(cmpCurrent).filter(a => a.uplineId && nodes.has(a.uplineId) && nodes.has(a.id)).map(a => {
+    const up = nodes.get(a.uplineId), me = nodes.get(a.id);
+    const x1 = x(up), y1 = up.bottom - origin.top + box.scrollTop, x2 = x(me), y2 = me.top - origin.top + box.scrollTop;
+    const earns = rateOfAff(byId.get(a.uplineId)) > rateOfAff(a);
+    const mid = (y1 + y2) / 2;
+    return `<path d="M${x1},${y1} C${x1},${mid} ${x2},${mid} ${x2},${y2}" fill="none" stroke="${earns ? 'var(--accent)' : 'var(--text-muted)'}" stroke-width="${earns ? 2 : 1.4}" ${earns ? '' : 'stroke-dasharray="4 4"'} opacity=".75"/>`;
+  }).join('');
+}
+window.addEventListener('resize', () => requestAnimationFrame(drawPyramidLines));
+
+// ── Person: promote, change CPM, add recruit, move ──
+
+function ensurePersonModal() {
+  if (document.getElementById('person-modal')) return;
+  document.body.insertAdjacentHTML('beforeend', `
+<div class="ops-modal-bg" id="person-modal" hidden onclick="if (event.target === this) closePerson()">
+  <div class="ops-modal" role="dialog" aria-labelledby="person-modal-title">
+    <div class="ops-modal-head"><span class="compose-title" id="person-modal-title">Affiliate</span><button class="drawer-close" onclick="closePerson()" aria-label="Close">✕</button></div>
+    <div class="ops-modal-body" id="person-modal-body"></div>
+    <div class="ops-modal-foot"><button class="action-btn" onclick="closePerson()">Close</button></div>
+  </div>
+</div>`);
+}
+
+// Everyone below `id`, so they can't become its upline.
+function downlineIds(id) {
+  const out = new Set();
+  const walk = (parent) => cmpCurrent.affiliates.filter(a => a.uplineId === parent && !out.has(a.id)).forEach(a => { out.add(a.id); walk(a.id); });
+  walk(id);
+  return out;
+}
+
+function openPerson(id) {
+  ensurePersonModal();
+  pyramidPerson = id;
+  const a = cmpCurrent.affiliates.find(x => x.id === id);
+  if (!a) return;
+  const byId = new Map(cmpCurrent.affiliates.map(x => [x.id, x]));
+  const up = a.uplineId ? byId.get(a.uplineId) : null;
+  const recruits = cmpCurrent.affiliates.filter(x => x.uplineId === id && x.status !== 'removed');
+  const blocked = downlineIds(id);
+  const uplineOptions = teamMembers(cmpCurrent).filter(x => x.id !== id && !blocked.has(x.id))
+    .sort((x, y) => RANKS.findIndex(r => r[0] === x.rank) - RANKS.findIndex(r => r[0] === y.rank) || x.creator.name.localeCompare(y.creator.name));
+  document.getElementById('person-modal-title').textContent = a.creator.name;
+  document.getElementById('person-modal-body').innerHTML = `
+    <div style="margin-bottom:12px;"><span class="chip ${RANK_CHIP[a.rank]}">${esc(RANK_LABEL[a.rank])}</span> <span class="chip ${AFF_STATUS_CHIP[a.status]}">${esc(a.status)}</span>
+      <span class="feed-time" style="margin-left:6px;">${up ? `Upline: <b>${esc(up.creator.name)}</b> (${esc(RANK_LABEL[up.rank])}, ${cmpMoney(rateOfAff(up))}/1K)` : 'Top of their tree (no upline)'}</span></div>
+    ${up && rateOfAff(up) <= rateOfAff(a) ? `<div class="email-msg show error" style="margin:0 0 12px;">${esc(up.creator.name)} earns $0 on ${esc(a.creator.name)}'s views: their CPM isn't higher.</div>` : ''}
+    <div class="person-stats">
+      <div><span>CPM</span><b>${cmpMoney(rateOfAff(a))}</b></div>
+      <div><span>Views</span><b>${cmpNum(a.views)}</b></div>
+      <div><span>Own earned</span><b>${cmpMoney(a.earnedCents)}</b></div>
+      <div><span>Own counting</span><b>${cmpMoney(a.pendingCents)}</b></div>
+      <div><span>Team earned</span><b>${cmpMoney(a.overrideEarnedCents)}</b></div>
+      <div><span>Team counting</span><b>${cmpMoney(a.overridePendingCents)}</b></div>
+      <div><span>Paid</span><b>${cmpMoney(a.paidCents)}</b></div>
+      <div><span>Owed</span><b>${cmpMoney(a.owedCents)}</b></div>
+    </div>
+
+    <div class="detail-section-title">Promote / change CPM</div>
+    <div class="person-row">
+      <div class="c-field"><label>Rank</label><select class="c-input" id="pp-rank">${RANKS.map(([k, l]) => `<option value="${k}"${k === a.rank ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="c-field"><label>CPM (per 1,000 views)</label><div class="cmp-money"><input class="c-input" id="pp-cpm" inputmode="decimal" value="${esc(cmpDollarInput(a.cpmRateOverrideCents))}" placeholder="${esc(cmpDollarInput(cmpCurrent.defaultCpmRateCents))} (campaign)"></div></div>
+      <button class="action-btn primary" onclick="savePersonRank()">Save</button>
+    </div>
+    <div class="ops-hint">Blank CPM = the campaign's rate. Their upline earns the difference between the two CPMs on this person's views.</div>
+
+    <div class="detail-section-title">Upline</div>
+    <div class="person-row">
+      <div class="c-field"><label>Reports to</label><select class="c-input" id="pp-upline"><option value="">No upline (top of a tree)</option>
+        ${uplineOptions.map(x => `<option value="${esc(x.id)}"${x.id === a.uplineId ? ' selected' : ''}>${esc(x.creator.name)} · ${esc(RANK_LABEL[x.rank])} · ${cmpMoney(rateOfAff(x))}</option>`).join('')}</select></div>
+      <button class="action-btn" onclick="savePersonUpline()">Move</button>
+    </div>
+
+    <div class="detail-section-title">Recruits (${recruits.length})</div>
+    ${recruits.map(r => {
+      const diff = rateOfAff(a) - rateOfAff(r);
+      return `<div class="aff-result"><div class="cmp-who"><b>${esc(r.creator.name)}</b><span>${esc(RANK_LABEL[r.rank])} · ${cmpMoney(rateOfAff(r))}/1K · ${cmpNum(r.views)} views</span></div>
+        <span class="feed-time">${diff > 0 ? `${esc(a.creator.name.split(' ')[0])} earns ${cmpMoney(diff)}/1K on them` : 'earns $0 on them'}</span>
+        <button class="action-btn" data-id="${esc(r.id)}" onclick="openPerson(this.dataset.id)">Open</button></div>`;
+    }).join('') || '<div class="feed-time">No recruits yet.</div>'}
+    <button class="action-btn primary" style="margin-top:10px;" onclick="addRecruitFor('${esc(a.id)}')">+ Add recruit under ${esc(a.creator.name.split(' ')[0])}</button>
+
+    <div class="detail-actions" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">
+      ${a.status === 'invited' ? `<button class="action-btn" data-id="${esc(a.id)}" onclick="resendAffiliateInvite(this.dataset.id, this)">Resend invite</button>` : ''}
+      <button class="action-btn" style="margin-left:auto;" data-id="${esc(a.id)}" onclick="closePerson();setAffiliateStatus(this.dataset.id, 'removed')">Remove from campaign</button>
+    </div>
+    <div class="email-msg" id="pp-msg"></div>`;
+  document.getElementById('person-modal').hidden = false;
+}
+
+function closePerson() {
+  document.getElementById('person-modal').hidden = true;
+  pyramidPerson = null;
+}
+
+async function patchPerson(body) {
+  try {
+    await cmpRequest(`/api/campaign-affiliates/${encodeURIComponent(pyramidPerson)}`, { method: 'PATCH', body: JSON.stringify(body) });
+    const id = pyramidPerson;
+    await openCampaign(cmpCurrent.id);
+    openPerson(id);
+    cmpMsg('pp-msg', 'Saved.', 'success');
+  } catch (err) { cmpMsg('pp-msg', err.message); }
+}
+
+function savePersonRank() {
+  let cents;
+  try { cents = cmpCents(document.getElementById('pp-cpm').value, 'CPM'); } catch (err) { cmpMsg('pp-msg', err.message); return; }
+  patchPerson({ rank: document.getElementById('pp-rank').value, cpmRateOverrideCents: cents });
+}
+
+function savePersonUpline() {
+  patchPerson({ uplineId: document.getElementById('pp-upline').value || null });
+}
+
+// New recruits start one rank below their upline.
+function addRecruitFor(id) {
+  const a = cmpCurrent.affiliates.find(x => x.id === id);
+  const below = RANKS[Math.min(RANKS.length - 1, RANKS.findIndex(r => r[0] === a.rank) + 1)][0];
+  closePerson();
+  openAffiliateForm({ uplineId: id, rank: below });
 }
