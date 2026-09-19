@@ -492,7 +492,9 @@ let videoDetail = null;     // { video, snapshots, flags, audit } in the video m
 
 function videoRowHtml(v, { showCampaign = false } = {}) {
   const id = esc(v.id);
-  const checked = v.lockedAt ? `Locked ${fmtDate(v.lockedAt)}` : v.lastFetchedAt ? `Checked ${fmtDate(v.lastFetchedAt)}` : 'Not checked yet';
+  const newShot = v.lastScreenshotAt && (!v.lastFetchedAt || v.lastScreenshotAt > v.lastFetchedAt);
+  const checked = (v.lockedAt ? `Locked ${fmtDate(v.lockedAt)}` : v.lastFetchedAt ? `Checked ${fmtDate(v.lastFetchedAt)}` : 'Not checked yet')
+    + (v.screenshotCount ? ` · ${v.screenshotCount} screenshot${v.screenshotCount === 1 ? '' : 's'}${newShot ? ' (new)' : ''}` : '');
   const actions = [];
   if (['pending_review', 'rejected', 'removed'].includes(v.status)) actions.push(`<button class="action-btn primary" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'approve', this)">${v.status === 'pending_review' ? 'Approve' : 'Restore'}</button>`);
   if (['pending_review', 'approved', 'removed'].includes(v.status)) actions.push(`<button class="action-btn" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'reject', this)">Reject</button>`);
@@ -593,7 +595,7 @@ async function openVideoDetail(id) {
   try {
     videoDetail = await cmpRequest(`/api/affiliate-videos/${encodeURIComponent(id)}`);
   } catch (err) { body.innerHTML = `<div class="cmp-empty">${esc(err.message)}</div>`; return; }
-  const { video: v, snapshots, flags, audit } = videoDetail;
+  const { video: v, snapshots, flags, audit, screenshots = [] } = videoDetail;
   document.getElementById('video-modal-title').textContent = `${v.creator.name} · ${CMP_PLATFORMS[v.platform]}`;
   body.innerHTML = `
     <div class="detail-grid">
@@ -606,13 +608,19 @@ async function openVideoDetail(id) {
       ${detailField('Earned', `${cmpMoney(v.earnedCents)} at ${cmpMoney(v.cpmRateCents)}/1K`)}
       ${detailField('Ready to pay', cmpMoney(v.unpaidEarnedCents))}
     </div>
+    <div class="detail-section-title">Affiliate's screenshots (${screenshots.length})</div>
+    ${screenshots.length ? `<div class="cmp-shots">${screenshots.map(s => `<a class="cmp-shot" data-shot="${esc(s.id)}" target="_blank" rel="noopener">
+        <img alt="Insights screenshot" data-shot-img="${esc(s.id)}">
+        <span>${fmtDateTime(s.uploadedAt)}${s.reportedViews !== null ? ` · says ${cmpNum(s.reportedViews)} views` : ''}${v.lastFetchedAt && s.uploadedAt > v.lastFetchedAt || !v.lastFetchedAt ? ' · <b>new</b>' : ''}</span>
+        ${s.note ? `<span>${esc(s.note)}</span>` : ''}</a>`).join('')}</div>`
+      : '<div class="cmp-empty">None yet. Affiliates can upload their insights screen from the portal (needed for trial reels).</div>'}
     ${v.status === 'approved' ? `<button class="action-btn" onclick="markVideoUnavailable(this)">Mark post unavailable</button>` : ''}
     ${v.status === 'locked' ? '<div class="ops-hint">This video is locked (its campaign ended) — no more weekly entries.</div>' : `<div class="detail-section-title">This week's views</div>
     <div class="ops-form-grid">
       <div class="c-field"><label>Views *</label><input class="c-input" id="mv-views" inputmode="numeric" placeholder="${v.latestViewCount}"></div>
       <div class="c-field"><label>Likes</label><input class="c-input" id="mv-likes" inputmode="numeric"></div>
       <div class="c-field"><label>Comments</label><input class="c-input" id="mv-comments" inputmode="numeric"></div>
-      <div class="c-field full"><label>Note * (where the number came from)</label><input class="c-input" id="mv-note" placeholder="Screenshot from creator's insights, 9/18"></div>
+      <div class="c-field full"><label>Note * (where the number came from)</label><input class="c-input" id="mv-note" placeholder="${screenshots.length ? `Affiliate's screenshot, ${fmtDate(screenshots[0].uploadedAt)}` : "Screenshot from creator's insights, 9/18"}"></div>
     </div>
     <button class="action-btn primary" style="margin-top:10px;" onclick="saveManualViews()">Save views</button>
     <div class="ops-hint">The cumulative total, not this week's gain — the delta since the last check is priced automatically. Logged in the audit log.</div>
@@ -627,6 +635,20 @@ async function openVideoDetail(id) {
         <td>${esc(s.note || '')}</td><td>${s.payoutId ? `<button class="action-btn" onclick="closeVideoDetail();affPageTab='payouts';loadAffiliatesPage().then(()=>showPayoutItems('${esc(s.payoutId)}',true))">Paid</button>` : s.earnedCents ? 'Unpaid' : '—'}</td></tr>`).join('')}
     </tbody></table></div>` : '<div class="cmp-empty">No view counts yet.</div>'}
     ${audit.length ? `<div class="detail-section-title">Audit</div>${auditRowsHtml(audit)}` : ''}`;
+  loadScreenshotImages(body);
+}
+
+// Screenshots need the bearer token, so fetch them as blobs instead of plain <img src>.
+async function loadScreenshotImages(root) {
+  for (const img of root.querySelectorAll('[data-shot-img]')) {
+    try {
+      const r = await fetch(`${CRM_API}/api/affiliate-screenshots/${encodeURIComponent(img.dataset.shotImg)}`, { headers: { Authorization: `Bearer ${getSession()?.token || ''}` } });
+      if (!r.ok) throw new Error();
+      const url = URL.createObjectURL(await r.blob());
+      img.src = url;
+      img.closest('a').href = url;
+    } catch { img.replaceWith(Object.assign(document.createElement('span'), { textContent: 'Couldn’t load image' })); }
+  }
 }
 
 async function markVideoUnavailable(btn) {

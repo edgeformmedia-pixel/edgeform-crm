@@ -11,6 +11,8 @@ const VIDEO_SQL = `SELECT v.*, cr.name creator_name, cr.email creator_email, cr.
     COALESCE(ca.cpm_rate_override_cents, c.default_cpm_rate_cents) cpm_rate_cents,
     (SELECT json_group_array(json_object('id', f.id, 'type', f.type, 'details', f.details, 'createdAt', f.created_at))
        FROM video_flags f WHERE f.video_id = v.id AND f.resolved_at IS NULL) open_flags,
+    (SELECT COUNT(*) FROM video_screenshots s WHERE s.video_id = v.id) screenshot_count,
+    (SELECT MAX(s.uploaded_at) FROM video_screenshots s WHERE s.video_id = v.id) last_screenshot_at,
     (SELECT COALESCE(SUM(s.earned_cents), 0) FROM view_snapshots s WHERE s.video_id = v.id AND s.earned_cents > 0
        AND NOT EXISTS (SELECT 1 FROM payout_line_items li WHERE li.view_snapshot_id = s.id)) unpaid_earned_cents,
     u.name approved_by_name
@@ -27,7 +29,8 @@ export function adminVideoJson(v) {
     submittedAt: v.submitted_at, approvedAt: v.approved_at, approvedByName: v.approved_by_name,
     lockedAt: v.locked_at, latestViewCount: v.latest_view_count, billableViews: v.billable_views, earnedCents: v.earned_cents,
     cpmRateCents: v.cpm_rate_cents, lastFetchedAt: v.last_fetched_at, unpaidEarnedCents: v.unpaid_earned_cents || 0,
-    openFlags: parseJson(v.open_flags, []).filter(Boolean)
+    openFlags: parseJson(v.open_flags, []).filter(Boolean),
+    screenshotCount: v.screenshot_count || 0, lastScreenshotAt: v.last_screenshot_at || null
   };
 }
 
@@ -64,14 +67,15 @@ async function listVideos(request, env, headers) {
 async function getVideo(request, env, headers, [id]) {
   await requireUser(request, env);
   const video = adminVideoJson(await loadVideo(env, id));
-  const [snapshots, flags, audit] = await env.DB.batch([
+  const [snapshots, flags, audit, screenshots] = await env.DB.batch([
     env.DB.prepare(`SELECT s.id, s.view_count, s.like_count, s.comment_count, s.source, s.fetched_at, s.note, s.delta_views, s.earned_cents,
         u.name entered_by_name, li.payout_id
       FROM view_snapshots s LEFT JOIN users u ON u.id = s.entered_by LEFT JOIN payout_line_items li ON li.view_snapshot_id = s.id
       WHERE s.video_id = ? ORDER BY s.fetched_at DESC LIMIT 200`).bind(id),
     env.DB.prepare(`SELECT f.*, u.name resolved_by_name FROM video_flags f LEFT JOIN users u ON u.id = f.resolved_by
       WHERE f.video_id = ? ORDER BY f.created_at DESC`).bind(id),
-    env.DB.prepare(`SELECT * FROM affiliate_audit_log WHERE entity_type = 'video' AND entity_id = ? ORDER BY created_at DESC`).bind(id)
+    env.DB.prepare(`SELECT * FROM affiliate_audit_log WHERE entity_type = 'video' AND entity_id = ? ORDER BY created_at DESC`).bind(id),
+    env.DB.prepare('SELECT * FROM video_screenshots WHERE video_id = ? ORDER BY uploaded_at DESC').bind(id)
   ]);
   return json({
     ok: true, video,
@@ -81,8 +85,20 @@ async function getVideo(request, env, headers, [id]) {
       payoutId: s.payout_id, enteredByName: s.entered_by_name
     })),
     flags: flags.results.map(flagJson),
+    screenshots: screenshots.results.map(s => ({
+      id: s.id, contentType: s.content_type, sizeBytes: s.size_bytes, reportedViews: s.reported_views, note: s.note, uploadedAt: s.uploaded_at
+    })),
     audit: audit.results.map(auditJson)
   }, 200, headers);
+}
+
+// The affiliate's insights screenshot. Staff-only; the CRM fetches it with its bearer token.
+async function getScreenshot(request, env, headers, [id]) {
+  await requireUser(request, env);
+  const row = await env.DB.prepare('SELECT id FROM video_screenshots WHERE id = ?').bind(id).first();
+  const object = row && await env.SKETCHES.get(`video-screenshots/${row.id}`);
+  if (!object) return new Response('Not found', { status: 404, headers });
+  return new Response(object.body, { headers: { ...headers, 'content-type': object.httpMetadata?.contentType || 'image/png', 'cache-control': 'private, max-age=3600' } });
 }
 
 // approve:          pending_review / rejected / removed → approved (or back to locked if it had already locked)
@@ -231,6 +247,7 @@ export const affiliateAdminRoutes = {
   'GET /api/affiliate-videos/:id': getVideo,
   'POST /api/affiliate-videos/:id/review': reviewVideo,
   'POST /api/affiliate-videos/:id/views': enterViews,
+  'GET /api/affiliate-screenshots/:id': getScreenshot,
   'GET /api/video-flags': listFlags,
   'POST /api/video-flags/:id/resolve': resolveFlag,
   'GET /api/affiliate-audit': listAudit

@@ -47,8 +47,20 @@ export const videoJson = (v) => ({
   thumbnail_url: orNull(v.thumbnail_url), caption: orNull(v.caption), posted_at: orNull(v.posted_at), status: v.status,
   rejection_reason: orNull(v.rejection_reason), submitted_at: v.submitted_at,
   locked_at: orNull(v.locked_at), latest_view_count: v.latest_view_count, billable_views: v.billable_views,
-  earned_cents: v.earned_cents, last_fetched_at: orNull(v.last_fetched_at)
+  earned_cents: v.earned_cents, last_fetched_at: orNull(v.last_fetched_at),
+  // v6: insights screenshots uploaded as proof of views (CONTRACT.md §7).
+  screenshot_count: v.screenshot_count || 0, last_screenshot_at: orNull(v.last_screenshot_at)
 });
+
+export const screenshotJson = (s) => ({
+  id: s.id, video_id: s.video_id, content_type: s.content_type, size_bytes: s.size_bytes,
+  reported_views: s.reported_views ?? null, note: orNull(s.note), uploaded_at: s.uploaded_at
+});
+
+const VIDEO_WITH_SCREENSHOTS = `SELECT v.*,
+    (SELECT COUNT(*) FROM video_screenshots s WHERE s.video_id = v.id) screenshot_count,
+    (SELECT MAX(s.uploaded_at) FROM video_screenshots s WHERE s.video_id = v.id) last_screenshot_at
+  FROM videos v`;
 
 // ── Session ──
 
@@ -216,7 +228,7 @@ async function getCampaign(request, env, headers, [id]) {
 async function listVideos(request, env, headers, [id]) {
   const creator = await requireCreator(request, env);
   const campaign = await assignedCampaign(env, creator.id, id);
-  const rows = await env.DB.prepare('SELECT * FROM videos WHERE campaign_affiliate_id = ? ORDER BY submitted_at DESC, id DESC').bind(campaign.assignment_id).all();
+  const rows = await env.DB.prepare(`${VIDEO_WITH_SCREENSHOTS} WHERE v.campaign_affiliate_id = ? ORDER BY v.submitted_at DESC, v.id DESC`).bind(campaign.assignment_id).all();
   return json({ ok: true, data: rows.results.map(videoJson) }, 200, headers);
 }
 
@@ -370,6 +382,80 @@ async function team(request, env, headers, [id]) {
   return json({ ok: true, team: node(me, 0) }, 200, headers);
 }
 
+// ── View screenshots (v6) ──
+// The affiliate uploads their insights screen (trial reels and other posts with no public count).
+// Raw image body; staff read the number off it during the weekly check.
+
+const SCREENSHOT_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024;
+const MAX_SCREENSHOTS_PER_VIDEO = 30;
+
+async function ownVideo(env, creatorId, id) {
+  const video = await env.DB.prepare('SELECT id, status FROM videos WHERE id = ? AND creator_id = ?').bind(id, creatorId).first();
+  if (!video) throw fail(404, 'Video not found.', 'not_found');
+  return video;
+}
+
+async function uploadScreenshot(request, env, headers, [id]) {
+  const creator = await requireCreator(request, env);
+  const video = await ownVideo(env, creator.id, id);
+  if (!['pending_review', 'approved'].includes(video.status)) throw fail(409, 'Screenshots can only be added to videos that are still being tracked.', 'video_not_tracking');
+  const type = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (!SCREENSHOT_TYPES.includes(type)) throw fail(415, 'Upload a PNG, JPEG, or WebP image.', 'unsupported_image');
+  if (Number(request.headers.get('content-length') || 0) > MAX_SCREENSHOT_BYTES) throw fail(413, 'Screenshots must be 10MB or smaller.', 'image_too_large');
+  const q = new URL(request.url).searchParams;
+  let views = null;
+  if (q.get('views') !== null && q.get('views') !== '') {
+    views = Number(String(q.get('views')).replace(/[,\s]/g, ''));
+    if (!Number.isSafeInteger(views) || views < 0) throw invalid('Views must be a whole number.');
+  }
+  const { n } = await env.DB.prepare('SELECT COUNT(*) n FROM video_screenshots WHERE video_id = ?').bind(id).first();
+  if (n >= MAX_SCREENSHOTS_PER_VIDEO) throw fail(409, 'This video already has the maximum number of screenshots.', 'too_many_screenshots');
+  const bytes = await request.arrayBuffer();
+  if (!bytes.byteLength) throw invalid('The image is empty.');
+  if (bytes.byteLength > MAX_SCREENSHOT_BYTES) throw fail(413, 'Screenshots must be 10MB or smaller.', 'image_too_large');
+  const row = {
+    id: crypto.randomUUID(), video_id: id, creator_id: creator.id, content_type: type, size_bytes: bytes.byteLength,
+    reported_views: views, note: clean(q.get('note'), 500) || null, uploaded_at: now()
+  };
+  await env.SKETCHES.put(`video-screenshots/${row.id}`, bytes, { httpMetadata: { contentType: type } });
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO video_screenshots (${Object.keys(row).join(', ')}) VALUES (${Object.keys(row).map(() => '?').join(', ')})`).bind(...Object.values(row)),
+    auditStatement(env, { actorType: 'creator', actorId: creator.id, entityType: 'video', entityId: id, action: 'screenshot_uploaded', before: null, after: { screenshot_id: row.id, reported_views: views } })
+  ]);
+  return json({ ok: true, screenshot: screenshotJson(row) }, 201, headers);
+}
+
+async function listScreenshots(request, env, headers, [id]) {
+  const creator = await requireCreator(request, env);
+  await ownVideo(env, creator.id, id);
+  const rows = await env.DB.prepare('SELECT * FROM video_screenshots WHERE video_id = ? ORDER BY uploaded_at DESC').bind(id).all();
+  return json({ ok: true, data: rows.results.map(screenshotJson) }, 200, headers);
+}
+
+async function getScreenshot(request, env, headers, [id]) {
+  const creator = await requireCreator(request, env);
+  const row = await env.DB.prepare('SELECT id FROM video_screenshots WHERE id = ? AND creator_id = ?').bind(id, creator.id).first();
+  const object = row && await env.SKETCHES.get(`video-screenshots/${row.id}`);
+  if (!object) throw fail(404, 'Screenshot not found.', 'not_found');
+  return new Response(object.body, { headers: { ...headers, 'content-type': object.httpMetadata?.contentType || 'image/png', 'cache-control': 'private, max-age=3600' } });
+}
+
+async function deleteScreenshot(request, env, headers, [id]) {
+  const creator = await requireCreator(request, env);
+  const row = await env.DB.prepare(`SELECT s.id, s.video_id, s.uploaded_at, v.last_fetched_at FROM video_screenshots s JOIN videos v ON v.id = s.video_id
+    WHERE s.id = ? AND s.creator_id = ?`).bind(id, creator.id).first();
+  if (!row) throw fail(404, 'Screenshot not found.', 'not_found');
+  // Once staff have checked views after the upload, it's evidence for a priced week and stays.
+  if (row.last_fetched_at && row.last_fetched_at >= row.uploaded_at) throw fail(409, 'This screenshot was already used for a views check, so it can’t be deleted.', 'not_deletable');
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM video_screenshots WHERE id = ?').bind(id),
+    auditStatement(env, { actorType: 'creator', actorId: creator.id, entityType: 'video', entityId: row.video_id, action: 'screenshot_deleted', before: { screenshot_id: id }, after: null })
+  ]);
+  await env.SKETCHES.delete(`video-screenshots/${id}`);
+  return json({ ok: true }, 200, headers);
+}
+
 // ── Routing ──
 
 const routes = {
@@ -384,6 +470,10 @@ const routes = {
   'GET /campaigns/:id/team': team,
   'POST /campaigns/:id/videos': submitVideo,
   'DELETE /videos/:id': deleteVideo,
+  'GET /videos/:id/screenshots': listScreenshots,
+  'POST /videos/:id/screenshots': uploadScreenshot,
+  'GET /screenshots/:id': getScreenshot,
+  'DELETE /screenshots/:id': deleteScreenshot,
   'GET /earnings': earnings,
   'GET /payouts': payouts
 };

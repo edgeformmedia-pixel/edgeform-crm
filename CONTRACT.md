@@ -365,3 +365,26 @@ Example: rookie at $1.50 CPM, upline at 5%. The rookie's 10K new views this week
   "downline": [ TeamNode ] }
 ```
 Errors: same as `GET /campaigns/:id` (`not_found` when not assigned).
+
+## 7. View screenshots (added in v6, additive only)
+Trial reels (and some other posts) have no public view count, so the affiliate uploads a screenshot of their
+insights screen and staff read the number off it during the weekly check (§3). Screenshots never change pay by
+themselves — only the views staff enter do.
+
+Table `video_screenshots` (migration `0023`): `id, video_id, creator_id, content_type, size_bytes, reported_views, note, uploaded_at`.
+Images are stored in R2 under `video-screenshots/<id>`.
+
+| method | path | body | returns |
+|---|---|---|---|
+| POST | /videos/:id/screenshots?views=&note= | raw image bytes, `Content-Type: image/png \| image/jpeg \| image/webp`, ≤ 10MB. `views` (optional) = the number the screenshot shows; `note` optional, ≤ 500 chars | `201 { ok, screenshot: Screenshot }` |
+| GET | /videos/:id/screenshots | — | `{ ok, data: Screenshot[] }`, newest first |
+| GET | /screenshots/:id | — | the image itself (needs the Bearer header, so fetch it as a blob) |
+| DELETE | /screenshots/:id | — | `{ ok: true }`; `409 not_deletable` once staff have checked views after it was uploaded |
+
+Upload is allowed only while the video is `pending_review` or `approved`; max 30 per video.
+Error codes: `unsupported_image` (415), `image_too_large` (413), `video_not_tracking` (409), `too_many_screenshots` (409), `not_found`, `validation_error`.
+```jsonc
+// Screenshot
+{ "id", "video_id", "content_type", "size_bytes", "reported_views", "note", "uploaded_at" }
+```
+`Video` adds `screenshot_count` and `last_screenshot_at`.
