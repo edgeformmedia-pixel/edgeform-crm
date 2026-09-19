@@ -136,6 +136,8 @@ export function normalizeHandle(value) {
 
 export const videoViews = (v) => (v.status === 'locked' ? v.billable_views : v.latest_view_count);
 export const effectiveRate = (campaign, override) => (override === null || override === undefined ? campaign.default_cpm_rate_cents : override);
+// An upline's override percentage, in basis points (500 = 5%). NULL on the person = the campaign default.
+export const effectiveOverrideBps = (campaign, override) => (override === null || override === undefined ? campaign.default_override_bps ?? 0 : override);
 
 export const RANKS = ['top_creator', 'master', 'general', 'rookie'];
 const MAX_CHAIN = 50;
@@ -180,12 +182,12 @@ export function lastWeeklyCutoff(nowIso) {
  *
  * `events`: [{ id (view_snapshot id), video_id, campaign_affiliate_id, view_count (cumulative at this
  *   check), delta_views, video_status }], in chronological order.
- * `affiliates`: Map campaign_affiliate_id → { cpm_rate_override_cents, upline_id, status }.
+ * `affiliates`: Map campaign_affiliate_id → { cpm_rate_override_cents, override_bps, upline_id, status }.
  * `perVideoCommitted` / `perAffiliateCommitted`: cents already earned before this batch (Map keyed by
  *   video_id / campaign_affiliate_id). `campaignCommittedTotal`: the campaign's own + override total so far.
  *
  * Returns { priced: [{ id, video_id, earned_cents }], overrides: [{ view_snapshot_id, video_id,
- *   campaign_affiliate_id, source_campaign_affiliate_id, depth, cpm_diff_cents, amount_cents }] }.
+ *   campaign_affiliate_id, source_campaign_affiliate_id, depth, override_bps, amount_cents }] }.
  */
 export function priceEvents(campaign, events, affiliates = new Map(), perVideoCommitted = new Map(), perAffiliateCommitted = new Map(), campaignCommittedTotal = 0) {
   const cap = (n) => (n === null || n === undefined ? Infinity : n);
@@ -214,24 +216,22 @@ export function priceEvents(campaign, events, affiliates = new Map(), perVideoCo
     total += cents;
     priced.push({ id: e.id, video_id: e.video_id, earned_cents: cents });
 
-    // Upline overrides: each upline earns the gap between their CPM and the highest CPM below them so
-    // far in the chain, only capped by the remaining campaign budget (not the per-affiliate cap, which
-    // only limits a person's own posted-video earnings).
-    let highest = rateOf(e.campaign_affiliate_id);
+    // Upline overrides: every upline in the chain earns their own override % of what the poster was paid
+    // this week, on top of it (the poster keeps all of theirs). Only capped by the remaining campaign
+    // budget (not the per-affiliate cap, which only limits a person's own posted-video earnings).
+    if (!cents) continue;
     const seen = new Set([e.campaign_affiliate_id]);
     let current = affiliates.get(e.campaign_affiliate_id)?.upline_id;
     for (let depth = 1; current && !seen.has(current) && depth <= MAX_CHAIN; depth++) {
       seen.add(current);
       const upline = affiliates.get(current);
       if (!upline) break;
-      const rate = rateOf(current);
-      if (upline.status !== 'removed' && rate > highest) {
-        const diff = rate - highest;
-        const amount = qualifies ? Math.max(0, Math.min(Math.floor(e.delta_views * diff / 1000), cap(campaign.total_budget_cents) - total)) : 0;
+      const bps = effectiveOverrideBps(campaign, upline.override_bps);
+      if (upline.status !== 'removed' && bps > 0) {
+        const amount = Math.max(0, Math.min(Math.floor(cents * bps / 10000), cap(campaign.total_budget_cents) - total));
         total += amount;
-        overrides.push({ view_snapshot_id: e.id, video_id: e.video_id, campaign_affiliate_id: current, source_campaign_affiliate_id: e.campaign_affiliate_id, depth, cpm_diff_cents: diff, amount_cents: amount });
+        overrides.push({ view_snapshot_id: e.id, video_id: e.video_id, campaign_affiliate_id: current, source_campaign_affiliate_id: e.campaign_affiliate_id, depth, override_bps: bps, amount_cents: amount });
       }
-      if (upline.status !== 'removed') highest = Math.max(highest, rate);
       current = upline.upline_id;
     }
   }
@@ -258,7 +258,7 @@ async function runInChunks(env, statements) {
 export async function recomputeCampaign(env, campaignId) {
   const [campaignRes, affiliatesRes, videosRes, eventsRes, overrideTotalRes] = await env.DB.batch([
     env.DB.prepare('SELECT * FROM campaigns WHERE id = ?').bind(campaignId),
-    env.DB.prepare('SELECT id, creator_id, cpm_rate_override_cents, upline_id, status FROM campaign_affiliates WHERE campaign_id = ?').bind(campaignId),
+    env.DB.prepare('SELECT id, creator_id, cpm_rate_override_cents, override_bps, upline_id, status FROM campaign_affiliates WHERE campaign_id = ?').bind(campaignId),
     env.DB.prepare('SELECT id, campaign_affiliate_id, status, earned_cents FROM videos WHERE campaign_id = ?').bind(campaignId),
     env.DB.prepare(`SELECT s.id, s.video_id, s.view_count, s.delta_views, s.fetched_at, v.campaign_affiliate_id, v.status video_status
       FROM view_snapshots s JOIN videos v ON v.id = s.video_id
@@ -288,8 +288,8 @@ export async function recomputeCampaign(env, campaignId) {
   for (const o of overrides) {
     if (!o.amount_cents) continue;
     const upline = affiliates.get(o.campaign_affiliate_id);
-    statements.push(env.DB.prepare(`INSERT INTO override_earnings (id, view_snapshot_id, video_id, campaign_id, campaign_affiliate_id, creator_id, source_campaign_affiliate_id, depth, cpm_diff_cents, amount_cents)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), o.view_snapshot_id, o.video_id, campaignId, o.campaign_affiliate_id, upline.creator_id, o.source_campaign_affiliate_id, o.depth, o.cpm_diff_cents, o.amount_cents));
+    statements.push(env.DB.prepare(`INSERT INTO override_earnings (id, view_snapshot_id, video_id, campaign_id, campaign_affiliate_id, creator_id, source_campaign_affiliate_id, depth, cpm_diff_cents, override_bps, amount_cents)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`).bind(crypto.randomUUID(), o.view_snapshot_id, o.video_id, campaignId, o.campaign_affiliate_id, upline.creator_id, o.source_campaign_affiliate_id, o.depth, o.override_bps, o.amount_cents));
   }
   await runInChunks(env, statements);
   return statements.length;

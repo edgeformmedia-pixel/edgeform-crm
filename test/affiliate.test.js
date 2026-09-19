@@ -131,36 +131,38 @@ test('payout details round-trip through AES-GCM', async () => {
   await assert.rejects(() => decryptText(stored, 'wrong'));
 });
 
-test('uplines: your example — rookie $1.50, upline $2.00', () => {
-  const affiliates = new Map([['up', { cpm_rate_override_cents: 200, upline_id: null, status: 'active' }], ['rook', { cpm_rate_override_cents: 150, upline_id: 'up', status: 'active' }]]);
-  const { priced, overrides } = priceEvents({ default_cpm_rate_cents: 0 }, [
-    event('s1', { video_id: 'v1', campaign_affiliate_id: 'rook', delta_views: 1000, view_count: 1000 }),
+test('uplines: override is a % of what the downline is paid, on top of it', () => {
+  // Rookie at $1.50 CPM, upline at 5%. The rookie keeps all $15.00 on 10K views; the upline earns 5% of it on top.
+  const affiliates = new Map([['up', { cpm_rate_override_cents: 200, override_bps: 500, upline_id: null, status: 'active' }], ['rook', { cpm_rate_override_cents: 150, upline_id: 'up', status: 'active' }]]);
+  const { priced, overrides } = priceEvents({ default_cpm_rate_cents: 0, default_override_bps: 0 }, [
+    event('s1', { video_id: 'v1', campaign_affiliate_id: 'rook', delta_views: 10000, view_count: 10000 }),
     event('s2', { video_id: 'v2', campaign_affiliate_id: 'up', delta_views: 1000, view_count: 1000 })
   ], affiliates);
-  assert.equal(priced.find(p => p.id === 's1').earned_cents, 150); // rookie: $1.50
-  assert.equal(priced.find(p => p.id === 's2').earned_cents, 200); // upline's own 1K views: $2.00
-  assert.deepEqual(overrides.map(o => [o.video_id, o.campaign_affiliate_id, o.cpm_diff_cents, o.amount_cents]), [['v1', 'up', 50, 50]]); // upline: $0.50
+  assert.equal(priced.find(p => p.id === 's1').earned_cents, 1500); // rookie: full $15.00
+  assert.equal(priced.find(p => p.id === 's2').earned_cents, 200);  // upline's own 1K views: $2.00
+  assert.deepEqual(overrides.map(o => [o.video_id, o.campaign_affiliate_id, o.override_bps, o.amount_cents]), [['v1', 'up', 500, 75]]); // 5% of $15 = $0.75
 });
 
-test('uplines: same CPM earns nothing; chain pays each level its difference', () => {
-  const a = (cpm, up, status = 'active') => ({ cpm_rate_override_cents: cpm, upline_id: up, status });
-  const run = (affiliates, budget = null) => priceEvents({ default_cpm_rate_cents: 0, total_budget_cents: budget },
+test('uplines: each level earns its own %; campaign default, 0%, removed, budget, loops', () => {
+  const a = (up, bps, status = 'active') => ({ cpm_rate_override_cents: null, override_bps: bps, upline_id: up, status });
+  const run = (affiliates, { budget = null, defaultBps = 500 } = {}) => priceEvents({ default_cpm_rate_cents: 1000, default_override_bps: defaultBps, total_budget_cents: budget },
     [event('s1', { video_id: 'v1', campaign_affiliate_id: 'rook', delta_views: 100000, view_count: 100000 })], new Map(Object.entries(affiliates)));
   const amounts = (r) => Object.fromEntries(r.overrides.map(o => [o.campaign_affiliate_id, o.amount_cents]));
 
-  assert.deepEqual(amounts(run({ top: a(3000, null), master: a(2500, 'top'), general: a(2000, 'master'), rook: a(1500, 'general') })),
-    { general: 50000, master: 50000, top: 50000 });
-  // General at the same CPM as the rookie earns nothing; master earns the full gap above the rookie.
-  assert.deepEqual(amounts(run({ top: a(3000, null), master: a(2500, 'top'), general: a(1500, 'master'), rook: a(1500, 'general') })),
-    { master: 100000, top: 50000 });
-  // An upline below their downline's CPM earns nothing, and never negative.
-  assert.deepEqual(amounts(run({ general: a(1000, null), rook: a(1500, 'general') })), {});
-  // Removed uplines are skipped; the next one up still earns its difference.
-  assert.deepEqual(amounts(run({ top: a(3000, null), general: a(2000, 'top', 'removed'), rook: a(1500, 'general') })), { top: 150000 });
+  // Rookie earns $1,000.00. Every upline in the chain takes their own % of that, CPM doesn't matter.
+  assert.deepEqual(amounts(run({ top: a(null, 300), master: a('top', 550), general: a('master', null), rook: a('general', 800) })),
+    { general: 5000, master: 5500, top: 3000 });
+  // 0% earns nothing; a removed upline is skipped and the next one up still earns.
+  assert.deepEqual(amounts(run({ top: a(null, null), general: a('top', 0), rook: a('general', null) })), { top: 5000 });
+  assert.deepEqual(amounts(run({ top: a(null, 600), general: a('top', 500, 'removed'), rook: a('general', null) })), { top: 6000 });
+  // Nothing paid to the poster (below the minimum) → nothing to the uplines.
+  const unqualified = priceEvents({ default_cpm_rate_cents: 1000, default_override_bps: 500, min_views_to_qualify: 5000 },
+    [event('s1', { campaign_affiliate_id: 'rook', delta_views: 1000, view_count: 1000 })], new Map(Object.entries({ up: a(null, null), rook: a('up', null) })));
+  assert.deepEqual(unqualified.overrides, []);
   // Overrides share the campaign budget with own earnings.
-  const capped = run({ up: a(2000, null), rook: a(1500, 'up') }, 160000);
-  assert.equal(capped.priced[0].earned_cents, 150000);
-  assert.deepEqual(amounts(capped), { up: 10000 });
+  const capped = run({ up: a(null, 500), rook: a('up', null) }, { budget: 102000 });
+  assert.equal(capped.priced[0].earned_cents, 100000);
+  assert.deepEqual(amounts(capped), { up: 2000 });
   // A loop in the tree can't hang or double pay.
-  assert.deepEqual(amounts(run({ x: a(2000, 'rook'), rook: a(1500, 'x') })), { x: 50000 });
+  assert.deepEqual(amounts(run({ x: a('rook', null), rook: a('x', null) })), { x: 5000 });
 });

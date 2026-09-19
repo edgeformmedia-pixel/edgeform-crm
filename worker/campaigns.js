@@ -45,6 +45,7 @@ function readCampaign(body, existing = {}) {
     end_date: dateOrNull(pick('endDate', 'end_date'), 'End date'),
     platforms_allowed: JSON.stringify(PLATFORMS.filter(p => platforms.includes(p))),
     default_cpm_rate_cents: wholeNumber(pick('defaultCpmRateCents', 'default_cpm_rate_cents') ?? 0, 'CPM rate', { nullable: false }),
+    default_override_bps: wholeNumber(pick('defaultOverrideBps', 'default_override_bps') ?? 500, 'Team override %', { nullable: false, max: 10000 }),
     max_payout_per_video_cents: wholeNumber(pick('maxPayoutPerVideoCents', 'max_payout_per_video_cents'), 'Max per video'),
     max_payout_per_affiliate_cents: wholeNumber(pick('maxPayoutPerAffiliateCents', 'max_payout_per_affiliate_cents'), 'Max per affiliate'),
     total_budget_cents: wholeNumber(pick('totalBudgetCents', 'total_budget_cents'), 'Total budget'),
@@ -65,7 +66,7 @@ const statsJson = (r) => ({
 function campaignJson(c) {
   return {
     id: c.id, operationId: c.operation_id, name: c.name, brief: c.brief, status: c.status, startDate: c.start_date, endDate: c.end_date,
-    platformsAllowed: parseJson(c.platforms_allowed, []), defaultCpmRateCents: c.default_cpm_rate_cents, currency: c.currency,
+    platformsAllowed: parseJson(c.platforms_allowed, []), defaultCpmRateCents: c.default_cpm_rate_cents, defaultOverrideBps: c.default_override_bps, currency: c.currency,
     maxPayoutPerVideoCents: c.max_payout_per_video_cents, maxPayoutPerAffiliateCents: c.max_payout_per_affiliate_cents,
     totalBudgetCents: c.total_budget_cents, minViewsToQualify: c.min_views_to_qualify,
     requiresVideoApproval: c.requires_video_approval === 1, createdBy: c.created_by, createdAt: c.created_at, updatedAt: c.updated_at,
@@ -91,6 +92,7 @@ function affiliateJson(a) {
   return {
     id: a.id, campaignId: a.campaign_id, creatorId: a.creator_id, status: a.status, rank: a.rank, uplineId: a.upline_id,
     cpmRateOverrideCents: a.cpm_rate_override_cents, effectiveCpmRateCents: a.cpm_rate_override_cents ?? a.default_cpm_rate_cents,
+    overrideBps: a.override_bps, effectiveOverrideBps: a.override_bps ?? a.default_override_bps,
     invitedAt: a.invited_at, joinedAt: a.joined_at, createdAt: a.created_at,
     creator: {
       id: a.creator_id, name: a.creator_name, email: a.creator_email, instagram: a.instagram, tiktok: a.tiktok, youtube: a.youtube,
@@ -101,7 +103,7 @@ function affiliateJson(a) {
   };
 }
 
-const AFFILIATES_SQL = `SELECT ca.*, c.default_cpm_rate_cents, cr.name creator_name, cr.email creator_email, cr.instagram, cr.tiktok, cr.youtube,
+const AFFILIATES_SQL = `SELECT ca.*, c.default_cpm_rate_cents, c.default_override_bps, cr.name creator_name, cr.email creator_email, cr.instagram, cr.tiktok, cr.youtube,
     cr.payout_method, cr.payout_details_last4, cr.tax_form_received, cr.portal_last_login_at,
     ${ASSIGNMENT_STATS_SQL}
   FROM campaign_affiliates ca JOIN campaigns c ON c.id = ca.campaign_id JOIN creators cr ON cr.id = ca.creator_id`;
@@ -169,7 +171,7 @@ async function updateCampaign(request, env, headers, [id]) {
     const after = Object.fromEntries(keys.map(k => [k, fields[k]]));
     if (JSON.stringify(before) !== JSON.stringify(after)) statements.push(auditStatement(env, { actorType: 'user', actorId: user.id, entityType: 'campaign', entityId: id, action, before, after }));
   };
-  audit('rate_changed', ['default_cpm_rate_cents']);
+  audit('rate_changed', ['default_cpm_rate_cents', 'default_override_bps']);
   audit('caps_changed', ['max_payout_per_video_cents', 'max_payout_per_affiliate_cents', 'total_budget_cents', 'min_views_to_qualify']);
   audit('status_changed', ['status']);
   // Ending a campaign permanently locks its still-tracking videos: final views frozen, no more weekly
@@ -180,7 +182,7 @@ async function updateCampaign(request, env, headers, [id]) {
       WHERE campaign_id = ? AND status = 'approved'`).bind(now(), id));
   }
   await env.DB.batch(statements);
-  const moneyChanged = ['default_cpm_rate_cents', 'max_payout_per_video_cents', 'max_payout_per_affiliate_cents', 'total_budget_cents', 'min_views_to_qualify']
+  const moneyChanged = ['default_cpm_rate_cents', 'default_override_bps', 'max_payout_per_video_cents', 'max_payout_per_affiliate_cents', 'total_budget_cents', 'min_views_to_qualify']
     .some(k => existing[k] !== fields[k]);
   if (moneyChanged || justEnded) await recomputeCampaign(env, id);
   return json({ ok: true, campaign: await campaignDetail(env, id) }, 200, headers);
@@ -260,6 +262,7 @@ async function addAffiliate(request, env, headers, [campaignId]) {
   if (!campaign) throw new HttpError(404, 'Campaign not found.');
   const body = await readJson(request);
   const override = wholeNumber(body.cpmRateOverrideCents, 'CPM override');
+  const overrideBps = wholeNumber(body.overrideBps, 'Team override %', { max: 10000 });
   const rank = readRank(body.rank);
   const uplineId = await checkUpline(env, campaignId, body.uplineId);
 
@@ -278,12 +281,12 @@ async function addAffiliate(request, env, headers, [campaignId]) {
   const id = existing?.id || crypto.randomUUID();
   await env.DB.batch([
     existing
-      ? env.DB.prepare("UPDATE campaign_affiliates SET status = 'invited', cpm_rate_override_cents = ?, rank = ?, upline_id = ?, updated_at = ? WHERE id = ?").bind(override, rank, uplineId, stamp, id)
-      : env.DB.prepare(`INSERT INTO campaign_affiliates (id, campaign_id, creator_id, cpm_rate_override_cents, rank, upline_id, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, 'invited', ?, ?)`).bind(id, campaignId, creator.id, override, rank, uplineId, stamp, stamp),
+      ? env.DB.prepare("UPDATE campaign_affiliates SET status = 'invited', cpm_rate_override_cents = ?, override_bps = ?, rank = ?, upline_id = ?, updated_at = ? WHERE id = ?").bind(override, overrideBps, rank, uplineId, stamp, id)
+      : env.DB.prepare(`INSERT INTO campaign_affiliates (id, campaign_id, creator_id, cpm_rate_override_cents, override_bps, rank, upline_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'invited', ?, ?)`).bind(id, campaignId, creator.id, override, overrideBps, rank, uplineId, stamp, stamp),
     auditStatement(env, {
       actorType: 'user', actorId: user.id, entityType: 'campaign_affiliate', entityId: id, action: 'affiliate_added',
-      after: { campaign_id: campaignId, creator_id: creator.id, cpm_rate_override_cents: override, rank, upline_id: uplineId }
+      after: { campaign_id: campaignId, creator_id: creator.id, cpm_rate_override_cents: override, override_bps: overrideBps, rank, upline_id: uplineId }
     })
   ]);
   if (uplineId) await recomputeCampaign(env, campaignId);
@@ -306,6 +309,7 @@ async function updateAffiliate(request, env, headers, [id]) {
   const body = await readJson(request);
   const fields = {};
   if (body.cpmRateOverrideCents !== undefined) fields.cpm_rate_override_cents = wholeNumber(body.cpmRateOverrideCents, 'CPM override');
+  if (body.overrideBps !== undefined) fields.override_bps = wholeNumber(body.overrideBps, 'Team override %', { max: 10000 });
   if (body.status !== undefined) {
     if (!ASSIGNMENT_STATUSES.includes(body.status)) throw new HttpError(400, 'Invalid affiliate status.');
     fields.status = body.status;
@@ -315,11 +319,11 @@ async function updateAffiliate(request, env, headers, [id]) {
   if (!Object.keys(fields).length) throw new HttpError(400, 'Nothing to update.');
   const statements = [env.DB.prepare(`UPDATE campaign_affiliates SET ${Object.keys(fields).map(k => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
     .bind(...Object.values(fields), now(), id)];
-  const rateChanged = 'cpm_rate_override_cents' in fields && fields.cpm_rate_override_cents !== existing.cpm_rate_override_cents;
-  if (rateChanged) {
+  const rateKeys = ['cpm_rate_override_cents', 'override_bps'].filter(k => k in fields && fields[k] !== existing[k]);
+  if (rateKeys.length) {
     statements.push(auditStatement(env, {
       actorType: 'user', actorId: user.id, entityType: 'campaign_affiliate', entityId: id, action: 'rate_changed',
-      before: { cpm_rate_override_cents: existing.cpm_rate_override_cents }, after: { cpm_rate_override_cents: fields.cpm_rate_override_cents }
+      before: Object.fromEntries(rateKeys.map(k => [k, existing[k]])), after: Object.fromEntries(rateKeys.map(k => [k, fields[k]]))
     }));
   }
   if ('status' in fields && fields.status !== existing.status) {
@@ -358,7 +362,7 @@ async function updateAffiliate(request, env, headers, [id]) {
   }
   await env.DB.batch(statements);
   // Status matters too: removed uplines are skipped in the chain.
-  if (rateChanged || uplineChanged || ('status' in fields && fields.status !== existing.status)) await recomputeCampaign(env, existing.campaign_id);
+  if (rateKeys.length || uplineChanged || ('status' in fields && fields.status !== existing.status)) await recomputeCampaign(env, existing.campaign_id);
   const affiliate = await env.DB.prepare(`${AFFILIATES_SQL} WHERE ca.id = ?`).bind(id).first();
   return json({ ok: true, affiliate: affiliateJson(affiliate) }, 200, headers);
 }

@@ -39,7 +39,9 @@ function payoutJson(p, items = [], overrideItems = []) {
     overrideCount: p.override_count ?? overrideItems.length,
     overrideItems: overrideItems.map(o => ({
       id: o.id, videoId: o.video_id, campaignId: o.campaign_id, campaignName: o.campaign_name, canonicalUrl: o.canonical_url, platform: o.platform,
-      fromName: o.from_name, billableViews: o.billable_views, cpmDiffCents: o.cpm_diff_cents, amountCents: o.amount_cents, weekOf: o.fetched_at
+      fromName: o.from_name, billableViews: o.billable_views, cpmDiffCents: o.cpm_diff_cents, amountCents: o.amount_cents, weekOf: o.fetched_at,
+      // Percentage overrides (v5): the % and what the downline was paid that week. overrideBps is null on old CPM-difference rows.
+      overrideBps: o.override_bps ?? null, fromEarnedCents: o.from_earned_cents ?? null
     })),
     lineItems: items.map(li => ({
       id: li.id, videoId: li.video_id, campaignId: li.campaign_id, campaignName: li.campaign_name, canonicalUrl: li.canonical_url,
@@ -57,7 +59,7 @@ const PAYOUT_SQL = `SELECT p.*, cr.name creator_name, cr.email creator_email, cr
 const ITEMS_SQL = `SELECT li.*, c.name campaign_name, v.canonical_url, v.platform, s.fetched_at FROM payout_line_items li
   LEFT JOIN campaigns c ON c.id = li.campaign_id LEFT JOIN videos v ON v.id = li.video_id LEFT JOIN view_snapshots s ON s.id = li.view_snapshot_id`;
 
-export const OVERRIDE_ITEMS_SQL = `SELECT poi.*, c.name campaign_name, v.canonical_url, v.platform, cr.name from_name, s.fetched_at FROM payout_override_items poi
+export const OVERRIDE_ITEMS_SQL = `SELECT poi.*, c.name campaign_name, v.canonical_url, v.platform, cr.name from_name, s.fetched_at, s.earned_cents from_earned_cents FROM payout_override_items poi
   LEFT JOIN campaigns c ON c.id = poi.campaign_id LEFT JOIN videos v ON v.id = poi.video_id LEFT JOIN view_snapshots s ON s.id = poi.view_snapshot_id
   LEFT JOIN campaign_affiliates src ON src.id = poi.source_campaign_affiliate_id LEFT JOIN creators cr ON cr.id = src.creator_id`;
 
@@ -139,8 +141,8 @@ async function createPayout(request, env, headers) {
       env.DB.prepare(`INSERT INTO payouts (${Object.keys(payout).join(', ')}) VALUES (${Object.keys(payout).map(() => '?').join(', ')})`).bind(...Object.values(payout)),
       ...videos.map(v => env.DB.prepare(`INSERT INTO payout_line_items (id, payout_id, view_snapshot_id, video_id, campaign_id, billable_views, cpm_rate_cents, amount_cents)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), id, v.view_snapshot_id, v.video_id, v.campaign_id, v.billable_views, v.cpm_rate_cents, v.earned_cents)),
-      ...overrides.map(o => env.DB.prepare(`INSERT INTO payout_override_items (id, payout_id, view_snapshot_id, video_id, campaign_affiliate_id, campaign_id, source_campaign_affiliate_id, billable_views, cpm_diff_cents, amount_cents)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), id, o.view_snapshot_id, o.video_id, o.campaign_affiliate_id, o.campaign_id, o.source_campaign_affiliate_id, o.billable_views, o.cpm_diff_cents, o.amount_cents)),
+      ...overrides.map(o => env.DB.prepare(`INSERT INTO payout_override_items (id, payout_id, view_snapshot_id, video_id, campaign_affiliate_id, campaign_id, source_campaign_affiliate_id, billable_views, cpm_diff_cents, override_bps, amount_cents)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), id, o.view_snapshot_id, o.video_id, o.campaign_affiliate_id, o.campaign_id, o.source_campaign_affiliate_id, o.billable_views, o.cpm_diff_cents, o.override_bps, o.amount_cents)),
       auditStatement(env, { actorType: 'user', actorId: user.id, entityType: 'payout', entityId: id, action: 'payout_created', after: { creator_id: creator.id, amount_cents: amount, videos: videos.length, overrides: overrides.length } })
     ]);
   } catch (error) {

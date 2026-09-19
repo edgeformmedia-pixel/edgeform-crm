@@ -31,7 +31,9 @@ const campaignSummary = (r) => ({
   assignment_status: r.assignment_status, video_count: r.video_count, total_views: r.total_views,
   earned_cents: r.earned_cents,
   // Added with uplines (CONTRACT.md §6).
-  rank: r.rank, override_earned_cents: r.override_earned_cents
+  rank: r.rank, override_earned_cents: r.override_earned_cents,
+  // v5: the % of their downline's pay they earn on top (basis points, 500 = 5%).
+  override_bps: r.override_bps
 });
 
 const campaignDetail = (r) => ({
@@ -187,7 +189,8 @@ async function patchMe(request, env, headers) {
 // ── Campaigns ──
 
 const CAMPAIGN_SQL = `SELECT c.*, ca.id assignment_id, ca.status assignment_status, ca.rank,
-    COALESCE(ca.cpm_rate_override_cents, c.default_cpm_rate_cents) cpm_rate_cents, ${ASSIGNMENT_STATS_SQL}
+    COALESCE(ca.cpm_rate_override_cents, c.default_cpm_rate_cents) cpm_rate_cents,
+    COALESCE(ca.override_bps, c.default_override_bps) override_bps, ${ASSIGNMENT_STATS_SQL}
   FROM campaign_affiliates ca JOIN campaigns c ON c.id = ca.campaign_id
   WHERE ca.creator_id = ? AND ca.status <> 'removed' AND c.status <> 'draft'`;
 
@@ -313,9 +316,10 @@ async function payouts(request, env, headers) {
     env.DB.prepare(`SELECT li.*, c.name campaign_name, v.canonical_url FROM payout_line_items li
       JOIN payouts p ON p.id = li.payout_id LEFT JOIN campaigns c ON c.id = li.campaign_id LEFT JOIN videos v ON v.id = li.video_id
       WHERE p.creator_id = ? ORDER BY c.name, v.submitted_at`).bind(creator.id),
-    env.DB.prepare(`SELECT poi.*, c.name campaign_name, v.canonical_url, cr.name from_name FROM payout_override_items poi
+    env.DB.prepare(`SELECT poi.*, c.name campaign_name, v.canonical_url, cr.name from_name, s.earned_cents from_earned_cents FROM payout_override_items poi
       JOIN payouts p ON p.id = poi.payout_id LEFT JOIN campaigns c ON c.id = poi.campaign_id LEFT JOIN videos v ON v.id = poi.video_id
       LEFT JOIN campaign_affiliates src ON src.id = poi.source_campaign_affiliate_id LEFT JOIN creators cr ON cr.id = src.creator_id
+      LEFT JOIN view_snapshots s ON s.id = poi.view_snapshot_id
       WHERE p.creator_id = ? ORDER BY c.name, v.submitted_at`).bind(creator.id)
   ]);
   const data = list.results.map(p => ({
@@ -328,7 +332,8 @@ async function payouts(request, env, headers) {
     // Added with uplines: what they earned on their downline's videos.
     override_items: overrides.results.filter(o => o.payout_id === p.id).map(o => ({
       video_id: o.video_id, campaign_id: o.campaign_id, campaign_name: orNull(o.campaign_name), canonical_url: orNull(o.canonical_url),
-      from_name: orNull(o.from_name), billable_views: o.billable_views, cpm_diff_cents: o.cpm_diff_cents, amount_cents: o.amount_cents
+      from_name: orNull(o.from_name), billable_views: o.billable_views, cpm_diff_cents: o.cpm_diff_cents, amount_cents: o.amount_cents,
+      override_bps: o.override_bps ?? null, from_earned_cents: o.from_earned_cents ?? null
     }))
   }));
   return json({ ok: true, data }, 200, headers);
@@ -343,6 +348,7 @@ async function team(request, env, headers, [id]) {
   const campaign = await assignedCampaign(env, creator.id, id);
   const [members, fromEach] = await env.DB.batch([
     env.DB.prepare(`SELECT ca.id, ca.upline_id, ca.rank, ca.status, cr.name, COALESCE(ca.cpm_rate_override_cents, c.default_cpm_rate_cents) cpm_rate_cents,
+        COALESCE(ca.override_bps, c.default_override_bps) override_bps,
         (SELECT COUNT(*) FROM videos v WHERE v.campaign_affiliate_id = ca.id) video_count,
         (SELECT COALESCE(SUM(CASE v.status WHEN 'locked' THEN v.billable_views WHEN 'approved' THEN v.latest_view_count ELSE 0 END), 0) FROM videos v WHERE v.campaign_affiliate_id = ca.id) total_views
       FROM campaign_affiliates ca JOIN campaigns c ON c.id = ca.campaign_id JOIN creators cr ON cr.id = ca.creator_id
@@ -355,7 +361,7 @@ async function team(request, env, headers, [id]) {
   for (const m of members.results) if (m.upline_id) children.set(m.upline_id, [...(children.get(m.upline_id) || []), m]);
   const mine = new Map(fromEach.results.map(r => [r.id, r]));
   const node = (m, depth) => ({
-    id: m.id, name: m.name, rank: m.rank, cpm_rate_cents: m.cpm_rate_cents, status: m.status, level: depth,
+    id: m.id, name: m.name, rank: m.rank, cpm_rate_cents: m.cpm_rate_cents, override_bps: m.override_bps, status: m.status, level: depth,
     video_count: m.video_count, total_views: m.total_views,
     your_override_earned_cents: depth ? mine.get(m.id)?.earned || 0 : 0,
     downline: depth < 50 ? (children.get(m.id) || []).sort((a, b) => a.name.localeCompare(b.name)).map(c => node(c, depth + 1)) : []

@@ -1,4 +1,4 @@
-# Edgeform Affiliate System — Shared Contract (v4)
+# Edgeform Affiliate System — Shared Contract (v5)
 
 Source of truth for BOTH builds. An identical copy lives in both repos:
 - **CRM agent** → `edgeform-crm` (Cloudflare Worker `edgeform-crm-api` + D1 `edgeform-crm` + static admin UI at crm.edgeformmarketing.com). Owns the database, admin UI, view polling, earnings, payouts, and the affiliate API.
@@ -331,30 +331,36 @@ rank: top_creator | master | general | rookie
 - `override_earnings`: `id, view_snapshot_id, video_id, campaign_id, campaign_affiliate_id` (the upline who earns), `creator_id, source_campaign_affiliate_id` (who posted), `depth, cpm_diff_cents, amount_cents`. UNIQUE(view_snapshot_id, campaign_affiliate_id) (v4; was UNIQUE(video_id, campaign_affiliate_id) — an upline now earns an override per priced WEEK of a downline's video, not once per video). `view_snapshot_id` is NULL on rows from before v4.
 - `payout_override_items`: `id, payout_id, view_snapshot_id, video_id, campaign_affiliate_id, campaign_id, source_campaign_affiliate_id, billable_views, cpm_diff_cents, amount_cents`. UNIQUE(view_snapshot_id, campaign_affiliate_id) (v4, same reason).
 
-### Override formula (v4: priced per week, alongside the poster's own earnings in §3)
+### Override formula (v5: a percentage of the downline's pay, priced per week alongside §3)
+v5 (migration `0022_affiliate_override_percent.sql`) replaced the v4 CPM-difference rule. New D1 columns:
+- `campaigns.default_override_bps` INTEGER NOT NULL DEFAULT 500 (basis points: 500 = 5%, 550 = 5.5%; 0–10000).
+- `campaign_affiliates.override_bps` INTEGER NULL — what THIS person earns on their downline. NULL = campaign default.
+- `override_earnings.override_bps`, `payout_override_items.override_bps` INTEGER NULL — the % the row was priced at.
+  NULL on rows priced under v4 (those keep their `cpm_diff_cents`); v5 rows store `cpm_diff_cents = 0`.
 ```
-for each priced week, walk up the poster's upline chain (removed uplines are skipped):
-  highest = poster's effective CPM
-  for each upline: diff = upline CPM − highest; if diff > 0 the upline earns floor(delta_views × diff / 1000)
-                   highest = max(highest, upline CPM)
-→ equal (or lower) CPM earns $0; everything paid on a week adds up to the highest CPM in its chain
-min_views_to_qualify applies to overrides too (cumulative, per §3); overrides count toward total_budget_cents,
+effective_override_bps = COALESCE(campaign_affiliates.override_bps, campaigns.default_override_bps)
+for each priced week with week_cents > 0 (the poster's own pay, §3, after caps), walk up the poster's
+upline chain (removed uplines are skipped):
+  each upline earns floor(week_cents × their effective_override_bps / 10000)
+→ every level earns its OWN % of the poster's pay; 0% earns $0. It's paid ON TOP: the poster's pay is never reduced.
+Nothing paid to the poster (e.g. below min_views_to_qualify) → no overrides. Overrides count toward total_budget_cents,
 oldest week first, alongside own earnings — but NOT toward max_payout_per_affiliate_cents (that only caps a
-person's own posted videos). Once priced, an override is permanent, same as own earnings (§3).
+person's own posted videos). Once priced, an override is permanent, same as own earnings (§3): changing a %
+only affects weeks priced after the change.
 
 override_earned_cents = Σ override_earnings.amount_cents   (no more locked/approved split — always earned once priced)
 owed_cents             = earned_cents + override_earned_cents − paid_cents
 ```
-Example: rookie at $1.50, upline at $2.00. The rookie's 1K new views this week pay the rookie $1.50 and the upline $0.50. The upline's own 1K views pay the upline $2.00.
+Example: rookie at $1.50 CPM, upline at 5%. The rookie's 10K new views this week pay the rookie $15.00 and the upline 5% of that, $0.75, on top.
 
 ### API additions
-- `CampaignSummary` / `CampaignDetail` add: `rank`, `override_earned_cents`.
+- `CampaignSummary` / `CampaignDetail` add: `rank`, `override_earned_cents`, and (v5) `override_bps` — the caller's effective override %.
 - `Earnings` adds: `override_earned_cents` (top level and in each `by_campaign` row). `owed_cents` uses the formula above.
-- `Payout` adds `override_items: [ { video_id, campaign_id, campaign_name, canonical_url, from_name, billable_views, cpm_diff_cents, amount_cents, week_of } ]`. `from_name` = the downline member who posted. `amount_cents` of the payout = Σ line_items + Σ override_items.
+- `Payout` adds `override_items: [ { video_id, campaign_id, campaign_name, canonical_url, from_name, billable_views, cpm_diff_cents, amount_cents, week_of, override_bps, from_earned_cents } ]`. `from_name` = the downline member who posted. v5 rows: `override_bps` = the % and `from_earned_cents` = what the poster was paid that week (`amount_cents` = that % of it); both null on v4 rows, which show `cpm_diff_cents` instead. `amount_cents` of the payout = Σ line_items + Σ override_items.
 - New: `GET /campaigns/:id/team` → `{ ok, team: TeamNode }`: the caller and their downline only (never their upline, never contact details).
 ```jsonc
 // TeamNode (the root is the caller, level 0)
-{ "id", "name", "rank", "cpm_rate_cents", "status", "level", "video_count", "total_views",
+{ "id", "name", "rank", "cpm_rate_cents", "override_bps", "status", "level", "video_count", "total_views",
   "your_override_earned_cents",   // what the CALLER earned from this person's own videos (0 on the root)
   "downline": [ TeamNode ] }
 ```
