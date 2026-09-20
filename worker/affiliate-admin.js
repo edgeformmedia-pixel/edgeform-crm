@@ -165,6 +165,13 @@ async function enterViews(request, env, headers, [id]) {
   const body = await readJson(request);
   const video = await loadVideo(env, id);
   if (video.status === 'locked') throw new HttpError(409, 'This video is locked (its campaign ended), so its views can’t change.');
+  // Only an approved video prices a week (CONTRACT.md §3, and priceEvents relies on it). Without this
+  // guard an entry on a video that's still in review is priced at zero and, because priced weeks are
+  // never repriced, that week's pay is lost permanently. Approve first, then enter the views.
+  if (video.status !== 'approved') throw new HttpError(409,
+    video.status === 'pending_review'
+      ? 'Approve this video first — views entered while it’s still in review would be paid at zero and can’t be corrected later.'
+      : `This video is ${video.status}, so its views can’t be counted.`);
   const count = (value, label, required) => {
     if (value === undefined || value === null || value === '') {
       if (required) throw new HttpError(400, `${label} is required.`);

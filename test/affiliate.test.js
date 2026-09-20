@@ -203,3 +203,38 @@ test('submitted Instagram links match a media permalink by shortcode, share toke
   assert.equal(parseVideoUrl('https://www.instagram.com/reel/DacBBDdNkNH/?stkn=abc').platform_video_id,
     shortcodeOf('https://www.instagram.com/reel/DacBBDdNkNH/'));
 });
+
+test('a week entered on a video that is not approved prices at zero and is never repriced', () => {
+  // This is why enterViews refuses anything but `approved`. priceEvents writes 0 for a
+  // pending_review event, and recomputeCampaign only ever reprices rows where earned_cents IS NULL
+  // — so that zero is permanent and the affiliate silently loses the week.
+  const campaign = { default_cpm_rate_cents: 0 };
+  const affiliates = new Map([['a1', { id: 'a1', cpm_rate_override_cents: 225 }]]);
+  const pending = priceEvents(campaign,
+    [{ id: 's1', video_id: 'v1', campaign_affiliate_id: 'a1', view_count: 38431, delta_views: 38431, video_status: 'pending_review' }],
+    affiliates);
+  assert.equal(pending.priced[0].earned_cents, 0);
+  assert.equal(pending.priced.length, 1, 'the row is still written, which is what makes the zero permanent');
+
+  // Approved, same numbers, with the affiliate's rate override applied: 38431 * 225 / 1000 = 8646.975
+  const approved = priceEvents(campaign,
+    [{ id: 's1', video_id: 'v1', campaign_affiliate_id: 'a1', view_count: 38431, delta_views: 38431, video_status: 'approved' }],
+    affiliates);
+  assert.equal(approved.priced[0].earned_cents, 8646);
+});
+
+test('weekly entries price the gain since the last check, not the running total', () => {
+  // The number staff type (and the one Instagram pre-fills) is the video's lifetime total; only the
+  // week-on-week increase is paid, so a cumulative count never pays twice for the same views.
+  const campaign = { default_cpm_rate_cents: 225 };
+  const week = (id, viewCount, previous) =>
+    ({ id, video_id: 'v1', campaign_affiliate_id: 'a1', view_count: viewCount, delta_views: Math.max(0, viewCount - previous), video_status: 'approved' });
+  const { priced } = priceEvents(campaign, [
+    week('w1', 38431, 0),        // first check: the whole lifetime count
+    week('w2', 50000, 38431),    // + 11,569
+    week('w3', 49000, 50000)     // a lower number (a deleted repost, say) must never go negative
+  ]);
+  assert.deepEqual(priced.map(p => p.earned_cents), [8646, 2603, 0]);  // 38431*225/1000=8646.9, 11569*225/1000=2603.0
+  // And the three weeks together equal one pass over the highest total reached.
+  assert.equal(priced.reduce((n, p) => n + p.earned_cents, 0), Math.floor(38431 * 225 / 1000) + Math.floor(11569 * 225 / 1000));
+});

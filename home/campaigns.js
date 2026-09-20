@@ -499,7 +499,8 @@ function videoRowHtml(v, { showCampaign = false } = {}) {
   if (['pending_review', 'rejected', 'removed'].includes(v.status)) actions.push(`<button class="action-btn primary" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'approve', this)">${v.status === 'pending_review' ? 'Approve' : 'Restore'}</button>`);
   if (['pending_review', 'approved', 'removed'].includes(v.status)) actions.push(`<button class="action-btn" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'reject', this)">Reject</button>`);
   if (['pending_review', 'approved', 'locked'].includes(v.status)) actions.push(`<button class="action-btn" data-id="${id}" onclick="reviewVideo(this.dataset.id, 'remove', this)">Remove</button>`);
-  actions.push(`<button class="action-btn" data-id="${id}" onclick="openVideoDetail(this.dataset.id)">Weekly views…</button>`);
+  // Only an approved video can take a weekly entry, so don't invite one on anything else.
+  actions.push(`<button class="action-btn" data-id="${id}" onclick="openVideoDetail(this.dataset.id)">${v.status === 'approved' ? 'Weekly views…' : 'Details…'}</button>`);
   return `<tr>
     <td><div class="cmp-video-url"><a href="${safeUrl(v.canonicalUrl)}" target="_blank" rel="noopener">${esc(CMP_PLATFORMS[v.platform] || v.platform)} · ${esc(v.platformVideoId)} ↗</a>
       <span>Submitted ${fmtDate(v.submittedAt)}${v.caption ? ' · ' + esc(v.caption.slice(0, 60)) : ''}</span>
@@ -618,7 +619,9 @@ async function openVideoDetail(id) {
         ${s.note ? `<span>${esc(s.note)}</span>` : ''}</a>`).join('')}</div>`
       : '<div class="cmp-empty">None yet. Affiliates can upload their insights screen from the portal (needed for trial reels).</div>'}
     ${v.status === 'approved' ? `<button class="action-btn" onclick="markVideoUnavailable(this)">Mark post unavailable</button>` : ''}
-    ${v.status === 'locked' ? '<div class="ops-hint">This video is locked (its campaign ended) — no more weekly entries.</div>' : `<div class="detail-section-title">This week's views</div>
+    ${v.status === 'locked' ? '<div class="ops-hint">This video is locked (its campaign ended) — no more weekly entries.</div>'
+      : v.status !== 'approved' ? `<div class="ops-hint">This video is ${esc(VIDEO_STATUS_LABEL[v.status] || v.status)}. Approve it before entering views — a week entered now is paid at zero, and priced weeks can't be corrected afterwards.</div>`
+      : `<div class="detail-section-title">This week's views</div>
     ${apiNumber !== null ? `<div class="ops-hint cmp-api-note">Instagram reported <b>${cmpNum(apiNumber)} views</b> ${fmtDateTime(apiViews.fetchedAt)}${apiViews.username ? ` for @${esc(apiViews.username)}` : ''}. Check it against the screenshot before saving — once a week is priced it can't be changed.</div>`
       : apiViews && apiViews.error ? `<div class="ops-hint cmp-api-note">Instagram couldn't be read for this video: ${esc(apiViews.error)}</div>` : ''}
     <div class="ops-form-grid">
