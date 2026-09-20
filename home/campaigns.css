@@ -101,3 +101,7 @@
 .cmp-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .cmp-shot { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: inherit; text-decoration: none; }
 .cmp-shot img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 8px; border: 1px solid rgba(127, 127, 127, 0.25); background: rgba(127, 127, 127, 0.08); }
+
+/* Instagram-sourced view counts in the weekly entry form (CONTRACT.md §8) */
+.cmp-api-tag { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #6d28d9; background: rgba(109,40,217,.1); border-radius: 5px; padding: 2px 6px; margin-left: 6px; }
+.cmp-api-note { border-left: 2px solid rgba(109,40,217,.5); padding-left: 10px; }

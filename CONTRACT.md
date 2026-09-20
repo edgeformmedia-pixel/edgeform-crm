@@ -1,4 +1,4 @@
-# Edgeform Affiliate System — Shared Contract (v5)
+# Edgeform Affiliate System — Shared Contract (v7)
 
 Source of truth for BOTH builds. An identical copy lives in both repos:
 - **CRM agent** → `edgeform-crm` (Cloudflare Worker `edgeform-crm-api` + D1 `edgeform-crm` + static admin UI at crm.edgeformmarketing.com). Owns the database, admin UI, view polling, earnings, payouts, and the affiliate API.
@@ -388,3 +388,49 @@ Error codes: `unsupported_image` (415), `image_too_large` (413), `video_not_trac
 { "id", "video_id", "content_type", "size_bytes", "reported_views", "note", "uploaded_at" }
 ```
 `Video` adds `screenshot_count` and `last_screenshot_at`.
+
+---
+
+## 8. Instagram connections (added in v7, additive only)
+Trial reels have no public view count. The affiliate's own token does have it — verified against a
+live trial reel: it comes back from `/me/media` and its insights return a real `views` number, even
+though the account's public `media_count` doesn't include it. Meta documents this neither way, so
+it may change; screenshots (§7) remain the supported fallback and the only option for affiliates on
+personal accounts.
+
+**This is not v3's automated polling.** Nothing here prices a week, writes `view_snapshots`, or moves
+money. The number is a *suggestion* that pre-fills the weekly entry box; a person still saves every
+priced week, because priced weeks are permanent (§3).
+
+Tables (migration `0024`):
+`creator_instagram_connections`: `creator_id (PK), ig_user_id, username, access_token_encrypted,
+token_expires_at, scopes, connected_at, last_refreshed_at, last_synced_at, last_error`.
+`video_api_views`: `video_id (PK), ig_media_id, views, reach, likes, comments, fetched_at, error`.
+
+| method | path | body | returns |
+|---|---|---|---|
+| GET | /connections | — | `{ ok, available, instagram: Connection }` |
+| POST | /connections/instagram/start | — | `{ ok, authorize_url }`. Error code `not_configured` (503) when `IG_APP_ID` is unset |
+| DELETE | /connections/instagram | — | `{ ok: true }`. Also drops that creator's cached `video_api_views` |
+
+```jsonc
+// Connection
+{ "connected", "username", "connected_at", "last_synced_at", "expires_at", "needs_reconnect", "error" }
+```
+
+The OAuth return leg is `GET ${API_URL}/api/affiliate/instagram/callback`, **outside** the affiliate
+prefix: it's a browser redirect from Instagram with no Bearer header, so the creator rides in a
+signed, 15-minute `state` (HMAC under `AFFILIATE_ENCRYPTION_KEY`). It always redirects back to
+`${PORTAL_URL}/settings.html?instagram=connected|denied|failed`, never returning JSON.
+
+Scopes requested: `instagram_business_basic,instagram_business_manage_insights`. Instagram Login,
+not Facebook Login — no linked Facebook Page is required. Long-lived tokens last ~60 days and cron
+refreshes them 10 days out; a failed refresh records `last_error` and the portal asks the affiliate
+to reconnect.
+
+Matching a submitted URL to a post: Instagram has no shortcode lookup, so the Worker walks
+`/me/media` and matches on the `permalink` shortcode against `videos.platform_video_id`. Strip the
+`?stkn=` share token Instagram appends to trial reel links.
+
+Staff see the number on the video detail modal as `apiViews`, pre-filled into Views with the note
+`Instagram API — @handle, <when>`. Insights lag up to 48h, which is fine for a Sunday check.

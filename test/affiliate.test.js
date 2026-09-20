@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseVideoUrl, resolveVideoUrl, normalizeHandle, computeEarnings, priceEvents, encryptText, decryptText, lastWeeklyCutoff } from '../worker/affiliate-lib.js';
+import { signState, readState, shortcodeOf } from '../worker/affiliate-instagram.js';
 
 test('YouTube links: watch, shorts, youtu.be, live all give the same video', () => {
   for (const url of ['https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10', 'youtube.com/shorts/dQw4w9WgXcQ', 'https://youtu.be/dQw4w9WgXcQ?si=x', 'https://m.youtube.com/live/dQw4w9WgXcQ']) {
@@ -165,4 +166,40 @@ test('uplines: each level earns its own %; campaign default, 0%, removed, budget
   assert.deepEqual(amounts(capped), { up: 2000 });
   // A loop in the tree can't hang or double pay.
   assert.deepEqual(amounts(run({ x: a('rook', null), rook: a('x', null) })), { x: 5000 });
+});
+
+// ── Instagram connections (CONTRACT.md §8) ──
+
+test('the OAuth state carries the creator, and a tampered or stale one is refused', async () => {
+  const env = { AFFILIATE_ENCRYPTION_KEY: 'test-key-not-a-real-secret' };
+  const state = await signState(env, 'creator-123');
+  assert.equal(await readState(env, state), 'creator-123');
+
+  // A different signing key must not validate: this is what stops anyone minting their own state
+  // and attaching an Instagram account to someone else's creator id.
+  assert.equal(await readState({ AFFILIATE_ENCRYPTION_KEY: 'other-key' }, state), null);
+
+  // Tampered payload, tampered signature, and junk all refuse.
+  const [body, sig] = state.split('.');
+  assert.equal(await readState(env, body + 'x.' + sig), null);
+  assert.equal(await readState(env, body + '.' + sig.slice(0, -2) + 'aa'), null);
+  assert.equal(await readState(env, 'not-a-state'), null);
+  assert.equal(await readState(env, ''), null);
+  assert.equal(await readState(env, null), null);
+});
+
+test('submitted Instagram links match a media permalink by shortcode, share token and all', () => {
+  assert.equal(shortcodeOf('https://www.instagram.com/reel/DacBBDdNkNH/'), 'DacBBDdNkNH');
+  // Trial reel links carry a ?stkn= share token; it must not break the match.
+  assert.equal(shortcodeOf('https://www.instagram.com/reel/DacBBDdNkNH/?stkn=MXcwbTQ3ZGl6YWNvZQ=='), 'DacBBDdNkNH');
+  assert.equal(shortcodeOf('https://www.instagram.com/p/C1a2B3c4D5e/'), 'C1a2B3c4D5e');
+  assert.equal(shortcodeOf('https://www.instagram.com/reels/C1a2B3c4D5e'), 'C1a2B3c4D5e');
+  assert.equal(shortcodeOf('https://www.instagram.com/thomaslancheros/'), null);
+  assert.equal(shortcodeOf(''), null);
+  assert.equal(shortcodeOf(null), null);
+
+  // The shortcode is exactly what parseVideoUrl stores, so a submitted link lines up with the
+  // media list without any extra normalising.
+  assert.equal(parseVideoUrl('https://www.instagram.com/reel/DacBBDdNkNH/?stkn=abc').platform_video_id,
+    shortcodeOf('https://www.instagram.com/reel/DacBBDdNkNH/'));
 });

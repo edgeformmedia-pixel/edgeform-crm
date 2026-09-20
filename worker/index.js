@@ -9,7 +9,8 @@ import { influencerLeadRoutes, discoveryCron } from './influencer-leads.js';
 import { campaignRoutes } from './campaigns.js';
 import { affiliateAdminRoutes } from './affiliate-admin.js';
 import { payoutRoutes } from './payouts.js';
-import { affiliateFetch, AFFILIATE_PREFIX } from './affiliate.js';
+import { affiliateFetch, AFFILIATE_PREFIX, instagramCallback } from './affiliate.js';
+import { instagramCron } from './affiliate-instagram.js';
 
 function cors(request, env) {
   const origin = request.headers.get('origin') || '';
@@ -36,6 +37,9 @@ async function dashboard(request, env, headers) {
 
 const routes = {
   'GET /api/health': (request, env, headers) => json({ ok: true, service: 'edgeform-crm-api' }, 200, headers),
+  // Instagram's OAuth return leg. Public by necessity — it's a browser redirect with no session,
+  // so the creator rides in a signed `state` (CONTRACT.md §8).
+  'GET /api/affiliate/instagram/callback': instagramCallback,
   ...intakeRoutes,
   'GET /api/dashboard': dashboard,
   ...authRoutes,
@@ -79,5 +83,6 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(mailCron(env));
     ctx.waitUntil(discoveryCron(env).catch(error => console.error('discovery cron failed', error?.message)));
+    ctx.waitUntil(instagramCron(env).catch(error => console.error('instagram cron failed', error?.message)));
   }
 };

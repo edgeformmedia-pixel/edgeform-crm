@@ -1,4 +1,8 @@
 import { json, HttpError, clean, now, readJson, randomToken, sha256, isEmail } from './lib.js';
+import {
+  isConfigured as igConfigured, signState, readState, authorizeUrl, exchangeCode, saveConnection,
+  connectionJson, settingsUrl, syncCreator
+} from './affiliate-instagram.js';
 import { sendEmail } from './email.js';
 import {
   PLATFORMS, PAYOUT_METHODS, PORTAL_URL, ASSIGNMENT_STATS_SQL, orNull, parseJson, addDays, resolveVideoUrl, normalizeHandle,
@@ -456,6 +460,59 @@ async function deleteScreenshot(request, env, headers, [id]) {
   return json({ ok: true }, 200, headers);
 }
 
+// ── Instagram connections (v7, CONTRACT.md §8) ──
+// Optional per affiliate. A connection only lets the CRM READ view counts for that creator's own
+// posts — including trial reels, whose counts aren't public — so staff have a number to confirm
+// on the weekly check instead of reading one off a screenshot. It never prices anything.
+
+async function getConnections(request, env, headers) {
+  const creator = await requireCreator(request, env);
+  const row = await env.DB.prepare('SELECT * FROM creator_instagram_connections WHERE creator_id = ?').bind(creator.id).first();
+  return json({ ok: true, available: igConfigured(env), instagram: connectionJson(row) }, 200, headers);
+}
+
+async function startInstagram(request, env, headers) {
+  const creator = await requireCreator(request, env);
+  if (!igConfigured(env)) throw fail(503, 'Instagram connections are not set up yet.', 'not_configured');
+  return json({ ok: true, authorize_url: authorizeUrl(env, await signState(env, creator.id)) }, 200, headers);
+}
+
+async function disconnectInstagram(request, env, headers) {
+  const creator = await requireCreator(request, env);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM creator_instagram_connections WHERE creator_id = ?').bind(creator.id),
+    // The cached numbers came from a token we no longer hold, so they go too.
+    env.DB.prepare('DELETE FROM video_api_views WHERE video_id IN (SELECT id FROM videos WHERE creator_id = ?)').bind(creator.id),
+    auditStatement(env, { actorType: 'creator', actorId: creator.id, entityType: 'creator', entityId: creator.id, action: 'instagram_disconnected', before: null, after: null })
+  ]);
+  return json({ ok: true }, 200, headers);
+}
+
+// The OAuth return leg. A browser redirect from Instagram, so there's no Bearer header — the
+// creator is carried in the signed `state` instead. Lives outside the affiliate prefix and
+// always redirects back to the portal rather than returning JSON.
+export async function instagramCallback(request, env, headers) {
+  const params = new URL(request.url).searchParams;
+  if (params.get('error')) return Response.redirect(settingsUrl('denied'), 302);
+  const creatorId = await readState(env, params.get('state'));
+  const code = params.get('code');
+  if (!creatorId || !code) return Response.redirect(settingsUrl('failed'), 302);
+  try {
+    const short = await exchangeCode(env, code);
+    const saved = await saveConnection(env, creatorId, short.access_token);
+    await env.DB.batch([
+      auditStatement(env, { actorType: 'creator', actorId: creatorId, entityType: 'creator', entityId: creatorId, action: 'instagram_connected', before: null, after: { ig_user_id: saved.ig_user_id, username: saved.username } })
+    ]);
+    // First sync immediately, so the affiliate sees it working rather than waiting for cron.
+    const row = await env.DB.prepare('SELECT * FROM creator_instagram_connections WHERE creator_id = ?').bind(creatorId).first();
+    if (row) await syncCreator(env, row).catch(error => console.error('first instagram sync failed', error?.message));
+    return Response.redirect(settingsUrl('connected'), 302);
+  } catch (error) {
+    console.error('instagram connect failed', error?.message);
+    return Response.redirect(settingsUrl('failed'), 302);
+  }
+}
+
 // ── Routing ──
 
 const routes = {
@@ -474,6 +531,9 @@ const routes = {
   'POST /videos/:id/screenshots': uploadScreenshot,
   'GET /screenshots/:id': getScreenshot,
   'DELETE /screenshots/:id': deleteScreenshot,
+  'GET /connections': getConnections,
+  'POST /connections/instagram/start': startInstagram,
+  'DELETE /connections/instagram': disconnectInstagram,
   'GET /earnings': earnings,
   'GET /payouts': payouts
 };

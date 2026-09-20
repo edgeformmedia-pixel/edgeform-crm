@@ -595,7 +595,10 @@ async function openVideoDetail(id) {
   try {
     videoDetail = await cmpRequest(`/api/affiliate-videos/${encodeURIComponent(id)}`);
   } catch (err) { body.innerHTML = `<div class="cmp-empty">${esc(err.message)}</div>`; return; }
-  const { video: v, snapshots, flags, audit, screenshots = [] } = videoDetail;
+  const { video: v, snapshots, flags, audit, screenshots = [], apiViews = null } = videoDetail;
+  // v7: Instagram reported a number for this video (CONTRACT.md §8). It pre-fills the box below;
+  // saving is still a person's decision, because a priced week can never be changed afterwards.
+  const apiNumber = apiViews && apiViews.views !== null && apiViews.views !== undefined ? apiViews.views : null;
   document.getElementById('video-modal-title').textContent = `${v.creator.name} · ${CMP_PLATFORMS[v.platform]}`;
   body.innerHTML = `
     <div class="detail-grid">
@@ -616,11 +619,13 @@ async function openVideoDetail(id) {
       : '<div class="cmp-empty">None yet. Affiliates can upload their insights screen from the portal (needed for trial reels).</div>'}
     ${v.status === 'approved' ? `<button class="action-btn" onclick="markVideoUnavailable(this)">Mark post unavailable</button>` : ''}
     ${v.status === 'locked' ? '<div class="ops-hint">This video is locked (its campaign ended) — no more weekly entries.</div>' : `<div class="detail-section-title">This week's views</div>
+    ${apiNumber !== null ? `<div class="ops-hint cmp-api-note">Instagram reported <b>${cmpNum(apiNumber)} views</b> ${fmtDateTime(apiViews.fetchedAt)}${apiViews.username ? ` for @${esc(apiViews.username)}` : ''}. Check it against the screenshot before saving — once a week is priced it can't be changed.</div>`
+      : apiViews && apiViews.error ? `<div class="ops-hint cmp-api-note">Instagram couldn't be read for this video: ${esc(apiViews.error)}</div>` : ''}
     <div class="ops-form-grid">
-      <div class="c-field"><label>Views *</label><input class="c-input" id="mv-views" inputmode="numeric" placeholder="${v.latestViewCount}"></div>
+      <div class="c-field"><label>Views *${apiNumber !== null ? ' <span class="cmp-api-tag">from Instagram</span>' : ''}</label><input class="c-input" id="mv-views" inputmode="numeric" value="${apiNumber !== null ? apiNumber : ''}" placeholder="${v.latestViewCount}"></div>
       <div class="c-field"><label>Likes</label><input class="c-input" id="mv-likes" inputmode="numeric"></div>
       <div class="c-field"><label>Comments</label><input class="c-input" id="mv-comments" inputmode="numeric"></div>
-      <div class="c-field full"><label>Note * (where the number came from)</label><input class="c-input" id="mv-note" placeholder="${screenshots.length ? `Affiliate's screenshot, ${fmtDate(screenshots[0].uploadedAt)}` : "Screenshot from creator's insights, 9/18"}"></div>
+      <div class="c-field full"><label>Note * (where the number came from)</label><input class="c-input" id="mv-note" value="${apiNumber !== null ? esc(`Instagram API${apiViews.username ? ' — @' + apiViews.username : ''}, ${fmtDateTime(apiViews.fetchedAt)}`) : ''}" placeholder="${screenshots.length ? `Affiliate's screenshot, ${fmtDate(screenshots[0].uploadedAt)}` : "Screenshot from creator's insights, 9/18"}"></div>
     </div>
     <button class="action-btn primary" style="margin-top:10px;" onclick="saveManualViews()">Save views</button>
     <div class="ops-hint">The cumulative total, not this week's gain — the delta since the last check is priced automatically. Logged in the audit log.</div>

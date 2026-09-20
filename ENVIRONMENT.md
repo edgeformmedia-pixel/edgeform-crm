@@ -43,3 +43,35 @@ npx wrangler secret put AFFILIATE_ENCRYPTION_KEY
 ```
 
 There's no automated view tracking and no platform OAuth: staff check each video's views by hand, once a week, from the campaign's video list. See CONTRACT.md §3.
+
+### Instagram connections (CONTRACT.md §8)
+
+Affiliates can optionally link their Instagram Professional account so the weekly check has a
+view count to confirm instead of a screenshot to read. This matters most for **trial reels**,
+whose view count isn't public anywhere — but is readable with the account's own token.
+
+| Setting | Where | Used for |
+|---|---|---|
+| `IG_APP_ID` | `wrangler.jsonc` var | Public Instagram app ID. Empty disables the feature and the portal hides the Connect button. |
+| `IG_APP_SECRET` | Worker secret | Exchanging the OAuth code and refreshing long-lived tokens. |
+| `AFFILIATE_ENCRYPTION_KEY` | Worker secret (existing) | Also encrypts stored Instagram tokens. |
+
+```sh
+npx wrangler secret put IG_APP_SECRET
+npx wrangler d1 migrations apply edgeform-crm --remote
+```
+
+In the Meta App Dashboard, under the Instagram use case → **API setup with Instagram login**, add
+this exact OAuth redirect URI:
+
+```
+https://edgeform-crm-api.edgeformmedia.workers.dev/api/affiliate/instagram/callback
+```
+
+Until the app passes **App Review** for Advanced Access, only Instagram accounts added as
+**Instagram Testers** (App roles → Instagram Testers, and accepted from that account's
+Instagram settings) can connect. Everyone else keeps uploading screenshots, which stays the
+supported path — personal accounts can't connect at all.
+
+Connections never price anything. The Worker writes to `video_api_views`, which pre-fills the
+weekly entry box; a person still saves every priced week (CONTRACT.md §3).

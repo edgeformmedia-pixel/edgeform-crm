@@ -67,7 +67,7 @@ async function listVideos(request, env, headers) {
 async function getVideo(request, env, headers, [id]) {
   await requireUser(request, env);
   const video = adminVideoJson(await loadVideo(env, id));
-  const [snapshots, flags, audit, screenshots] = await env.DB.batch([
+  const [snapshots, flags, audit, screenshots, apiViews] = await env.DB.batch([
     env.DB.prepare(`SELECT s.id, s.view_count, s.like_count, s.comment_count, s.source, s.fetched_at, s.note, s.delta_views, s.earned_cents,
         u.name entered_by_name, li.payout_id
       FROM view_snapshots s LEFT JOIN users u ON u.id = s.entered_by LEFT JOIN payout_line_items li ON li.view_snapshot_id = s.id
@@ -75,8 +75,15 @@ async function getVideo(request, env, headers, [id]) {
     env.DB.prepare(`SELECT f.*, u.name resolved_by_name FROM video_flags f LEFT JOIN users u ON u.id = f.resolved_by
       WHERE f.video_id = ? ORDER BY f.created_at DESC`).bind(id),
     env.DB.prepare(`SELECT * FROM affiliate_audit_log WHERE entity_type = 'video' AND entity_id = ? ORDER BY created_at DESC`).bind(id),
-    env.DB.prepare('SELECT * FROM video_screenshots WHERE video_id = ? ORDER BY uploaded_at DESC').bind(id)
+    env.DB.prepare('SELECT * FROM video_screenshots WHERE video_id = ? ORDER BY uploaded_at DESC').bind(id),
+    // v7: the number Instagram reported for this video, if the creator connected their account
+    // (CONTRACT.md §8). A suggestion for the weekly entry box — it prices nothing on its own.
+    env.DB.prepare(`SELECT a.*, c.username FROM video_api_views a
+      LEFT JOIN videos v ON v.id = a.video_id
+      LEFT JOIN creator_instagram_connections c ON c.creator_id = v.creator_id
+      WHERE a.video_id = ?`).bind(id)
   ]);
+  const api = apiViews.results[0] || null;
   return json({
     ok: true, video,
     snapshots: snapshots.results.map(s => ({
@@ -88,6 +95,10 @@ async function getVideo(request, env, headers, [id]) {
     screenshots: screenshots.results.map(s => ({
       id: s.id, contentType: s.content_type, sizeBytes: s.size_bytes, reportedViews: s.reported_views, note: s.note, uploadedAt: s.uploaded_at
     })),
+    apiViews: api ? {
+      views: api.views, reach: api.reach, likes: api.likes, comments: api.comments,
+      fetchedAt: api.fetched_at, error: api.error, username: api.username
+    } : null,
     audit: audit.results.map(auditJson)
   }, 200, headers);
 }
