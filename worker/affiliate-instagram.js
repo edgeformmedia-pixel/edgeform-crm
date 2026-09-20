@@ -25,7 +25,10 @@ const MEDIA_PAGE_LIMIT = 100;
 const MAX_MEDIA_PAGES = 10;       // 1000 posts; beyond that the video is too old to still be tracking
 
 export const redirectUri = (env) => `${env.API_URL}/api/affiliate/instagram/callback`;
-export const isConfigured = (env) => Boolean(env.IG_APP_ID && env.IG_APP_SECRET);
+// AFFILIATE_ENCRYPTION_KEY is part of being configured: without it there's nowhere safe to put
+// the token, and an empty HMAC key fails deep inside WebCrypto with a DataError that tells
+// nobody anything. Better to report the feature as off.
+export const isConfigured = (env) => Boolean(env.IG_APP_ID && env.IG_APP_SECRET && env.AFFILIATE_ENCRYPTION_KEY);
 
 // ── Signed state ──
 // The OAuth callback arrives with no session (it's a browser redirect from Instagram), so the

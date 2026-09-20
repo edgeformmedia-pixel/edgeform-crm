@@ -474,6 +474,7 @@ async function getConnections(request, env, headers) {
 async function startInstagram(request, env, headers) {
   const creator = await requireCreator(request, env);
   if (!igConfigured(env)) throw fail(503, 'Instagram connections are not set up yet.', 'not_configured');
+  if (!env.API_URL) throw fail(503, 'Instagram connections are not set up yet.', 'not_configured');
   return json({ ok: true, authorize_url: authorizeUrl(env, await signState(env, creator.id)) }, 200, headers);
 }
 
