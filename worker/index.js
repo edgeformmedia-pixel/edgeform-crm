@@ -11,6 +11,7 @@ import { affiliateAdminRoutes } from './affiliate-admin.js';
 import { payoutRoutes } from './payouts.js';
 import { affiliateFetch, AFFILIATE_PREFIX, instagramCallback } from './affiliate.js';
 import { instagramCron } from './affiliate-instagram.js';
+import { publicFetch, PUBLIC_PREFIX } from './public-campaigns.js';
 
 function cors(request, env) {
   const origin = request.headers.get('origin') || '';
@@ -66,6 +67,8 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
     // The affiliate portal API has its own error shape ({ ok, error, code }).
     if (url.pathname === AFFILIATE_PREFIX || url.pathname.startsWith(AFFILIATE_PREFIX + '/')) return affiliateFetch(request, env, headers);
+    // Public campaign application pages (CONTRACT.md §9): no session and no Bearer, by design.
+    if (url.pathname.startsWith(PUBLIC_PREFIX + '/')) return publicFetch(request, env, headers);
     try {
       for (const { method, pattern, handler } of compiled) {
         const match = request.method === method && url.pathname.match(pattern);

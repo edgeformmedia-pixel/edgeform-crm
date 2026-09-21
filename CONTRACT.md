@@ -1,4 +1,4 @@
-# Edgeform Affiliate System — Shared Contract (v7)
+# Edgeform Affiliate System — Shared Contract (v8)
 
 Source of truth for BOTH builds. An identical copy lives in both repos:
 - **CRM agent** → `edgeform-crm` (Cloudflare Worker `edgeform-crm-api` + D1 `edgeform-crm` + static admin UI at crm.edgeformmarketing.com). Owns the database, admin UI, view polling, earnings, payouts, and the affiliate API.
@@ -434,3 +434,233 @@ Matching a submitted URL to a post: Instagram has no shortcode lookup, so the Wo
 
 Staff see the number on the video detail modal as `apiViews`, pre-filled into Views with the note
 `Instagram API — @handle, <when>`. Insights lag up to 48h, which is fine for a Sunday check.
+
+---
+
+## 9. Campaign applications (added in v8, additive only)
+
+A campaign can have a **public application page**: one shareable link that pitches the campaign, shows
+the site the creator would be promoting in an iframe, shows a few example videos, explains the pay in
+plain words, and collects an application. Staff review applications in the CRM; approving one creates
+(or matches) the creator, adds them to the campaign at the campaign's starting rate, and sends the
+existing invite email from §5. Nothing above this section changes.
+
+Two links, one page:
+```
+${PORTAL_URL}/apply.html?c=<public_slug>              ← the campaign's own link (staff share this)
+${PORTAL_URL}/apply.html?c=<public_slug>&r=<ref_code> ← the same page, shared by a creator already on the roster
+```
+
+### New enums
+```
+application_status: new | reviewing | approved | declined | withdrawn
+question_type:      short_text | long_text | select | multi_select | boolean | url | number
+audience_size:      under_5k | 5k_25k | 25k_100k | 100k_500k | 500k_plus   (matches AUDIENCE_TIERS in worker/intake.js)
+posting_cadence:    1_2_week | 3_5_week | 6_plus_week | not_sure
+```
+
+### D1 (migration `0025_campaign_applications.sql`)
+
+**`campaigns` — ADD (all optional; edited on a new "Application" tab in the campaign drawer)**
+| column | type | notes |
+|---|---|---|
+| application_enabled | INTEGER NOT NULL DEFAULT 0 | 0 = the public link 404s |
+| public_slug | TEXT NULL | UNIQUE. `[a-z0-9-]{3,60}`, suggested from the name, editable. Changing it breaks links already sent — the CRM warns before saving |
+| public_headline | TEXT NOT NULL DEFAULT '' | ≤ 120 chars |
+| public_pitch | TEXT NOT NULL DEFAULT '' | ≤ 4000 chars. **Public.** `campaigns.brief` stays private and is never served by §9 — briefs routinely hold client names, hooks and do-not-say lists |
+| brand_name | TEXT NOT NULL DEFAULT '' | what the applicant would be promoting. Falls back to `name` in copy |
+| promo_url | TEXT NOT NULL DEFAULT '' | the site shown in the iframe. `https://` only |
+| promo_embed | INTEGER NOT NULL DEFAULT 1 | 0 = the site refuses framing (`X-Frame-Options`/CSP) → show the fallback card instead. Staff toggle it; the CRM pre-checks on save and suggests the value |
+| promo_image_url | TEXT NOT NULL DEFAULT '' | fallback screenshot for `promo_embed = 0` |
+| application_questions | TEXT NOT NULL DEFAULT '[]' | JSON `Question[]`, max 10 |
+| application_seats | INTEGER NULL | once this many applications are `approved`, the page closes itself |
+| application_closes_at | TEXT NULL | `YYYY-MM-DD`, inclusive |
+
+**Starting pay is not a new column.** `campaigns.default_cpm_rate_cents` *is* the starting rate the page
+advertises, and `campaigns.default_override_bps` is the team bonus. Approving an application inserts a
+`campaign_affiliates` row with `cpm_rate_override_cents = NULL` and `rank = 'rookie'`, so a new creator
+starts on exactly the number they were shown. Staff can type a different rate at the moment of approval.
+
+**`campaign_example_videos`** (optional, max 6 per campaign)
+`id TEXT PK, campaign_id TEXT NOT NULL → campaigns.id CASCADE, url TEXT NOT NULL, platform TEXT NOT NULL (platform),
+platform_video_id TEXT NOT NULL, embed_url TEXT NOT NULL DEFAULT '', thumbnail_url TEXT NOT NULL DEFAULT '',
+caption TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL`
+Same URL parsing as `POST /videos` (§4), but these are *examples of the work*: never tracked, never paid,
+and they don't collide with the `UNIQUE(platform, platform_video_id)` on `videos`.
+
+**`creators` — ADD (this is where the company-wide side lives)**
+| column | type | notes |
+|---|---|---|
+| ref_code | TEXT NULL | UNIQUE. 8 chars, Crockford base32, no vowels. Minted the first time the creator is approved onto any campaign |
+| referred_by_creator_id | TEXT NULL → creators.id | **Company-wide and set once**, from the `r=` on the link they applied through. Only staff can change it afterwards; self-reference and cycles rejected |
+| referred_at | TEXT NULL | |
+
+**`campaign_applications`**
+| column | type | notes |
+|---|---|---|
+| id | TEXT PK | |
+| campaign_id | TEXT NOT NULL → campaigns.id CASCADE | |
+| status | TEXT NOT NULL DEFAULT 'new' | application_status |
+| name / email / phone / phone_e164 / country | TEXT | `email` lowercased. UNIQUE(campaign_id, email COLLATE NOCASE) |
+| instagram / tiktok / youtube / portfolio_url | TEXT NOT NULL DEFAULT '' | free text, normalized for comparison like `creators` |
+| platforms | TEXT NOT NULL DEFAULT '[]' | JSON array of platform, subset of the campaign's `platforms_allowed` |
+| audience_size | TEXT NOT NULL DEFAULT '' | audience_size enum |
+| posting_cadence | TEXT NOT NULL DEFAULT '' | posting_cadence enum |
+| niches | TEXT NOT NULL DEFAULT '[]' | JSON array |
+| why | TEXT NOT NULL DEFAULT '' | ≤ 1000 chars |
+| answers | TEXT NOT NULL DEFAULT '{}' | JSON, keyed by `Question.id` |
+| ref_code | TEXT NULL | exactly what was on the link |
+| referred_by_creator_id | TEXT NULL → creators.id | resolved at submit time, so a later `ref_code` change can't rewrite history |
+| creator_id | TEXT NULL → creators.id | matched on submit if the email is already a creator; set on approval otherwise |
+| campaign_affiliate_id | TEXT NULL → campaign_affiliates.id | set on approval |
+| consent | INTEGER NOT NULL DEFAULT 0 | must be 1 |
+| age_confirmed | INTEGER NOT NULL DEFAULT 0 | must be 1 (18+) |
+| utm | TEXT NOT NULL DEFAULT '{}' | JSON |
+| page_url / referrer / user_agent | TEXT NOT NULL DEFAULT '' | |
+| ip_hash | TEXT NOT NULL DEFAULT '' | sha256(ip + `AFFILIATE_ENCRYPTION_KEY`). Rate limiting only; the raw IP is never stored |
+| review_notes | TEXT NOT NULL DEFAULT '' | staff-only |
+| decline_reason | TEXT NOT NULL DEFAULT '' | staff-only unless a decline email is sent |
+| submitted_at / created_at / updated_at | TEXT NOT NULL | |
+| reviewed_at | TEXT NULL | |
+| reviewed_by | TEXT NULL → users.id | |
+
+Applications are **not** creators. A row here appears nowhere in the Creators list, in `campaign_affiliates`,
+or in any earnings figure until someone approves it.
+
+### Where the company-wide side meets a campaign
+`creators.referred_by_creator_id` is the lifetime, company-wide relationship — one per creator.
+`campaign_affiliates.upline_id` stays exactly as §6 defines it, per campaign. On approval the CRM
+**derives** the campaign upline: walk up the applicant's company-wide chain and take the first person
+who has a non-`removed` assignment on *this* campaign; if nobody in the chain is on it, `upline_id = NULL`.
+The referrer is never auto-added to a campaign, and staff can always set `uplineId` by hand at approval.
+Override pricing (§6) is unchanged: a team bonus only exists where a campaign upline exists.
+
+### Public API — `${API_URL}/api/public/v1` (no auth, no session, no Bearer)
+Served by a new `worker/public-campaigns.js`, outside the `/api/affiliate/v1` prefix so nothing there
+loses its auth check. CORS: `GET` and `POST` from the portal origins already in `ALLOWED_ORIGINS`.
+
+| method | path | body | returns |
+|---|---|---|---|
+| GET | /campaigns/:slug?ref=CODE | — | `{ ok, campaign: PublicCampaign }`. `404 not_found` when the slug is unknown, `application_enabled = 0`, or the campaign is `draft`/`ended`. `410 applications_closed` past `application_closes_at`, past `application_seats`, or while `paused` |
+| POST | /campaigns/:slug/applications | `ApplicationInput` | `201 { ok, status: "received" }` — nothing else, ever |
+
+Error codes: `not_found` (404), `validation_error` (400), `already_applied` (409),
+`applications_closed` (410), `rate_limited` (429 — 5 per IP-hash per hour, 3 per email per hour).
+
+**Never served here:** `brief`, any budget or cap, `funded_by`, affiliate names or counts, other
+applications, anything about earnings. The referrer is exposed as a first name only, and only when
+`ref` matches a live creator.
+
+```jsonc
+// PublicCampaign
+{ "slug", "name", "brand_name", "headline", "pitch", "status",
+  "platforms_allowed", "currency",
+  "starting_cpm_rate_cents",      // = campaigns.default_cpm_rate_cents
+  "team_bonus_bps",               // = campaigns.default_override_bps
+  "min_views_to_qualify",
+  "requires_video_approval",
+  "start_date", "end_date", "closes_at",
+  "promo_url", "promo_embed", "promo_image_url",
+  "example_videos": [ { "url", "platform", "embed_url", "thumbnail_url", "caption" } ],
+  "questions": [ Question ],
+  "referrer_first_name",          // null unless ?ref= matched
+  "ref_code" }                    // echoed back, or null
+
+// Question
+{ "id",                 // [a-z0-9_]{1,40}, stable — it's the key in `answers`
+  "label", "type",      // question_type
+  "required",           // bool
+  "help",               // '' or a line under the field
+  "options",            // [] unless select / multi_select
+  "max_length" }        // null, or a cap for short_text / long_text
+
+// ApplicationInput  (the portal sends exactly these keys; unknown keys are rejected)
+{ "name", "email", "phone", "country",
+  "instagram", "tiktok", "youtube", "portfolio_url",
+  "platforms": ["tiktok"], "audience_size", "posting_cadence", "niches": [],
+  "why", "answers": { "<question_id>": <value> },
+  "consent": true, "age_confirmed": true,
+  "ref_code", "utm": {}, "page_url", "referrer" }
+```
+Required: `name`, `email`, at least one handle among `instagram`/`tiktok`/`youtube`, at least one
+`platforms` entry, `consent`, `age_confirmed`, plus every `Question` with `required: true`.
+`already_applied` comes back for a repeat email on the same campaign whatever the first one's status —
+the message says it's already in, it never hints at the decision.
+
+### Admin API additions (camelCase, like the rest of the admin API)
+| method | path | notes |
+|---|---|---|
+| GET | /api/campaigns/:id/applications?status= | `{ ok, applications: Application[] }`, newest first |
+| PATCH | /api/campaign-applications/:id | `{ status, reviewNotes, declineReason }` — `reviewing`, `declined`, or back to `new`. Approving goes through the endpoint below |
+| POST | /api/campaign-applications/:id/approve | `{ cpmRateOverrideCents?, overrideBps?, rank?, uplineId?, sendInvite? }` → `{ ok, application, affiliate, creator, inviteSent, inviteError }` |
+| POST | /api/campaigns/:id/example-videos | `{ url, caption }` → `201 { ok, exampleVideo }` |
+| PATCH | /api/campaign-example-videos/:id | `{ caption, sortOrder }` |
+| DELETE | /api/campaign-example-videos/:id | |
+
+The application config itself rides on the existing `PATCH /api/campaigns/:id` as new camelCase keys:
+`applicationEnabled, publicSlug, publicHeadline, publicPitch, brandName, promoUrl, promoEmbed,
+promoImageUrl, applicationQuestions, applicationSeats, applicationClosesAt`.
+`GET /api/campaigns/:id` adds those plus `exampleVideos`, `applicationCounts: { new, reviewing, approved, declined }`,
+and `publicUrl`.
+
+**Approve does, in one batch:** match `creators` on email (case-insensitive) or create one with
+`source: 'campaign_application'`, `roster_status: 'approved'`, `form_status: 'complete'`, `consent: 1`;
+fill blank creator handles from the application, never overwrite filled ones; set
+`referred_by_creator_id`/`referred_at` only if still NULL; mint `ref_code` if missing; derive
+`upline_id` as above; insert the `campaign_affiliates` row exactly as `POST /api/campaigns/:id/affiliates`
+does today (`status: 'invited'`, rank `rookie`, no rate override unless one was typed); set the
+application to `approved` with `reviewed_at`/`reviewed_by`; write `affiliate_audit_log` rows
+`application_approved` and `affiliate_added`; then send the existing invite email unless
+`sendInvite: false`. A failed email never rolls back the approval — it comes back as `inviteError`,
+exactly like `addAffiliate`.
+
+### Affiliate API additions (`/api/affiliate/v1`, for the signed-in portal)
+- `CampaignSummary` / `CampaignDetail` add `share_url` — `${PORTAL_URL}/apply.html?c=<slug>&r=<ref_code>`,
+  or `null` when that campaign has no live application page — and `team_bonus_bps`, an alias of the §6
+  `override_bps` the caller earns, so the sharing card and the public page print the same number.
+- `Creator` adds `ref_code`.
+- No new endpoints. Sharing is a link, not an action: an affiliate can't add anyone, every application
+  still goes through staff review.
+
+### The pay explainer (identical words on both sides)
+The public page, the invite email and the portal describe pay the same way. Both agents render this from
+the same variables instead of each writing their own version:
+
+```
+{{starting_cpm}}      money, from starting_cpm_rate_cents        e.g. "$1.50"
+{{team_bonus}}        percent, from team_bonus_bps               e.g. "5%"
+{{brand}}             brand_name || name
+{{platforms}}         platforms_allowed, prose list              e.g. "TikTok, Instagram or YouTube"
+{{min_views}}         min_views_to_qualify, or null
+{{referrer_first}}    referrer_first_name, or null
+```
+
+> **How you get paid**
+> You post about {{brand}} on {{platforms}}. Every Sunday we count the new views each of your videos
+> picked up that week, and you're paid {{starting_cpm}} for every 1,000 of them. A video keeps earning
+> every week for as long as the campaign is running — there's no cut-off date and no limit on how many
+> videos you post.
+>
+> **{{starting_cpm}} per 1,000 views is where everyone starts.** As your videos deliver, your rate goes
+> up with your level — Rookie, General, Master, Top Creator. Levels are set by Edgeform across every
+> campaign you're on, not campaign by campaign, so a raise you earn here follows you to the next one.
+>
+> **Bring other creators in and you earn a {{team_bonus}} team bonus** on what they're paid for their own
+> views, for as long as they're posting. Edgeform pays it on top of their pay — their rate is never
+> reduced to fund yours, and you earn it on their *views*, never on them signing up. There's no fee to
+> apply and nothing to buy, now or later.
+
+Rules for any copy written on top of this: it's a **creator roster with levels and a team bonus**.
+Never "pyramid", "downline", "recruits", "levels deep", "passive income", "unlimited earnings", or any
+figure the person hasn't actually earned. Never promise a level-up on a timeline. `funded_by`, budgets
+and caps stay out of every public word.
+
+### Who builds what (§9)
+| CRM agent (`edgeform-crm`) | Portal agent (`affiliate.edgeformmarketing.com`) |
+|---|---|
+| Migration `0025`, the two new tables, the three `creators` columns | `apply.html` — public, no session, no header/nav shell |
+| Application tab in the campaign drawer: toggle, slug + copy-link, headline/pitch, brand, promo URL with framing pre-check, promo image, example videos, question editor, seats, closing date | Hero, pay explainer, iframe with the fallback card, example-video cards, the form, the "we'll email you" success state |
+| Applications list with a `new` badge, filters, detail view, Approve / Decline / notes | Client-side validation matching §9, one plain-language message per error code |
+| `worker/public-campaigns.js`, rate limiting, `already_applied`, slug uniqueness | Sharing card on `campaign.html`: the affiliate's `share_url`, a copy button, one line on the team bonus |
+| Approval → creator + `campaign_affiliates` + derived upline + invite email + audit rows | `mock-api.js` covers `/api/public/v1` too, so `apply.html?mock=1` works with no CRM |
+| Decline email (optional, staff-typed reason) | Mobile first: most applicants open this link on a phone, inside TikTok's or Instagram's in-app browser |

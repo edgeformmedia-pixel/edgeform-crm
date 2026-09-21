@@ -4,6 +4,6 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check worker/index.js && node --check worker/influencer-leads.js && node --check worker/affiliate.js && node --check worker/campaigns.js && node --check worker/affiliate-admin.js && node --check worker/affiliate-lib.js && node --check worker/payouts.js && node --check home/influencer-leads.js && node --check home/campaigns.js"
+    "check": "node --check worker/index.js && node --check worker/influencer-leads.js && node --check worker/affiliate.js && node --check worker/campaigns.js && node --check worker/affiliate-admin.js && node --check worker/affiliate-lib.js && node --check worker/payouts.js && node --check worker/public-campaigns.js && node --check worker/applications-lib.js && node --check worker/pay-explainer.js && node --check home/influencer-leads.js && node --check home/campaigns.js"
   }
 }

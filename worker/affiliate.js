@@ -8,6 +8,7 @@ import {
   PLATFORMS, PAYOUT_METHODS, PORTAL_URL, ASSIGNMENT_STATS_SQL, orNull, parseJson, addDays, resolveVideoUrl, normalizeHandle,
   encryptText, auditStatement, flagStatement
 } from './affiliate-lib.js';
+import { applicationState, shareUrl, ensureRefCode } from './applications-lib.js';
 
 // Affiliate portal API (CONTRACT.md §4), served at /api/affiliate/v1 to affiliate.edgeformmarketing.com.
 // snake_case JSON; errors are { ok: false, error, code }. The creator always comes from the session.
@@ -26,7 +27,9 @@ const DEFAULT_CODES = { 400: 'validation_error', 401: 'unauthorized', 403: 'forb
 export const creatorJson = (c) => ({
   id: c.id, name: orNull(c.name), email: orNull(c.email), phone: orNull(c.phone),
   instagram: orNull(c.instagram), tiktok: orNull(c.tiktok), youtube: orNull(c.youtube), country: orNull(c.country),
-  payout_method: orNull(c.payout_method), payout_details_last4: orNull(c.payout_details_last4), tax_form_received: c.tax_form_received === 1
+  payout_method: orNull(c.payout_method), payout_details_last4: orNull(c.payout_details_last4), tax_form_received: c.tax_form_received === 1,
+  // v8: their personal code on share links (CONTRACT.md §9).
+  ref_code: orNull(c.ref_code)
 });
 
 const campaignSummary = (r) => ({
@@ -37,7 +40,10 @@ const campaignSummary = (r) => ({
   // Added with uplines (CONTRACT.md §6).
   rank: r.rank, override_earned_cents: r.override_earned_cents,
   // v5: the % of their downline's pay they earn on top (basis points, 500 = 5%).
-  override_bps: r.override_bps
+  override_bps: r.override_bps,
+  // v8 (§9): their link to the campaign's application page, or null when it has no live page.
+  share_url: applicationState(r, r.approved_applications || 0) === 'open' ? shareUrl(r.public_slug, r.creator_ref_code) : null,
+  team_bonus_bps: r.override_bps
 });
 
 const campaignDetail = (r) => ({
@@ -148,7 +154,7 @@ async function logout(request, env, headers) {
 // ── Me ──
 
 async function getMe(request, env, headers) {
-  return json({ ok: true, creator: creatorJson(await requireCreator(request, env)) }, 200, headers);
+  return json({ ok: true, creator: creatorJson(await withRefCode(env, await requireCreator(request, env))) }, 200, headers);
 }
 
 // Last 4 letters/digits of what they typed (PayPal email, IBAN, account number…).
@@ -206,9 +212,17 @@ async function patchMe(request, env, headers) {
 
 const CAMPAIGN_SQL = `SELECT c.*, ca.id assignment_id, ca.status assignment_status, ca.rank,
     COALESCE(ca.cpm_rate_override_cents, c.default_cpm_rate_cents) cpm_rate_cents,
-    COALESCE(ca.override_bps, c.default_override_bps) override_bps, ${ASSIGNMENT_STATS_SQL}
+    COALESCE(ca.override_bps, c.default_override_bps) override_bps, ${ASSIGNMENT_STATS_SQL},
+    (SELECT COUNT(*) FROM campaign_applications a WHERE a.campaign_id = c.id AND a.status = 'approved') approved_applications,
+    (SELECT cr.ref_code FROM creators cr WHERE cr.id = ca.creator_id) creator_ref_code
   FROM campaign_affiliates ca JOIN campaigns c ON c.id = ca.campaign_id
   WHERE ca.creator_id = ? AND ca.status <> 'removed' AND c.status <> 'draft'`;
+
+// Creators added before v8 get their ref code the first time the portal needs it.
+async function withRefCode(env, creator) {
+  if (!creator.ref_code) creator.ref_code = await ensureRefCode(env, creator.id);
+  return creator;
+}
 
 async function assignedCampaign(env, creatorId, campaignId) {
   const row = await env.DB.prepare(`${CAMPAIGN_SQL} AND c.id = ?`).bind(creatorId, campaignId).first();
@@ -217,13 +231,13 @@ async function assignedCampaign(env, creatorId, campaignId) {
 }
 
 async function listCampaigns(request, env, headers) {
-  const creator = await requireCreator(request, env);
+  const creator = await withRefCode(env, await requireCreator(request, env));
   const rows = await env.DB.prepare(`${CAMPAIGN_SQL} ORDER BY c.created_at DESC`).bind(creator.id).all();
   return json({ ok: true, data: rows.results.map(campaignSummary) }, 200, headers);
 }
 
 async function getCampaign(request, env, headers, [id]) {
-  const creator = await requireCreator(request, env);
+  const creator = await withRefCode(env, await requireCreator(request, env));
   return json({ ok: true, campaign: campaignDetail(await assignedCampaign(env, creator.id, id)) }, 200, headers);
 }
 

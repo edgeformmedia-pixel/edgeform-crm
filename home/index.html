@@ -3233,5 +3233,12 @@ function setBillBtnLoading(id, loading) {
 <script src="admin-motion.js"></script>
 <script src="influencer-leads.js"></script>
 <script src="campaigns.js"></script>
+<!-- The pay explainer (CONTRACT.md §9) comes from the Worker's own module, so the preview staff see is
+     word for word what the application page and the invite email say. -->
+<script type="module">
+  import { payExplainer } from '../worker/pay-explainer.js';
+  window.payExplainer = payExplainer;
+  document.dispatchEvent(new Event('pay-explainer-ready'));
+</script>
 </body>
 </html>

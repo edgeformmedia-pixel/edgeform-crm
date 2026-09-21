@@ -81,7 +81,8 @@ async function renderOpCampaigns(operationId, refetch = true) {
       <button class="cmp-card" data-id="${esc(c.id)}" onclick="openCampaign(this.dataset.id)">
         <div class="cmp-card-top"><span class="chip ${CMP_STATUS_CHIP[c.status] || 'chip-muted'}">${esc(c.status)}</span>
           ${c.pendingReview ? `<span class="chip chip-orange">${c.pendingReview} to review</span>` : ''}
-          ${c.openFlags ? `<span class="chip chip-red">${c.openFlags} flag${c.openFlags === 1 ? '' : 's'}</span>` : ''}</div>
+          ${c.openFlags ? `<span class="chip chip-red">${c.openFlags} flag${c.openFlags === 1 ? '' : 's'}</span>` : ''}
+          ${c.applicationCounts?.new ? `<span class="chip chip-blue">${c.applicationCounts.new} new application${c.applicationCounts.new === 1 ? '' : 's'}</span>` : ''}</div>
         <div class="cmp-card-name">${esc(c.name)}</div>
         <div class="cmp-card-meta"><span>${cmpMoney(c.defaultCpmRateCents)} / 1K views</span><span>${c.affiliateCount} affiliate${c.affiliateCount === 1 ? '' : 's'}</span>
           <span>${c.videoCount} video${c.videoCount === 1 ? '' : 's'}</span><span>${cmpNum(c.views)} views</span></div>
@@ -102,11 +103,12 @@ function ensureCampaignModals() {
       <div class="ops-form-grid">
         <div class="c-field full"><label>Campaign name</label><input class="c-input" id="cmpf-name" type="text" placeholder="Spring launch"></div>
         <div class="c-field"><label>Status</label><select class="c-input" id="cmpf-status"><option value="draft">Draft (hidden from affiliates)</option><option value="active">Active (accepting videos)</option><option value="paused">Paused</option><option value="ended">Ended</option></select></div>
-        <div class="c-field"><label>Pay per 1,000 views (CPM)</label><div class="cmp-money"><input class="c-input" id="cmpf-cpm" inputmode="decimal" placeholder="25.00"></div></div>
-        <div class="c-field"><label>Team override (% of downline's pay)</label><input class="c-input" id="cmpf-override" inputmode="decimal" placeholder="5"><div class="ops-hint">Each upline earns this % of what their recruits get paid, on top. Nobody's pay is reduced. Can be changed per person.</div></div>
+        <div class="c-field"><label>Starting pay (what the application page advertises)</label><div class="cmp-money"><input class="c-input" id="cmpf-cpm" inputmode="decimal" placeholder="25.00" oninput="renderFormExplainer()"></div><div class="ops-hint">Per 1,000 views. Everyone approved from the application page starts here.</div></div>
+        <div class="c-field"><label>Team bonus (% of their team's pay)</label><input class="c-input" id="cmpf-override" inputmode="decimal" placeholder="5" oninput="renderFormExplainer()"><div class="ops-hint">Each upline earns this % of what the people they brought in get paid, on top. Nobody's pay is reduced. Can be changed per person.</div></div>
+        <div class="c-field full"><label>What applicants read about pay</label><div class="cmp-explainer" id="cmpf-explainer"></div></div>
         <div class="c-field"><label>Start date</label><input class="c-input" id="cmpf-start" type="date"></div>
         <div class="c-field"><label>End date</label><input class="c-input" id="cmpf-end" type="date"></div>
-        <div class="c-field full"><label>Platforms allowed</label><div class="cmp-platforms">${Object.entries(CMP_PLATFORMS).map(([k, label]) => `<label class="cmp-check"><input type="checkbox" data-platform="${k}"> ${label}</label>`).join('')}</div></div>
+        <div class="c-field full"><label>Platforms allowed</label><div class="cmp-platforms">${Object.entries(CMP_PLATFORMS).map(([k, label]) => `<label class="cmp-check"><input type="checkbox" data-platform="${k}" onchange="renderFormExplainer()"> ${label}</label>`).join('')}</div></div>
         <div class="c-field"><label>Max payout per video</label><div class="cmp-money"><input class="c-input" id="cmpf-max-video" inputmode="decimal" placeholder="No limit"></div></div>
         <div class="c-field"><label>Max payout per affiliate</label><div class="cmp-money"><input class="c-input" id="cmpf-max-affiliate" inputmode="decimal" placeholder="No limit"></div></div>
         <div class="c-field"><label>Total budget</label><div class="cmp-money"><input class="c-input" id="cmpf-budget" inputmode="decimal" placeholder="No limit"></div></div>
@@ -173,9 +175,34 @@ function openCampaignForm(id, operationId) {
   document.querySelector('#cmpf-save .btn-text').textContent = c ? 'Save campaign' : 'Create campaign';
   document.getElementById('cmpf-delete').hidden = !c || !['admin', 'owner'].includes(currentUser.role);
   cmpMsg('cmpf-msg', '');
+  renderFormExplainer();
   document.getElementById('cmp-modal').hidden = false;
   document.getElementById('cmpf-name').focus();
 }
+
+// The §9 pay wording, live, from what's typed in the campaign form.
+function renderFormExplainer() {
+  const box = document.getElementById('cmpf-explainer');
+  if (!box) return;
+  let cents = 0, bps = 0;
+  try { cents = cmpCents(document.getElementById('cmpf-cpm').value, 'x') ?? 0; bps = cmpBps(document.getElementById('cmpf-override').value, 'x') ?? 0; } catch { /* shown as typed once valid */ }
+  box.innerHTML = payExplainerHtml({
+    name: document.getElementById('cmpf-name').value.trim() || 'this campaign',
+    brand_name: cmpEditingId ? cmpCurrent?.brandName : '',
+    platforms_allowed: [...document.querySelectorAll('#cmp-modal [data-platform]:checked')].map(el => el.dataset.platform),
+    starting_cpm_rate_cents: cents, team_bonus_bps: bps
+  });
+}
+
+function payExplainerHtml(c) {
+  if (typeof window.payExplainer !== 'function') return '<span class="feed-time">Loading…</span>';
+  return window.payExplainer(c).map((p, i) => `<p>${i === 0 ? `<b>${esc(p.heading)}</b><br>` : `<b>${esc(p.heading)}</b> `}${esc(p.body)}</p>`).join('');
+}
+document.addEventListener('pay-explainer-ready', () => {
+  renderFormExplainer();
+  const preview = document.getElementById('app-explainer');
+  if (preview && cmpCurrent) renderAppExplainer();
+});
 
 function closeCampaignForm() { document.getElementById('cmp-modal').hidden = true; }
 
@@ -301,9 +328,13 @@ function renderCampaignView() {
       <button class="action-btn primary" onclick="activateCampaign()">Make it active</button></div>` : ''}
     <div class="billing-tabs">
       <button class="billing-tab${cmpTab === 'affiliate' ? ' active' : ''}" onclick="cmpTab='affiliate';renderCampaignView()">Affiliate</button>
+      <button class="billing-tab${cmpTab === 'applications' ? ' active' : ''}" onclick="cmpTab='applications';renderCampaignView()">Applications${c.applicationCounts.new ? ` <span class="cmp-badge">${c.applicationCounts.new}</span>` : ''}</button>
+      <button class="billing-tab${cmpTab === 'application' ? ' active' : ''}" onclick="cmpTab='application';renderCampaignView()">Application page</button>
       <button class="billing-tab${cmpTab === 'email' ? ' active' : ''}" onclick="cmpTab='email';renderCampaignView()">Email</button>
     </div>
-    ${cmpTab === 'email' ? '<div class="cmp-placeholder">✉<br><br>Email campaigns are coming soon.</div>' : `
+    ${cmpTab === 'email' ? '<div class="cmp-placeholder">✉<br><br>Email campaigns are coming soon.</div>'
+      : cmpTab === 'application' ? applicationPageHtml(c)
+      : cmpTab === 'applications' ? applicationsPanelHtml(c) : `
     <div class="cmp-kpis">
       <div class="cmp-kpi"><div class="cmp-kpi-label">Affiliates</div><div class="cmp-kpi-val">${active.length}</div><div class="cmp-kpi-sub">${active.filter(a => a.status === 'invited').length} haven't signed in</div></div>
       <div class="cmp-kpi"><div class="cmp-kpi-label">Videos</div><div class="cmp-kpi-val">${cmpNum(c.videoCount)}</div><div class="cmp-kpi-sub">${c.pendingReview} to review</div></div>
@@ -1128,4 +1159,540 @@ function addRecruitFor(id) {
   const below = RANKS[Math.min(RANKS.length - 1, RANKS.findIndex(r => r[0] === a.rank) + 1)][0];
   closePerson();
   openAffiliateForm({ uplineId: id, rank: below });
+}
+
+// ─── Application page + applications (CONTRACT.md §9) ─────────
+// The "Application page" tab edits the campaign's public page; the "Applications" tab reviews what comes in.
+
+const APP_STATUS_CHIP = { new: 'chip-blue', reviewing: 'chip-orange', approved: 'chip-green', declined: 'chip-muted', withdrawn: 'chip-muted' };
+const APP_STATE_TEXT = {
+  open: ['chip-green', 'Taking applications'],
+  closed: ['chip-orange', 'Closed — paused, past the closing date, or every seat is filled'],
+  not_found: ['chip-muted', 'Off — the link shows “not found”']
+};
+const AUDIENCE_LABEL = { under_5k: 'Under 5K', '5k_25k': '5K–25K', '25k_100k': '25K–100K', '100k_500k': '100K–500K', '500k_plus': '500K+' };
+const CADENCE_LABEL = { '1_2_week': '1–2 videos a week', '3_5_week': '3–5 a week', '6_plus_week': '6+ a week', not_sure: 'Not sure yet' };
+const QUESTION_TYPES = [['short_text', 'Short answer'], ['long_text', 'Paragraph'], ['select', 'Pick one'], ['multi_select', 'Pick any'], ['boolean', 'Yes / no'], ['url', 'Link'], ['number', 'Number']];
+const APP_PAGE_BASE = 'https://affiliate.edgeformmarketing.com/apply.html?c=';
+
+let appQuestions = [];          // questions being edited on the Application page tab
+let appQuestionsFor = null;     // campaign id they were loaded from
+let appList = [];               // applications for the open campaign
+let appFilter = 'new';
+let appDetail = null;           // application open in the review modal
+let appEmbedSuggestion = null;  // what the framing check found after the last save
+let appListNotice = null;       // [text, kind] shown once the list re-renders after an action
+
+// ── Application page tab ──
+
+function applicationPageHtml(c) {
+  if (appQuestionsFor !== c.id) { appQuestions = structuredClone(c.applicationQuestions); appQuestionsFor = c.id; appEmbedSuggestion = null; }
+  const [chip, stateText] = APP_STATE_TEXT[c.applicationState] || APP_STATE_TEXT.not_found;
+  const slug = c.publicSlug || c.suggestedSlug || '';
+  setTimeout(() => { renderAppExplainer(); renderAppQuestions(); renderPromoPreview(); }, 0);
+  return `
+    <div class="panel cmp-panel">
+      <div class="panel-head"><span class="panel-title">Public application page</span><span class="chip ${chip}">${esc(stateText)}</span></div>
+      <div class="app-form">
+        <label class="cmp-check app-toggle"><input type="checkbox" id="app-enabled" ${c.applicationEnabled ? 'checked' : ''}> Page is on — anyone with the link can apply</label>
+        ${c.status === 'draft' ? '<div class="ops-hint">This campaign is a draft, so the page stays off until the campaign is active.</div>' : ''}
+
+        <div class="c-field"><label>Link</label>
+          <div class="app-link"><span class="app-link-base">${esc(APP_PAGE_BASE)}</span><input class="c-input" id="app-slug" value="${esc(slug)}" data-saved="${esc(c.publicSlug || '')}" maxlength="60" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"></div>
+          <div class="cmp-panel-actions" style="margin-top:6px;">
+            <button class="action-btn" onclick="copyApplicationLink(this)">Copy link</button>
+            ${c.publicUrl ? `<a class="action-btn" href="${safeUrl(c.publicUrl)}" target="_blank" rel="noopener">Open ↗</a>` : ''}
+          </div>
+          <div class="ops-hint">Changing it breaks links you've already sent. Affiliates on the campaign share this same page with their own code added.</div></div>
+
+        <div class="ops-form-grid">
+          <div class="c-field full"><label>Headline <span class="app-count" id="app-headline-count"></span></label><input class="c-input" id="app-headline" maxlength="120" value="${esc(c.publicHeadline)}" placeholder="Get paid for every view you drive for ${esc(c.brandName || c.name)}" oninput="appCount('headline', 120)"></div>
+          <div class="c-field full"><label>Pitch (public) <span class="app-count" id="app-pitch-count"></span></label><textarea class="c-input" id="app-pitch" maxlength="4000" style="min-height:130px;" placeholder="What the brand is, who it's for, and what kind of videos work. Everything here is public." oninput="appCount('pitch', 4000)">${esc(c.publicPitch)}</textarea>
+            <div class="ops-hint">Applicants see this. The brief stays private — only affiliates on the campaign ever see it.</div></div>
+          <div class="c-field"><label>Brand name</label><input class="c-input" id="app-brand" maxlength="120" value="${esc(c.brandName)}" placeholder="${esc(c.name)}" oninput="renderAppExplainer()"><div class="ops-hint">What they'd be promoting. Blank uses the campaign name.</div></div>
+          <div class="c-field"><label>Starting pay</label><div class="app-static">${cmpMoney(c.defaultCpmRateCents)} per 1,000 views · ${cmpPct(c.defaultOverrideBps)}% team bonus</div>
+            <div class="ops-hint">The campaign's own rate. Change it with “Edit campaign”.</div></div>
+          <div class="c-field full"><label>What applicants read about pay</label><div class="cmp-explainer" id="app-explainer"></div></div>
+        </div>
+
+        <div class="detail-section-title">The site they'd promote</div>
+        <div class="ops-form-grid">
+          <div class="c-field full"><label>Promo site</label><input class="c-input" id="app-promo-url" value="${esc(c.promoUrl)}" placeholder="https://" oninput="renderPromoPreview()"></div>
+          <div class="c-field full"><label class="cmp-check"><input type="checkbox" id="app-promo-embed" ${c.promoEmbed ? 'checked' : ''} onchange="renderPromoPreview()"> Show the site in a frame on the page</label>
+            <div class="ops-hint">Some sites refuse to be framed. We check when you save; if it does, turn this off and the page shows the image below instead.</div>
+            <div id="app-embed-msg"></div></div>
+          <div class="c-field full"><label>Fallback image</label><input class="c-input" id="app-promo-image" value="${esc(c.promoImageUrl)}" placeholder="https://… (a screenshot of the site)" oninput="renderPromoPreview()"></div>
+          <div class="c-field full"><div class="app-preview" id="app-promo-preview"></div></div>
+        </div>
+
+        <div class="detail-section-title">Questions (<span id="app-q-count"></span> of 10)</div>
+        <div class="ops-hint" style="margin-bottom:8px;">Name, email, socials, platforms, audience size, how often they post, niches and “why you” are always asked. These are the extras for this campaign.</div>
+        <div id="app-questions"></div>
+        <button class="action-btn" id="app-add-q" onclick="addAppQuestion()">+ Add question</button>
+
+        <div class="detail-section-title">When the page closes itself</div>
+        <div class="ops-form-grid">
+          <div class="c-field"><label>Seats</label><input class="c-input" id="app-seats" inputmode="numeric" value="${c.applicationSeats ?? ''}" placeholder="No limit"><div class="ops-hint">Closes once this many applications are approved. ${c.applicationCounts.approved} approved so far.</div></div>
+          <div class="c-field"><label>Closing date</label><input class="c-input" id="app-closes" type="date" value="${esc(c.applicationClosesAt || '')}"><div class="ops-hint">Last day to apply (inclusive).</div></div>
+        </div>
+        <div class="email-msg" id="app-msg"></div>
+        <div class="cmp-panel-actions" style="margin-top:12px;"><button class="send-btn" id="app-save" onclick="saveApplicationPage()"><span class="btn-text">Save application page</span></button></div>
+      </div>
+    </div>
+    ${exampleVideosPanelHtml(c)}`;
+}
+
+function appCount(field, max) {
+  const el = document.getElementById(`app-${field}`);
+  const out = document.getElementById(`app-${field}-count`);
+  if (el && out) out.textContent = `${el.value.length}/${max}`;
+}
+
+function renderAppExplainer() {
+  const box = document.getElementById('app-explainer');
+  if (!box || !cmpCurrent) return;
+  const c = cmpCurrent;
+  box.innerHTML = payExplainerHtml({
+    name: c.name, brand_name: document.getElementById('app-brand')?.value.trim() || '', platforms_allowed: c.platformsAllowed,
+    starting_cpm_rate_cents: c.defaultCpmRateCents, team_bonus_bps: c.defaultOverrideBps
+  });
+  appCount('headline', 120); appCount('pitch', 4000);
+}
+
+// The same iframe (or fallback card) the applicant sees.
+function renderPromoPreview() {
+  const box = document.getElementById('app-promo-preview');
+  if (!box) return;
+  const url = document.getElementById('app-promo-url').value.trim();
+  const image = document.getElementById('app-promo-image').value.trim();
+  const embed = document.getElementById('app-promo-embed').checked;
+  const msg = document.getElementById('app-embed-msg');
+  if (msg) {
+    msg.innerHTML = appEmbedSuggestion === null ? ''
+      : appEmbedSuggestion === embed ? `<div class="ops-hint app-ok">✓ Checked: this site ${embed ? 'can' : 'can’t'} be framed, and that matches your setting.</div>`
+      : `<div class="email-msg show error" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">We checked the site: it ${appEmbedSuggestion ? 'allows' : 'refuses'} framing, so we suggest turning the frame ${appEmbedSuggestion ? 'on' : 'off'}.
+          <button class="action-btn" onclick="document.getElementById('app-promo-embed').checked=${appEmbedSuggestion};saveApplicationPage()">Turn it ${appEmbedSuggestion ? 'on' : 'off'} and save</button></div>`;
+  }
+  if (!/^https:\/\//i.test(url)) { box.innerHTML = '<div class="cmp-empty">Add an https:// link to preview the site.</div>'; return; }
+  box.innerHTML = embed
+    ? `<div class="app-preview-label">Preview · what applicants see (a blank frame means the site refuses framing)</div>
+       <iframe src="${esc(url)}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups" title="Promo site preview"></iframe>`
+    : `<div class="app-preview-label">Preview · fallback card</div>
+       <a class="app-fallback" href="${esc(url)}" target="_blank" rel="noopener">
+         ${/^https:\/\//i.test(image) ? `<img src="${esc(image)}" alt="">` : '<div class="cmp-empty">No fallback image yet</div>'}
+         <span>${esc(url.replace(/^https:\/\//i, ''))} ↗</span></a>`;
+}
+
+// ── Question editor ──
+
+function newQuestionId(label) {
+  const base = String(label || 'question').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 34) || 'question';
+  let id = base;
+  for (let n = 2; appQuestions.some(q => q.id === id); n++) id = `${base}_${n}`;
+  return id;
+}
+
+function renderAppQuestions() {
+  const box = document.getElementById('app-questions');
+  if (!box) return;
+  const saved = new Set((cmpCurrent?.applicationQuestions || []).map(q => q.id));
+  document.getElementById('app-q-count').textContent = appQuestions.length;
+  document.getElementById('app-add-q').disabled = appQuestions.length >= 10;
+  box.innerHTML = appQuestions.map((q, i) => {
+    const choices = q.type === 'select' || q.type === 'multi_select';
+    const text = q.type === 'short_text' || q.type === 'long_text';
+    return `<div class="app-q">
+      <div class="app-q-head">
+        <input class="c-input" value="${esc(q.label)}" placeholder="Question" maxlength="200" oninput="appQuestions[${i}].label=this.value">
+        <select class="c-input" onchange="setQuestionType(${i}, this.value)">${QUESTION_TYPES.map(([k, l]) => `<option value="${k}"${q.type === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <label class="cmp-check"><input type="checkbox" ${q.required ? 'checked' : ''} onchange="appQuestions[${i}].required=this.checked"> Required</label>
+        <div class="cmp-row-actions">
+          <button class="action-btn" onclick="moveAppQuestion(${i}, -1)" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+          <button class="action-btn" onclick="moveAppQuestion(${i}, 1)" ${i === appQuestions.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+          <button class="action-btn" onclick="removeAppQuestion(${i})">Delete</button>
+        </div>
+      </div>
+      <input class="c-input" value="${esc(q.help)}" placeholder="Help line under the field (optional)" maxlength="300" oninput="appQuestions[${i}].help=this.value">
+      ${choices ? `<textarea class="c-input" placeholder="One option per line" oninput="appQuestions[${i}].options=this.value.split('\\n').map(s=>s.trim()).filter(Boolean)">${esc(q.options.join('\n'))}</textarea>` : ''}
+      ${text ? `<input class="c-input app-q-max" inputmode="numeric" value="${q.max_length ?? ''}" placeholder="Max characters (optional)" oninput="appQuestions[${i}].max_length=this.value.trim()===''?null:Number(this.value)">` : ''}
+      <div class="app-q-id">id: ${saved.has(q.id)
+        ? `${esc(q.id)} <span title="Answers already received are stored under this id, so it can't change.">(fixed)</span>`
+        : `<input class="c-input" value="${esc(q.id)}" maxlength="40" oninput="appQuestions[${i}].id=this.value.toLowerCase().replace(/[^a-z0-9_]/g,'');this.value=appQuestions[${i}].id">`}</div>
+    </div>`;
+  }).join('') || '<div class="cmp-empty">No extra questions. Applicants only fill in the standard fields.</div>';
+}
+
+function setQuestionType(i, type) {
+  const q = appQuestions[i];
+  q.type = type;
+  if ((type === 'select' || type === 'multi_select') && q.options.length < 2) q.options = ['Option 1', 'Option 2'];
+  if (type !== 'select' && type !== 'multi_select') q.options = [];
+  if (type !== 'short_text' && type !== 'long_text') q.max_length = null;
+  renderAppQuestions();
+}
+
+function addAppQuestion() {
+  if (appQuestions.length >= 10) return;
+  appQuestions.push({ id: newQuestionId('question'), label: '', type: 'short_text', required: false, help: '', options: [], max_length: null });
+  renderAppQuestions();
+  document.querySelector('#app-questions .app-q:last-child input')?.focus();
+}
+
+function moveAppQuestion(i, by) {
+  const j = i + by;
+  if (j < 0 || j >= appQuestions.length) return;
+  [appQuestions[i], appQuestions[j]] = [appQuestions[j], appQuestions[i]];
+  renderAppQuestions();
+}
+
+function removeAppQuestion(i) {
+  const q = appQuestions[i];
+  if (q.label && !confirm(`Delete “${q.label}”? Answers already received stay on those applications.`)) return;
+  appQuestions.splice(i, 1);
+  renderAppQuestions();
+}
+
+// ── Save ──
+
+async function saveApplicationPage() {
+  const v = (id) => document.getElementById(id).value;
+  const slugEl = document.getElementById('app-slug');
+  const slug = slugEl.value.trim();
+  const savedSlug = slugEl.dataset.saved;
+  const enabled = document.getElementById('app-enabled').checked;
+  if (enabled && slug.length < 3) { cmpMsg('app-msg', 'The link needs at least 3 letters or digits.'); return; }
+  if (savedSlug && slug !== savedSlug && !confirm(`Change the link from “${savedSlug}” to “${slug}”?\n\nLinks already sent — including the ones affiliates are sharing — will stop working.`)) return;
+  let seats;
+  try { seats = cmpWhole(v('app-seats'), 'Seats'); } catch (err) { cmpMsg('app-msg', err.message); return; }
+  const body = {
+    applicationEnabled: enabled, publicSlug: slug || null,
+    publicHeadline: v('app-headline').trim(), publicPitch: v('app-pitch').trim(), brandName: v('app-brand').trim(),
+    promoUrl: v('app-promo-url').trim(), promoEmbed: document.getElementById('app-promo-embed').checked, promoImageUrl: v('app-promo-image').trim(),
+    applicationQuestions: appQuestions, applicationSeats: seats || null, applicationClosesAt: v('app-closes') || null
+  };
+  const btn = document.getElementById('app-save');
+  btn.disabled = true;
+  try {
+    const res = await cmpRequest(`/api/campaigns/${encodeURIComponent(cmpCurrent.id)}`, { method: 'PATCH', body: JSON.stringify(body) });
+    cmpCurrent = res.campaign;
+    delete cmpCache[res.campaign.operationId];
+    appQuestionsFor = null;
+    renderCampaignView();
+    appEmbedSuggestion = typeof res.promoEmbedDetected === 'boolean' ? res.promoEmbedDetected : null;
+    setTimeout(() => { renderPromoPreview(); cmpMsg('app-msg', 'Saved.', 'success'); }, 0);
+  } catch (err) {
+    cmpMsg('app-msg', err.message);
+    btn.disabled = false;
+  }
+}
+
+async function copyApplicationLink(btn) {
+  const slug = document.getElementById('app-slug').value.trim();
+  if (!slug) return;
+  const url = APP_PAGE_BASE + slug;
+  try { await navigator.clipboard.writeText(url); btn.textContent = 'Copied'; }
+  catch { prompt('Copy this link:', url); }
+  setTimeout(() => { btn.textContent = 'Copy link'; }, 1500);
+  if (slug !== document.getElementById('app-slug').dataset.saved) cmpMsg('app-msg', 'That link isn’t saved yet — save the page before sharing it.');
+}
+
+// ── Example videos ──
+
+function exampleVideosPanelHtml(c) {
+  const list = c.exampleVideos || [];
+  return `<div class="panel cmp-panel">
+    <div class="panel-head"><span class="panel-title">Example videos (${list.length} of 6)</span><span class="feed-time">Shown on the page as examples of the work. Never tracked or paid.</span></div>
+    ${list.length ? `<div class="app-examples">${list.map(v => `
+      <div class="app-example" draggable="true" data-id="${esc(v.id)}" ondragstart="event.dataTransfer.setData('text/plain', this.dataset.id);this.classList.add('dragging')" ondragend="this.classList.remove('dragging')"
+           ondragover="event.preventDefault()" ondrop="event.preventDefault();dropExampleVideo(event.dataTransfer.getData('text/plain'), this.dataset.id)">
+        <span class="app-drag" title="Drag to reorder">⋮⋮</span>
+        ${v.thumbnailUrl ? `<img src="${safeUrl(v.thumbnailUrl)}" alt="">` : `<div class="app-thumb">${esc(CMP_PLATFORMS[v.platform] || v.platform)}</div>`}
+        <div class="app-example-body">
+          <a href="${safeUrl(v.url)}" target="_blank" rel="noopener">${esc(CMP_PLATFORMS[v.platform] || v.platform)} · ${esc(v.platformVideoId)} ↗</a>
+          <input class="c-input" value="${esc(v.caption)}" placeholder="Caption (optional)" maxlength="300" data-id="${esc(v.id)}" onchange="saveExampleCaption(this)">
+        </div>
+        <button class="action-btn" data-id="${esc(v.id)}" onclick="deleteExampleVideo(this.dataset.id)">Remove</button>
+      </div>`).join('')}</div>` : '<div class="cmp-empty">No examples yet. Add a few videos that show the kind of content that works.</div>'}
+    ${list.length < 6 ? `<div class="app-example-add">
+      <input class="c-input" id="app-ex-url" placeholder="TikTok, Instagram or YouTube link">
+      <input class="c-input" id="app-ex-caption" placeholder="Caption (optional)" maxlength="300">
+      <button class="action-btn primary" onclick="addExampleVideo(this)">Add</button></div>` : ''}
+    <div class="email-msg" id="app-ex-msg" style="margin:0 18px 14px;"></div>
+  </div>`;
+}
+
+async function addExampleVideo(btn) {
+  const url = document.getElementById('app-ex-url').value.trim();
+  if (!url) { cmpMsg('app-ex-msg', 'Paste a video link.'); return; }
+  btn.disabled = true;
+  try {
+    await cmpRequest(`/api/campaigns/${encodeURIComponent(cmpCurrent.id)}/example-videos`, { method: 'POST', body: JSON.stringify({ url, caption: document.getElementById('app-ex-caption').value.trim() }) });
+    refreshCampaign();
+  } catch (err) { cmpMsg('app-ex-msg', err.message); btn.disabled = false; }
+}
+
+async function saveExampleCaption(input) {
+  try {
+    await cmpRequest(`/api/campaign-example-videos/${encodeURIComponent(input.dataset.id)}`, { method: 'PATCH', body: JSON.stringify({ caption: input.value.trim() }) });
+    const v = cmpCurrent.exampleVideos.find(x => x.id === input.dataset.id);
+    if (v) v.caption = input.value.trim();
+  } catch (err) { cmpMsg('app-ex-msg', 'Caption not saved: ' + err.message); }
+}
+
+async function deleteExampleVideo(id) {
+  if (!confirm('Remove this example video from the page?')) return;
+  try {
+    await cmpRequest(`/api/campaign-example-videos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    refreshCampaign();
+  } catch (err) { cmpMsg('app-ex-msg', err.message); }
+}
+
+// Dropping one video onto another puts it in that spot; only the ones whose position changed are saved.
+async function dropExampleVideo(dragId, targetId) {
+  if (!dragId || dragId === targetId) return;
+  const list = [...cmpCurrent.exampleVideos];
+  const from = list.findIndex(v => v.id === dragId);
+  const to = list.findIndex(v => v.id === targetId);
+  if (from < 0 || to < 0) return;
+  list.splice(to, 0, list.splice(from, 1)[0]);
+  const changed = list.map((v, i) => [v, i]).filter(([v, i]) => v.sortOrder !== i);
+  try {
+    await Promise.all(changed.map(([v, i]) => cmpRequest(`/api/campaign-example-videos/${encodeURIComponent(v.id)}`, { method: 'PATCH', body: JSON.stringify({ sortOrder: i }) })));
+  } catch (err) { cmpMsg('app-ex-msg', 'Order not saved: ' + err.message); }
+  refreshCampaign();
+}
+
+// ── Applications tab ──
+
+function applicationsPanelHtml() {
+  setTimeout(loadApplications, 0);
+  return `<div class="panel cmp-panel" id="app-list-panel"><div class="panel-head"><span class="panel-title">Applications</span></div><div class="cmp-empty">Loading applications…</div></div>`;
+}
+
+async function loadApplications() {
+  if (!cmpCurrent) return;
+  try {
+    appList = (await cmpRequest(`/api/campaigns/${encodeURIComponent(cmpCurrent.id)}/applications`)).applications;
+    renderApplications();
+  } catch (err) {
+    const panel = document.getElementById('app-list-panel');
+    if (panel) panel.innerHTML = `<div class="cmp-empty">Couldn't load applications: ${esc(err.message)}</div>`;
+  }
+}
+
+function socialHref(platform, value) {
+  const v = String(value || '').trim();
+  if (!v) return '';
+  if (/^https?:\/\//i.test(v)) return v;
+  if (/^(www\.)?(instagram|tiktok|youtube)\.com\//i.test(v) || /^youtu\.be\//i.test(v)) return 'https://' + v;
+  const h = encodeURIComponent(v.replace(/^@/, ''));
+  return { instagram: `https://www.instagram.com/${h}/`, tiktok: `https://www.tiktok.com/@${h}`, youtube: `https://www.youtube.com/@${h}` }[platform] || '';
+}
+
+const appSocialLinks = (a) => ['tiktok', 'instagram', 'youtube'].filter(p => a[p]).map(p =>
+  `<a href="${safeUrl(socialHref(p, a[p]))}" target="_blank" rel="noopener">${esc(CMP_PLATFORMS[p])} ${esc(a[p].replace(/^https?:\/\/(www\.)?/i, ''))} ↗</a>`).join('');
+
+function renderApplications() {
+  const panel = document.getElementById('app-list-panel');
+  if (!panel) return;
+  const counts = appList.reduce((m, a) => ({ ...m, [a.status]: (m[a.status] || 0) + 1 }), {});
+  const filters = [['new', 'New'], ['reviewing', 'Reviewing'], ['approved', 'Approved'], ['declined', 'Declined'], ['all', 'All']];
+  const shown = appList.filter(a => appFilter === 'all' || a.status === appFilter);
+  const c = cmpCurrent;
+  panel.innerHTML = `<div class="panel-head"><span class="panel-title">Applications</span>
+      <div class="cmp-panel-actions">${filters.map(([k, label]) => `<button class="action-btn${appFilter === k ? ' primary' : ''}" onclick="appFilter='${k}';renderApplications()">${label} ${k === 'all' ? appList.length : counts[k] || 0}</button>`).join('')}</div></div>
+    ${shown.length ? `<div class="cmp-table-wrap"><table class="cmp-table"><thead><tr>
+        <th>Applicant</th><th>Socials</th><th>Posts on</th><th>Referred by</th><th>Submitted</th><th>Status</th><th></th>
+      </tr></thead><tbody>${shown.map(a => `<tr>
+        <td><div class="cmp-who"><b>${esc(a.name)}</b><span>${esc(a.email)}</span>${a.alreadyOnCampaign ? '<span class="cmp-alert">already on this campaign</span>' : a.creatorName && a.status !== 'approved' ? '<span>already a creator</span>' : ''}</div></td>
+        <td><div class="app-socials">${appSocialLinks(a) || '—'}</div></td>
+        <td><div class="cmp-who"><span>${a.platforms.map(p => esc(CMP_PLATFORMS[p] || p)).join(' · ')}</span><span>${esc(AUDIENCE_LABEL[a.audienceSize] || '')}${a.postingCadence ? ' · ' + esc(CADENCE_LABEL[a.postingCadence]) : ''}</span></div></td>
+        <td>${a.referredByName ? esc(a.referredByName) : '<span class="feed-time">—</span>'}</td>
+        <td>${fmtDate(a.submittedAt)}</td>
+        <td><span class="chip ${APP_STATUS_CHIP[a.status] || 'chip-muted'}">${esc(a.status)}</span></td>
+        <td><div class="cmp-row-actions"><button class="action-btn${a.status === 'new' ? ' primary' : ''}" data-id="${esc(a.id)}" onclick="openApplication(this.dataset.id)">Review…</button></div></td>
+      </tr>`).join('')}</tbody></table></div>`
+      : `<div class="cmp-empty">${appList.length ? 'Nothing in this view.' : c.applicationEnabled ? 'No applications yet. Share the link from the Application page tab.' : 'No applications yet. Turn the page on from the Application page tab to start taking them.'}</div>`}
+    <div class="email-msg" id="app-list-msg" style="margin:0 18px 14px;"></div>`;
+  if (appListNotice) { cmpMsg('app-list-msg', ...appListNotice); appListNotice = null; }
+}
+
+// ── Review modal ──
+
+function ensureApplicationModal() {
+  if (document.getElementById('app-modal')) return;
+  document.body.insertAdjacentHTML('beforeend', `
+<div class="ops-modal-bg" id="app-modal" hidden onclick="if (event.target === this) closeApplication()">
+  <div class="ops-modal" role="dialog" aria-labelledby="app-modal-title">
+    <div class="ops-modal-head"><span class="compose-title" id="app-modal-title">Application</span><button class="drawer-close" onclick="closeApplication()" aria-label="Close">✕</button></div>
+    <div class="ops-modal-body" id="app-modal-body"></div>
+    <div class="ops-modal-foot" id="app-modal-foot"></div>
+  </div>
+</div>`);
+}
+
+function answerHtml(q, value) {
+  if (value === undefined || value === null || value === '') return '<span class="feed-time">—</span>';
+  if (q?.type === 'boolean') return value ? 'Yes' : 'No';
+  if (q?.type === 'url') return `<a href="${safeUrl(value)}" target="_blank" rel="noopener">${esc(value)} ↗</a>`;
+  if (Array.isArray(value)) return esc(value.join(', '));
+  if (typeof value === 'number') return cmpNum(value);
+  return `<span style="white-space:pre-wrap">${esc(value)}</span>`;
+}
+
+function openApplication(id, mode = 'view') {
+  ensureApplicationModal();
+  appDetail = appList.find(a => a.id === id);
+  if (!appDetail) return;
+  const a = appDetail;
+  const questions = cmpCurrent.applicationQuestions;
+  // Answers to questions that were later deleted still show, under their id.
+  const extraIds = Object.keys(a.answers).filter(k => !questions.some(q => q.id === k));
+  document.getElementById('app-modal-title').textContent = a.name;
+  document.getElementById('app-modal').hidden = false;
+  document.getElementById('app-modal-body').innerHTML = `
+    <div class="cmp-title" style="margin-bottom:10px;"><span class="chip ${APP_STATUS_CHIP[a.status]}">${esc(a.status)}</span>
+      ${a.alreadyOnCampaign ? '<span class="chip chip-orange">already on this campaign</span>' : a.creatorName && a.status !== 'approved' ? '<span class="chip chip-purple">already a creator</span>' : ''}</div>
+    <div class="detail-grid">
+      ${detailField('Email', `<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>`)}
+      ${detailField('Phone', esc(a.phone))}
+      ${detailField('Country', esc(a.country))}
+      ${detailField('Submitted', fmtDateTime(a.submittedAt))}
+      ${detailField('Socials', `<div class="app-socials">${appSocialLinks(a)}</div>`, true)}
+      ${detailField('Portfolio', a.portfolioUrl ? `<a href="${safeUrl(a.portfolioUrl)}" target="_blank" rel="noopener">${esc(a.portfolioUrl)} ↗</a>` : '')}
+      ${detailField('Would post on', a.platforms.map(p => esc(CMP_PLATFORMS[p] || p)).join(', '))}
+      ${detailField('Audience', esc(AUDIENCE_LABEL[a.audienceSize] || ''))}
+      ${detailField('Posts', esc(CADENCE_LABEL[a.postingCadence] || ''))}
+      ${detailField('Niches', esc(a.niches.join(', ')))}
+      ${detailField('Referred by', a.referredByName ? `${esc(a.referredByName)} <span class="feed-time">code ${esc(a.refCode || '')}</span>` : a.refCode ? `<span class="feed-time">code ${esc(a.refCode)} didn't match anyone on a campaign</span>` : '')}
+      ${detailField('Why them', a.why ? `<span style="white-space:pre-wrap">${esc(a.why)}</span>` : '', true)}
+    </div>
+    ${questions.length || extraIds.length ? `<div class="detail-section-title">Answers</div>
+      <div class="detail-grid">${questions.map(q => `<div class="detail-field" style="grid-column:1/-1;"><label>${esc(q.label)}</label><div class="val">${answerHtml(q, a.answers[q.id])}</div></div>`).join('')}
+      ${extraIds.map(k => `<div class="detail-field" style="grid-column:1/-1;"><label>${esc(k)} (question since removed)</label><div class="val">${answerHtml(null, a.answers[k])}</div></div>`).join('')}</div>` : ''}
+    ${a.status === 'declined' && a.declineReason ? `<div class="detail-section-title">Decline reason (staff only unless emailed)</div><div class="cmp-brief" style="padding:0;">${esc(a.declineReason)}</div>` : ''}
+    <div class="detail-section-title">Notes (staff only)</div>
+    <textarea class="c-input" id="app-notes" style="min-height:70px;" placeholder="Anything the team should know">${esc(a.reviewNotes)}</textarea>
+    <button class="action-btn" style="margin-top:6px;" onclick="saveApplicationNotes(this)">Save notes</button>
+    ${mode === 'approve' ? approveFormHtml(a) : mode === 'decline' ? declineFormHtml(a) : ''}
+    <div class="email-msg" id="app-modal-msg"></div>
+    <details class="app-meta"><summary>Where it came from</summary>
+      <div class="cmp-audit-json">${esc(JSON.stringify({ pageUrl: a.pageUrl, referrer: a.referrer, utm: a.utm, userAgent: a.userAgent }, null, 2))}</div></details>`;
+  const id_ = esc(a.id);
+  const foot = [];
+  if (a.status === 'new') foot.push(`<button class="action-btn" onclick="setApplicationStatus('reviewing')">Mark reviewing</button>`);
+  if (a.status === 'declined') foot.push(`<button class="action-btn" onclick="setApplicationStatus('new')">Move back to new</button>`);
+  if (['new', 'reviewing'].includes(a.status) && mode !== 'decline') foot.push(`<button class="action-btn" data-id="${id_}" onclick="openApplication(this.dataset.id, 'decline')">Decline…</button>`);
+  if (['new', 'reviewing', 'declined'].includes(a.status) && mode !== 'approve') foot.push(`<button class="action-btn primary" data-id="${id_}" onclick="openApplication(this.dataset.id, 'approve')">Approve…</button>`);
+  foot.push('<button class="action-btn" onclick="closeApplication()">Close</button>');
+  document.getElementById('app-modal-foot').innerHTML = foot.join('');
+  if (mode !== 'view') document.getElementById(mode === 'approve' ? 'app-approve-box' : 'app-decline-box')?.scrollIntoView({ block: 'nearest' });
+}
+
+function approveFormHtml(a) {
+  const c = cmpCurrent;
+  const members = teamMembers(c);
+  const suggested = a.suggestedUplineId && members.some(m => m.id === a.suggestedUplineId) ? a.suggestedUplineId : '';
+  return `<div class="app-action-box" id="app-approve-box">
+    <div class="detail-section-title" style="margin-top:0;">Approve ${esc(a.name)}</div>
+    ${a.alreadyOnCampaign ? '<div class="ops-hint">They\'re already on this campaign, so approving just links this application to them. Nothing else changes.</div>' : `
+    <div class="ops-form-grid">
+      <div class="c-field"><label>Pay per 1,000 views</label><div class="cmp-money"><input class="c-input" id="app-ap-rate" inputmode="decimal" value="${esc(cmpDollarInput(c.defaultCpmRateCents))}"></div>
+        <div class="ops-hint">The starting pay they saw on the page. Change it only if you agreed something else.</div></div>
+      <div class="c-field"><label>Rank</label><select class="c-input" id="app-ap-rank">${RANKS.map(([k, l]) => `<option value="${k}"${k === 'rookie' ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="c-field full"><label>Upline on this campaign</label><select class="c-input" id="app-ap-upline">
+        <option value="">No upline (top of a tree)</option>
+        ${members.map(m => `<option value="${esc(m.id)}"${m.id === suggested ? ' selected' : ''}>${esc(m.creator.name)} · ${esc(RANK_LABEL[m.rank])}</option>`).join('')}</select>
+        <div class="ops-hint">${a.suggestedUplineName
+          ? `Suggested: <b>${esc(a.suggestedUplineName)}</b> — the first person up their referral chain who's on this campaign.`
+          : a.referredByName ? `${esc(a.referredByName)} referred them, but nobody in that chain is on this campaign, so no upline is suggested.` : 'Nobody referred them.'}</div></div>
+      <div class="c-field full"><label class="cmp-check"><input type="checkbox" id="app-ap-invite" checked> Email them the invite to the affiliate portal</label></div>
+    </div>`}
+    <button class="send-btn" id="app-ap-go" onclick="approveApplication()"><span class="btn-text">Approve${a.alreadyOnCampaign ? '' : ' and add to campaign'}</span></button>
+  </div>`;
+}
+
+function declineFormHtml(a) {
+  return `<div class="app-action-box" id="app-decline-box">
+    <div class="detail-section-title" style="margin-top:0;">Decline ${esc(a.name)}</div>
+    <div class="c-field"><label>Reason (optional)</label><textarea class="c-input" id="app-dc-reason" style="min-height:70px;" placeholder="Stays with staff unless you email it">${esc(a.declineReason)}</textarea></div>
+    <label class="cmp-check" style="margin:8px 0;"><input type="checkbox" id="app-dc-email"> Email them a short note (includes the reason, if any)</label>
+    <div><button class="send-btn" onclick="declineApplication(this)"><span class="btn-text">Decline</span></button></div>
+  </div>`;
+}
+
+function closeApplication() {
+  document.getElementById('app-modal').hidden = true;
+  appDetail = null;
+}
+
+async function patchApplication(body) {
+  const res = await cmpRequest(`/api/campaign-applications/${encodeURIComponent(appDetail.id)}`, { method: 'PATCH', body: JSON.stringify(body) });
+  appList = appList.map(a => (a.id === res.application.id ? res.application : a));
+  return res;
+}
+
+async function saveApplicationNotes(btn) {
+  btn.disabled = true;
+  try {
+    await patchApplication({ reviewNotes: document.getElementById('app-notes').value });
+    cmpMsg('app-modal-msg', 'Notes saved.', 'success');
+  } catch (err) { cmpMsg('app-modal-msg', err.message); }
+  btn.disabled = false;
+}
+
+async function setApplicationStatus(status) {
+  try {
+    const res = await patchApplication({ status, reviewNotes: document.getElementById('app-notes').value });
+    openApplication(res.application.id);
+    afterApplicationChange();
+  } catch (err) { cmpMsg('app-modal-msg', err.message); }
+}
+
+async function declineApplication(btn) {
+  btn.disabled = true;
+  try {
+    const email = document.getElementById('app-dc-email').checked;
+    const res = await patchApplication({
+      status: 'declined', declineReason: document.getElementById('app-dc-reason').value.trim(),
+      reviewNotes: document.getElementById('app-notes').value, sendDeclineEmail: email
+    });
+    closeApplication();
+    afterApplicationChange(email ? (res.emailSent ? 'Declined, and the email was sent.' : `Declined, but the email failed: ${res.emailError}`) : 'Declined.', !email || res.emailSent);
+  } catch (err) { cmpMsg('app-modal-msg', err.message); btn.disabled = false; }
+}
+
+async function approveApplication() {
+  const a = appDetail;
+  const btn = document.getElementById('app-ap-go');
+  const body = {};
+  if (!a.alreadyOnCampaign) {
+    let cents;
+    try { cents = cmpCents(document.getElementById('app-ap-rate').value, 'Pay per 1,000 views'); } catch (err) { cmpMsg('app-modal-msg', err.message); return; }
+    // The campaign rate means "no custom rate", so later changes to the campaign rate still reach them.
+    body.cpmRateOverrideCents = cents === null || cents === cmpCurrent.defaultCpmRateCents ? null : cents;
+    body.rank = document.getElementById('app-ap-rank').value;
+    body.uplineId = document.getElementById('app-ap-upline').value || null;
+    body.sendInvite = document.getElementById('app-ap-invite').checked;
+  }
+  btn.disabled = true;
+  try {
+    await patchApplication({ reviewNotes: document.getElementById('app-notes').value });
+    const res = await cmpRequest(`/api/campaign-applications/${encodeURIComponent(a.id)}/approve`, { method: 'POST', body: JSON.stringify(body) });
+    closeApplication();
+    const who = res.creator?.name || a.name;
+    afterApplicationChange(
+      a.alreadyOnCampaign ? `${who} was already on the campaign; the application is now marked approved.`
+        : res.inviteSent ? `${who} is on the campaign. Invite emailed to ${a.email}.`
+        : res.inviteError ? `${who} is on the campaign, but the invite email failed (${res.inviteError}). Use “Resend invite” on the Affiliate tab.`
+        : `${who} is on the campaign. No invite was sent.`,
+      !res.inviteError);
+    if (res.creator?.created) loadCreators();
+  } catch (err) { cmpMsg('app-modal-msg', err.message); btn.disabled = false; }
+}
+
+// Counts, the affiliate list and the tab badge all come from the campaign, so reload it.
+function afterApplicationChange(message, ok = true) {
+  appListNotice = message ? [message, ok ? 'success' : 'error'] : null;
+  refreshCampaign();
 }
