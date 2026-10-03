@@ -328,12 +328,14 @@ function renderCampaignView() {
       <button class="action-btn primary" onclick="activateCampaign()">Make it active</button></div>` : ''}
     <div class="billing-tabs">
       <button class="billing-tab${cmpTab === 'affiliate' ? ' active' : ''}" onclick="cmpTab='affiliate';renderCampaignView()">Affiliate</button>
+      <button class="billing-tab${cmpTab === 'package' ? ' active' : ''}" onclick="cmpTab='package';renderCampaignView()">Affiliate package</button>
       <button class="billing-tab${cmpTab === 'applications' ? ' active' : ''}" onclick="cmpTab='applications';renderCampaignView()">Applications${c.applicationCounts.new ? ` <span class="cmp-badge">${c.applicationCounts.new}</span>` : ''}</button>
       <button class="billing-tab${cmpTab === 'application' ? ' active' : ''}" onclick="cmpTab='application';renderCampaignView()">Application page</button>
       <button class="billing-tab${cmpTab === 'email' ? ' active' : ''}" onclick="cmpTab='email';renderCampaignView()">Email</button>
     </div>
     ${cmpTab === 'email' ? '<div class="cmp-placeholder">✉<br><br>Email campaigns are coming soon.</div>'
       : cmpTab === 'application' ? applicationPageHtml(c)
+      : cmpTab === 'package' ? affiliatePackageHtml(c)
       : cmpTab === 'applications' ? applicationsPanelHtml(c) : `
     <div class="cmp-kpis">
       <div class="cmp-kpi"><div class="cmp-kpi-label">Affiliates</div><div class="cmp-kpi-val">${active.length}</div><div class="cmp-kpi-sub">${active.filter(a => a.status === 'invited').length} haven't signed in</div></div>
@@ -1695,4 +1697,93 @@ async function approveApplication() {
 function afterApplicationChange(message, ok = true) {
   appListNotice = message ? [message, ok ? 'success' : 'error'] : null;
   refreshCampaign();
+}
+
+// ─── Affiliate package (CONTRACT.md §10) ─────────
+// A video bank (links on any platform) and a written guide. Affiliates on the campaign see both in
+// their portal; neither is ever shown on the public application page.
+
+let pkgBank = [];               // video bank rows being edited
+let pkgBankFor = null;          // campaign id pkgBank was loaded from
+
+const PKG_HOSTS = [[/tiktok\.com/i, 'TikTok'], [/instagram\.com/i, 'Instagram'], [/youtube\.com|youtu\.be/i, 'YouTube'],
+  [/drive\.google\.com/i, 'Google Drive'], [/dropbox\.com/i, 'Dropbox'], [/vimeo\.com/i, 'Vimeo'], [/(twitter|x)\.com/i, 'X'], [/facebook\.com|fb\.watch/i, 'Facebook']];
+const pkgPlatform = (url) => (PKG_HOSTS.find(([re]) => re.test(url)) || [null, (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'Link'; } })()])[1];
+
+function affiliatePackageHtml(c) {
+  if (pkgBankFor !== c.id) { pkgBank = structuredClone(c.videoBank || []); pkgBankFor = c.id; }
+  setTimeout(renderPkgBank, 0);
+  return `
+    <div class="panel cmp-panel">
+      <div class="panel-head"><span class="panel-title">Affiliate package</span><span class="chip chip-muted">Affiliates on this campaign only</span></div>
+      <div class="app-form">
+        <div class="detail-section-title">Video bank (<span id="pkg-count"></span>)</div>
+        <div class="ops-hint" style="margin-bottom:8px;">Example and reference videos for affiliates. Any platform or link works — TikTok, Instagram, YouTube, Drive, Dropbox, anything.</div>
+        <div id="pkg-bank"></div>
+        <div class="ops-form-grid" style="margin-top:8px;">
+          <div class="c-field"><label>Link</label><input class="c-input" id="pkg-url" placeholder="https://" onkeydown="if (event.key === 'Enter') addPkgVideo()"></div>
+          <div class="c-field"><label>Title / note (optional)</label><input class="c-input" id="pkg-title" maxlength="200" placeholder="e.g. Best hook so far" onkeydown="if (event.key === 'Enter') addPkgVideo()"></div>
+        </div>
+        <button class="action-btn" onclick="addPkgVideo()">+ Add video</button>
+
+        <div class="detail-section-title">Affiliate guide</div>
+        <div class="c-field full"><textarea class="c-input" id="pkg-guide" maxlength="20000" style="min-height:260px;" placeholder="How to make videos for this campaign: hooks that work, talking points, what to show, what never to say, hashtags, posting tips…">${esc(c.affiliateGuide || '')}</textarea></div>
+
+        <div class="email-msg" id="pkg-msg"></div>
+        <div class="cmp-panel-actions" style="margin-top:12px;"><button class="send-btn" id="pkg-save" onclick="saveAffiliatePackage()"><span class="btn-text">Save affiliate package</span></button></div>
+      </div>
+    </div>`;
+}
+
+function renderPkgBank() {
+  const el = document.getElementById('pkg-bank');
+  if (!el) return;
+  document.getElementById('pkg-count').textContent = `${pkgBank.length} of 100`;
+  el.innerHTML = pkgBank.length ? `<table class="cmp-table"><tbody>${pkgBank.map((v, i) => `<tr>
+      <td><span class="chip chip-muted">${esc(pkgPlatform(v.url))}</span></td>
+      <td style="width:100%;"><input class="c-input" value="${esc(v.title)}" maxlength="200" placeholder="Title (optional)" oninput="pkgBank[${i}].title=this.value">
+        <div class="cmp-video-url"><a href="${safeUrl(v.url)}" target="_blank" rel="noopener">${esc(v.url)} ↗</a></div></td>
+      <td><div class="cmp-row-actions">
+        <button class="action-btn" ${i === 0 ? 'disabled' : ''} onclick="movePkgVideo(${i}, -1)" aria-label="Move up">↑</button>
+        <button class="action-btn" ${i === pkgBank.length - 1 ? 'disabled' : ''} onclick="movePkgVideo(${i}, 1)" aria-label="Move down">↓</button>
+        <button class="action-btn" onclick="pkgBank.splice(${i}, 1);renderPkgBank()">Remove</button></div></td></tr>`).join('')}</tbody></table>`
+    : '<div class="cmp-empty">No videos yet. Paste a link below.</div>';
+}
+
+function addPkgVideo() {
+  const urlEl = document.getElementById('pkg-url'), titleEl = document.getElementById('pkg-title');
+  let url = urlEl.value.trim();
+  if (!url) return;
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  try { new URL(url); } catch { cmpMsg('pkg-msg', 'That doesn’t look like a link.'); return; }
+  if (pkgBank.length >= 100) { cmpMsg('pkg-msg', 'The video bank holds at most 100 links.'); return; }
+  if (pkgBank.some(v => v.url === url)) { cmpMsg('pkg-msg', 'That link is already in the bank.'); return; }
+  pkgBank.push({ url, title: titleEl.value.trim() });
+  urlEl.value = ''; titleEl.value = '';
+  cmpMsg('pkg-msg', 'Added — remember to save.', 'success');
+  renderPkgBank();
+  urlEl.focus();
+}
+
+function movePkgVideo(i, d) {
+  [pkgBank[i], pkgBank[i + d]] = [pkgBank[i + d], pkgBank[i]];
+  renderPkgBank();
+}
+
+async function saveAffiliatePackage() {
+  const btn = document.getElementById('pkg-save');
+  btn.disabled = true;
+  try {
+    const res = await cmpRequest(`/api/campaigns/${encodeURIComponent(cmpCurrent.id)}`, { method: 'PATCH', body: JSON.stringify({
+      videoBank: pkgBank.map(v => ({ url: v.url, title: (v.title || '').trim() })), affiliateGuide: document.getElementById('pkg-guide').value
+    }) });
+    cmpCurrent = res.campaign;
+    delete cmpCache[res.campaign.operationId];
+    pkgBankFor = null;
+    renderCampaignView();
+    setTimeout(() => cmpMsg('pkg-msg', 'Saved. Affiliates on this campaign can see it now.', 'success'), 0);
+  } catch (err) {
+    cmpMsg('pkg-msg', err.message);
+    btn.disabled = false;
+  }
 }

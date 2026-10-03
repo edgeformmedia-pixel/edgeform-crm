@@ -49,7 +49,9 @@ const campaignSummary = (r) => ({
 const campaignDetail = (r) => ({
   ...campaignSummary(r), brief: r.brief,
   min_views_to_qualify: r.min_views_to_qualify, max_payout_per_video_cents: r.max_payout_per_video_cents,
-  requires_video_approval: r.requires_video_approval === 1
+  requires_video_approval: r.requires_video_approval === 1,
+  // v9 (§10): the affiliate package.
+  affiliate_guide: r.affiliate_guide || '', video_bank: parseJson(r.video_bank, [])
 });
 
 export const videoJson = (v) => ({

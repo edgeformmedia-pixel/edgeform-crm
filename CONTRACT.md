@@ -664,3 +664,16 @@ and caps stay out of every public word.
 | `worker/public-campaigns.js`, rate limiting, `already_applied`, slug uniqueness | Sharing card on `campaign.html`: the affiliate's `share_url`, a copy button, one line on the team bonus |
 | Approval → creator + `campaign_affiliates` + derived upline + invite email + audit rows | `mock-api.js` covers `/api/public/v1` too, so `apply.html?mock=1` works with no CRM |
 | Decline email (optional, staff-typed reason) | Mobile first: most applicants open this link on a phone, inside TikTok's or Instagram's in-app browser |
+## 10. Affiliate package (added in v9, additive only)
+
+Each campaign has an **affiliate package**, edited on the "Affiliate package" tab of the campaign view:
+a **video bank** (reference/example videos — links on any platform or host, not tracked, never paid,
+separate from `videos` and from §9's `campaign_example_videos`) and a free-text **affiliate guide**.
+Both are private to affiliates on the campaign; neither is ever served by §9's public endpoints.
+
+D1 (migration `0026_affiliate_package.sql`), on `campaigns`:
+- `affiliate_guide` TEXT NOT NULL DEFAULT '' — ≤ 20000 chars, plain text (render with line breaks kept).
+- `video_bank` TEXT NOT NULL DEFAULT '[]' — JSON `[{ "url", "title" }]`, ≤ 100 items, `url` is http(s), `title` ≤ 200 chars (may be '').
+
+Affiliate API: `CampaignDetail` (`GET /campaigns/:id`) adds `affiliate_guide: string` and
+`video_bank: [{ url, title }]` in staff-chosen order. Portal: show both on `campaign.html` (links open in a new tab).

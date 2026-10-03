@@ -68,6 +68,18 @@ function readApplicationSettings(body, existing) {
   };
 }
 
+// The affiliate package (CONTRACT.md §10): video bank links on any platform plus a written guide.
+const MAX_BANK_VIDEOS = 100;
+function readVideoBank(value) {
+  if (!Array.isArray(value)) throw new HttpError(400, 'The video bank must be a list.');
+  if (value.length > MAX_BANK_VIDEOS) throw new HttpError(400, `The video bank holds at most ${MAX_BANK_VIDEOS} links.`);
+  return value.map((item, i) => {
+    const url = clean(item?.url, 2000);
+    if (!url || !isHttpUrl(url)) throw new HttpError(400, `Video ${i + 1} needs a full http(s):// link.`);
+    return { url, title: limited(item?.title, 200, `Video ${i + 1}'s title`) };
+  });
+}
+
 // `existing` is the stored row on update, so omitted fields keep their value.
 function readCampaign(body, existing = {}) {
   const pick = (key, column) => (body[key] === undefined ? existing[column] : body[key]);
@@ -91,6 +103,8 @@ function readCampaign(body, existing = {}) {
     max_payout_per_affiliate_cents: wholeNumber(pick('maxPayoutPerAffiliateCents', 'max_payout_per_affiliate_cents'), 'Max per affiliate'),
     total_budget_cents: wholeNumber(pick('totalBudgetCents', 'total_budget_cents'), 'Total budget'),
     min_views_to_qualify: wholeNumber(pick('minViewsToQualify', 'min_views_to_qualify'), 'Minimum views'),
+    affiliate_guide: limited(pick('affiliateGuide', 'affiliate_guide') ?? '', 20000, 'The affiliate guide'),
+    video_bank: JSON.stringify(readVideoBank(body.videoBank !== undefined ? body.videoBank : parseJson(existing.video_bank, []))),
     requires_video_approval: (body.requiresVideoApproval === undefined ? existing.requires_video_approval ?? 1 : body.requiresVideoApproval) ? 1 : 0,
     ...readApplicationSettings(body, existing)
   };
@@ -122,7 +136,9 @@ function campaignJson(c) {
     applicationQuestions: parseJson(c.application_questions, []), applicationSeats: c.application_seats, applicationClosesAt: c.application_closes_at,
     applicationCounts: { new: 0, reviewing: 0, approved: 0, declined: 0, ...parseJson(c.application_counts, {}) },
     applicationState: applicationState(c, parseJson(c.application_counts, {}).approved || 0),
-    publicUrl: publicUrl(c.public_slug)
+    publicUrl: publicUrl(c.public_slug),
+    // v9: the affiliate package (CONTRACT.md §10).
+    affiliateGuide: c.affiliate_guide ?? '', videoBank: parseJson(c.video_bank, [])
   };
 }
 
@@ -262,6 +278,7 @@ async function updateCampaign(request, env, headers, [id]) {
   audit('caps_changed', ['max_payout_per_video_cents', 'max_payout_per_affiliate_cents', 'total_budget_cents', 'min_views_to_qualify']);
   audit('status_changed', ['status']);
   audit('application_settings_changed', APPLICATION_KEYS);
+  audit('affiliate_package_changed', ['affiliate_guide', 'video_bank']);
   // Ending a campaign permanently locks its still-tracking videos: final views frozen, no more weekly
   // entries taken. Pausing is a temporary hold and doesn't touch videos at all.
   const justEnded = existing.status !== 'ended' && fields.status === 'ended';
